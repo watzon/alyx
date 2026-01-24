@@ -84,9 +84,10 @@ func runDev(cmd *cobra.Command, args []string) error {
 
 	gen := schema.NewSQLGenerator(s)
 	for _, stmt := range gen.GenerateAll() {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, execErr := db.Exec(stmt); execErr != nil {
 			log.Debug().Str("sql", stmt).Msg("Executing SQL")
-			log.Fatal().Err(err).Msg("Failed to execute schema SQL")
+			log.Error().Err(execErr).Msg("Failed to execute schema SQL")
+			return execErr
 		}
 	}
 	log.Info().Msg("Database schema applied")

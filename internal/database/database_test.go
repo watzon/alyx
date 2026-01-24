@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,12 +58,12 @@ func TestTransaction(t *testing.T) {
 	}
 
 	err = db.Transaction(ctx, func(tx *Tx) error {
-		_, err := tx.Exec("INSERT INTO test (id, name) VALUES (1, 'alice')")
-		if err != nil {
-			return err
+		_, execErr := tx.Exec("INSERT INTO test (id, name) VALUES (1, 'alice')")
+		if execErr != nil {
+			return execErr
 		}
-		_, err = tx.Exec("INSERT INTO test (id, name) VALUES (2, 'bob')")
-		return err
+		_, execErr = tx.Exec("INSERT INTO test (id, name) VALUES (2, 'bob')")
+		return execErr
 	})
 	if err != nil {
 		t.Fatalf("transaction failed: %v", err)
@@ -88,12 +89,12 @@ func TestTransactionRollback(t *testing.T) {
 	}
 
 	err = db.Transaction(ctx, func(tx *Tx) error {
-		_, err := tx.Exec("INSERT INTO test (id, name) VALUES (1, 'alice')")
-		if err != nil {
-			return err
+		_, execErr := tx.Exec("INSERT INTO test (id, name) VALUES (1, 'alice')")
+		if execErr != nil {
+			return execErr
 		}
-		_, err = tx.Exec("INSERT INTO test (id, name) VALUES (2, 'alice')")
-		return err
+		_, execErr = tx.Exec("INSERT INTO test (id, name) VALUES (2, 'alice')")
+		return execErr
 	})
 	if err == nil {
 		t.Fatal("expected transaction to fail")
@@ -255,9 +256,9 @@ collections:
 
 	gen := schema.NewSQLGenerator(s)
 	for _, stmt := range gen.GenerateAll() {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
+		if _, execErr := db.ExecContext(ctx, stmt); execErr != nil {
 			t.Logf("SQL: %s", stmt)
-			t.Fatalf("execute DDL: %v", err)
+			t.Fatalf("execute DDL: %v", execErr)
 		}
 	}
 
@@ -315,7 +316,7 @@ collections:
 	}
 
 	_, err = col.FindOne(ctx, id)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }

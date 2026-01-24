@@ -231,6 +231,21 @@ func validateCollection(name string, col *Collection, s *Schema) ValidationError
 func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 	var errs ValidationErrors
 
+	errs = append(errs, validateFieldBasics(path, name, f)...)
+	errs = append(errs, validateFieldReferences(path, f, s)...)
+	errs = append(errs, validateFieldTimestamps(path, f)...)
+	errs = append(errs, validateFieldLength(path, f)...)
+
+	if f.Validate != nil {
+		errs = append(errs, validateFieldValidation(path+".validate", f)...)
+	}
+
+	return errs
+}
+
+func validateFieldBasics(path, name string, f *Field) ValidationErrors {
+	var errs ValidationErrors
+
 	if !identifierRegex.MatchString(name) {
 		errs = append(errs, &ValidationError{
 			Path:    path,
@@ -252,39 +267,53 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 		})
 	}
 
-	if f.References != "" {
-		table, field, ok := f.ParseReference()
-		if !ok {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".references",
-				Message: "must be in format 'table.field'",
-			})
-		} else if refCol, ok := s.Collections[table]; !ok {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".references",
-				Message: fmt.Sprintf("referenced collection %q does not exist", table),
-			})
-		} else if _, ok := refCol.Fields[field]; !ok {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".references",
-				Message: fmt.Sprintf("referenced field %q does not exist in collection %q", field, table),
-			})
-		}
+	return errs
+}
 
-		if !f.OnDelete.IsValid() {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".onDelete",
-				Message: "must be one of: restrict, cascade, set null",
-			})
-		}
+func validateFieldReferences(path string, f *Field, s *Schema) ValidationErrors {
+	var errs ValidationErrors
 
-		if f.OnDelete == OnDeleteSetNull && !f.Nullable {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".onDelete",
-				Message: "cannot use 'set null' on non-nullable field",
-			})
-		}
+	if f.References == "" {
+		return errs
 	}
+
+	table, field, ok := f.ParseReference()
+	if !ok {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".references",
+			Message: "must be in format 'table.field'",
+		})
+	} else if refCol, ok := s.Collections[table]; !ok {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".references",
+			Message: fmt.Sprintf("referenced collection %q does not exist", table),
+		})
+	} else if _, ok := refCol.Fields[field]; !ok {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".references",
+			Message: fmt.Sprintf("referenced field %q does not exist in collection %q", field, table),
+		})
+	}
+
+	if !f.OnDelete.IsValid() {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".onDelete",
+			Message: "must be one of: restrict, cascade, set null",
+		})
+	}
+
+	if f.OnDelete == OnDeleteSetNull && !f.Nullable {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".onDelete",
+			Message: "cannot use 'set null' on non-nullable field",
+		})
+	}
+
+	return errs
+}
+
+func validateFieldTimestamps(path string, f *Field) ValidationErrors {
+	var errs ValidationErrors
 
 	if f.OnUpdate != "" && f.OnUpdate != string(DefaultNow) {
 		errs = append(errs, &ValidationError{
@@ -300,35 +329,42 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 		})
 	}
 
-	if f.MinLength != nil || f.MaxLength != nil {
-		if f.Type != FieldTypeString && f.Type != FieldTypeText {
-			errs = append(errs, &ValidationError{
-				Path:    path,
-				Message: "minLength/maxLength can only be used with string or text types",
-			})
-		}
-		if f.MinLength != nil && *f.MinLength < 0 {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".minLength",
-				Message: "must be non-negative",
-			})
-		}
-		if f.MaxLength != nil && *f.MaxLength < 1 {
-			errs = append(errs, &ValidationError{
-				Path:    path + ".maxLength",
-				Message: "must be at least 1",
-			})
-		}
-		if f.MinLength != nil && f.MaxLength != nil && *f.MinLength > *f.MaxLength {
-			errs = append(errs, &ValidationError{
-				Path:    path,
-				Message: "minLength cannot be greater than maxLength",
-			})
-		}
+	return errs
+}
+
+func validateFieldLength(path string, f *Field) ValidationErrors {
+	var errs ValidationErrors
+
+	if f.MinLength == nil && f.MaxLength == nil {
+		return errs
 	}
 
-	if f.Validate != nil {
-		errs = append(errs, validateFieldValidation(path+".validate", f)...)
+	if f.Type != FieldTypeString && f.Type != FieldTypeText {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "minLength/maxLength can only be used with string or text types",
+		})
+	}
+
+	if f.MinLength != nil && *f.MinLength < 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".minLength",
+			Message: "must be non-negative",
+		})
+	}
+
+	if f.MaxLength != nil && *f.MaxLength < 1 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".maxLength",
+			Message: "must be at least 1",
+		})
+	}
+
+	if f.MinLength != nil && f.MaxLength != nil && *f.MinLength > *f.MaxLength {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "minLength cannot be greater than maxLength",
+		})
 	}
 
 	return errs

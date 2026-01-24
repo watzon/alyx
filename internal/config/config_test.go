@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,8 +44,8 @@ func TestValidate_InvalidPort(t *testing.T) {
 		t.Error("expected validation error for invalid port")
 	}
 
-	errs, ok := err.(ValidationErrors)
-	if !ok {
+	var errs ValidationErrors
+	if !errors.As(err, &errs) {
 		t.Fatalf("expected ValidationErrors, got %T", err)
 	}
 

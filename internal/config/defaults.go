@@ -4,7 +4,7 @@ import "time"
 
 // Default configuration values.
 const (
-	// Server defaults
+	// Server defaults.
 	DefaultHost         = "localhost"
 	DefaultPort         = 8090
 	DefaultReadTimeout  = 30 * time.Second
@@ -12,14 +12,14 @@ const (
 	DefaultIdleTimeout  = 120 * time.Second
 	DefaultMaxBodySize  = 10 * 1024 * 1024 // 10MB
 
-	// Database defaults
+	// Database defaults.
 	DefaultDBPath       = "alyx.db"
 	DefaultCacheSize    = -64000 // 64MB
 	DefaultBusyTimeout  = 5 * time.Second
 	DefaultMaxOpenConns = 1 // SQLite works best with single writer
 	DefaultMaxIdleConns = 1
 
-	// Auth defaults
+	// Auth defaults.
 	DefaultAccessTTL      = 15 * time.Minute
 	DefaultRefreshTTL     = 7 * 24 * time.Hour // 7 days
 	DefaultJWTIssuer      = "alyx"
@@ -27,7 +27,7 @@ const (
 	DefaultLoginRateLimit = 5
 	DefaultLoginWindow    = time.Minute
 
-	// Functions defaults
+	// Functions defaults.
 	DefaultFunctionsPath   = "functions"
 	DefaultFunctionTimeout = 30 * time.Second
 	DefaultMemoryLimit     = 256 // MB
@@ -36,11 +36,11 @@ const (
 	DefaultMaxInstances    = 10
 	DefaultIdlePoolTimeout = 60 * time.Second
 
-	// Logging defaults
+	// Logging defaults.
 	DefaultLogLevel  = "info"
 	DefaultLogFormat = "console"
 
-	// Realtime defaults
+	// Realtime defaults.
 	DefaultPollInterval              = 50 * time.Millisecond
 	DefaultMaxConnections            = 1000
 	DefaultMaxSubscriptionsPerClient = 100

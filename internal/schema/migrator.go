@@ -138,7 +138,7 @@ func (m *Migrator) loadMigrationFiles() ([]*Migration, error) {
 		return nil, fmt.Errorf("reading migrations directory: %w", err)
 	}
 
-	var migrations []*Migration
+	migrations := make([]*Migration, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -181,24 +181,28 @@ func (m *Migrator) Apply(mig *Migration) error {
 	defer func() { _ = tx.Rollback() }()
 
 	for i, op := range mig.Operations {
-		sql, err := m.operationToSQL(op)
-		if err != nil {
-			return fmt.Errorf("operation %d: %w", i, err)
+		sql, sqlErr := m.operationToSQL(op)
+		if sqlErr != nil {
+			return fmt.Errorf("operation %d: %w", i, sqlErr)
 		}
 		if sql == "" {
 			continue
+		}
+
+		if _, execErr := tx.Exec(sql); execErr != nil {
+			return fmt.Errorf("executing operation %d: %w", i, execErr)
 		}
 		if _, err := tx.Exec(sql); err != nil {
 			return fmt.Errorf("executing operation %d: %w", i, err)
 		}
 	}
 
-	_, err = tx.Exec(`
+	_, insertErr := tx.Exec(`
 		INSERT INTO _alyx_migrations (version, name, checksum)
 		VALUES (?, ?, ?)
 	`, strconv.Itoa(mig.Version), mig.Name, mig.Checksum)
-	if err != nil {
-		return fmt.Errorf("recording migration: %w", err)
+	if insertErr != nil {
+		return fmt.Errorf("recording migration: %w", insertErr)
 	}
 
 	return tx.Commit()
@@ -322,7 +326,7 @@ operations:
       -- Add your rollback SQL here
 `, version, name)
 
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return "", fmt.Errorf("writing migration file: %w", err)
 	}
 

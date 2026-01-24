@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+const baseTestSchema = `
+version: 1
+
+collections:
+  users:
+    fields:
+      id:
+        type: uuid
+        primary: true
+`
+
 func TestParseSchema(t *testing.T) {
 	yaml := `
 version: 1
@@ -330,16 +341,7 @@ collections:
 }
 
 func TestDiffer_AddCollection(t *testing.T) {
-	oldYaml := `
-version: 1
-
-collections:
-  users:
-    fields:
-      id:
-        type: uuid
-        primary: true
-`
+	oldYaml := baseTestSchema
 	newYaml := `
 version: 1
 
@@ -376,16 +378,7 @@ collections:
 }
 
 func TestDiffer_AddField(t *testing.T) {
-	oldYaml := `
-version: 1
-
-collections:
-  users:
-    fields:
-      id:
-        type: uuid
-        primary: true
-`
+	oldYaml := baseTestSchema
 	newYaml := `
 version: 1
 
@@ -435,16 +428,7 @@ collections:
         type: uuid
         primary: true
 `
-	newYaml := `
-version: 1
-
-collections:
-  users:
-    fields:
-      id:
-        type: uuid
-        primary: true
-`
+	newYaml := baseTestSchema
 	old, _ := Parse([]byte(oldYaml))
 	new, _ := Parse([]byte(newYaml))
 

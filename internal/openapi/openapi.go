@@ -9,6 +9,14 @@ import (
 )
 
 const (
+	typeString  = "string"
+	typeInteger = "integer"
+	typeNumber  = "number"
+	typeBoolean = "boolean"
+	typeObject  = "object"
+)
+
+const (
 	defaultPasswordMinLength = 8
 )
 
@@ -469,60 +477,70 @@ func fieldToSchema(f *schema.Field) *Schema {
 		Nullable: f.Nullable,
 	}
 
+	setSchemaTypeAndFormat(f, s)
+	applyFieldValidation(f, s)
+
+	return s
+}
+
+func setSchemaTypeAndFormat(f *schema.Field, s *Schema) {
 	switch f.Type {
 	case schema.FieldTypeUUID:
-		s.Type = "string"
+		s.Type = typeString
 		s.Format = "uuid"
 	case schema.FieldTypeString:
-		s.Type = "string"
+		s.Type = typeString
 		s.MinLength = f.MinLength
 		s.MaxLength = f.MaxLength
 	case schema.FieldTypeText:
-		s.Type = "string"
+		s.Type = typeString
 		s.MaxLength = f.MaxLength
 	case schema.FieldTypeInt:
-		s.Type = "integer"
+		s.Type = typeInteger
 		s.Format = "int64"
 	case schema.FieldTypeFloat:
-		s.Type = "number"
+		s.Type = typeNumber
 		s.Format = "double"
 	case schema.FieldTypeBool:
-		s.Type = "boolean"
+		s.Type = typeBoolean
 	case schema.FieldTypeTimestamp:
-		s.Type = "string"
+		s.Type = typeString
 		s.Format = "date-time"
 	case schema.FieldTypeJSON:
-		s.Type = "object"
+		s.Type = typeObject
 		s.AdditionalProperties = &Schema{}
 	case schema.FieldTypeBlob:
-		s.Type = "string"
+		s.Type = typeString
 		s.Format = "byte"
 	default:
-		s.Type = "string"
+		s.Type = typeString
+	}
+}
+
+func applyFieldValidation(f *schema.Field, s *Schema) {
+	if f.Validate == nil {
+		return
 	}
 
-	if f.Validate != nil {
-		if f.Validate.Pattern != "" {
-			s.Pattern = f.Validate.Pattern
-		}
-		if len(f.Validate.Enum) > 0 {
-			s.Enum = f.Validate.Enum
-		}
-		if f.Validate.Min != nil {
-			s.Minimum = f.Validate.Min
-		}
-		if f.Validate.Max != nil {
-			s.Maximum = f.Validate.Max
-		}
-		if f.Validate.MinLength != nil && s.MinLength == nil {
-			s.MinLength = f.Validate.MinLength
-		}
-		if f.Validate.MaxLength != nil && s.MaxLength == nil {
-			s.MaxLength = f.Validate.MaxLength
-		}
+	v := f.Validate
+	if v.Pattern != "" {
+		s.Pattern = v.Pattern
 	}
-
-	return s
+	if len(v.Enum) > 0 {
+		s.Enum = v.Enum
+	}
+	if v.Min != nil {
+		s.Minimum = v.Min
+	}
+	if v.Max != nil {
+		s.Maximum = v.Max
+	}
+	if v.MinLength != nil && s.MinLength == nil {
+		s.MinLength = v.MinLength
+	}
+	if v.MaxLength != nil && s.MaxLength == nil {
+		s.MaxLength = v.MaxLength
+	}
 }
 
 func generateListOperation(name string, col *schema.Collection) *Operation {

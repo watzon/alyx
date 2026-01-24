@@ -15,7 +15,7 @@ var (
 	verbose bool
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "alyx",
 	Short: "A portable, polyglot Backend-as-a-Service",
@@ -74,7 +74,7 @@ func initConfig() {
 	}
 }
 
-// setupLogging configures zerolog based on verbosity and environment
+// setupLogging configures zerolog based on verbosity and environment.
 func setupLogging() {
 	// Pretty console output for development
 	output := zerolog.ConsoleWriter{Out: os.Stderr}
@@ -88,12 +88,12 @@ func setupLogging() {
 	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 }
 
-// AddCommand adds a command to the root command
+// AddCommand adds a command to the root command.
 func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
-// Version returns the version string
+// Version returns the version string.
 func Version() string {
 	return fmt.Sprintf("alyx version %s", "0.1.0-dev")
 }

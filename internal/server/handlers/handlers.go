@@ -159,17 +159,17 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data database.Row
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&data); decodeErr != nil {
 		Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	if err := h.checkAccess(r, collectionName, rules.OpCreate, data); err != nil {
-		if errors.Is(err, rules.ErrAccessDenied) {
+	if accessErr := h.checkAccess(r, collectionName, rules.OpCreate, data); accessErr != nil {
+		if errors.Is(accessErr, rules.ErrAccessDenied) {
 			Forbidden(w, "Access denied")
 			return
 		}
-		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		log.Error().Err(accessErr).Str("collection", collectionName).Msg("Rule evaluation failed")
 		InternalError(w, "Failed to check access")
 		return
 	}
@@ -214,18 +214,18 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.checkAccess(r, collectionName, rules.OpUpdate, existingDoc); err != nil {
-		if errors.Is(err, rules.ErrAccessDenied) {
+	if accessErr := h.checkAccess(r, collectionName, rules.OpUpdate, existingDoc); accessErr != nil {
+		if errors.Is(accessErr, rules.ErrAccessDenied) {
 			Forbidden(w, "Access denied")
 			return
 		}
-		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		log.Error().Err(accessErr).Str("collection", collectionName).Msg("Rule evaluation failed")
 		InternalError(w, "Failed to check access")
 		return
 	}
 
 	var data database.Row
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&data); decodeErr != nil {
 		Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
@@ -274,12 +274,12 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.checkAccess(r, collectionName, rules.OpDelete, existingDoc); err != nil {
-		if errors.Is(err, rules.ErrAccessDenied) {
+	if accessErr := h.checkAccess(r, collectionName, rules.OpDelete, existingDoc); accessErr != nil {
+		if errors.Is(accessErr, rules.ErrAccessDenied) {
 			Forbidden(w, "Access denied")
 			return
 		}
-		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		log.Error().Err(accessErr).Str("collection", collectionName).Msg("Rule evaluation failed")
 		InternalError(w, "Failed to check access")
 		return
 	}

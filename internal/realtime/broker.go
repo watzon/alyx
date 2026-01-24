@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -279,7 +280,7 @@ func (b *Broker) handleInsert(sub *Subscription, col *schema.Collection, docID s
 	collection := database.NewCollection(b.db, col)
 	doc, err := collection.FindOne(context.Background(), docID)
 	if err != nil {
-		if err == database.ErrNotFound {
+		if errors.Is(err, database.ErrNotFound) {
 			return &Changes{}, nil
 		}
 		return nil, err
@@ -299,7 +300,7 @@ func (b *Broker) handleUpdate(sub *Subscription, col *schema.Collection, docID s
 
 	doc, err := collection.FindOne(context.Background(), docID)
 	if err != nil {
-		if err == database.ErrNotFound {
+		if errors.Is(err, database.ErrNotFound) {
 			return b.handleMissingDoc(sub, docID, wasInSet), nil
 		}
 		return nil, err

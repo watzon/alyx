@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/watzon/alyx/internal/auth"
@@ -37,8 +38,8 @@ func TestEngine_LoadSchema(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	if !engine.HasRule("posts", OpCreate) {
@@ -76,7 +77,7 @@ func TestEngine_InvalidRule(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err == nil {
+	if loadErr := engine.LoadSchema(s); loadErr == nil {
 		t.Error("Expected LoadSchema to fail with invalid rule")
 	}
 }
@@ -98,8 +99,8 @@ func TestEngine_Evaluate_PublicRead(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	allowed, err := engine.Evaluate("posts", OpRead, &EvalContext{})
@@ -129,8 +130,8 @@ func TestEngine_Evaluate_RequireAuth(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	allowed, err := engine.Evaluate("posts", OpCreate, &EvalContext{
@@ -173,8 +174,8 @@ func TestEngine_Evaluate_OwnerOnly(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	allowed, err := engine.Evaluate("posts", OpUpdate, &EvalContext{
@@ -219,8 +220,8 @@ func TestEngine_Evaluate_RoleCheck(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	allowed, err := engine.Evaluate("posts", OpDelete, &EvalContext{
@@ -261,8 +262,8 @@ func TestEngine_Evaluate_NoRule(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	allowed, err := engine.Evaluate("posts", OpCreate, &EvalContext{})
@@ -292,8 +293,8 @@ func TestEngine_CheckAccess(t *testing.T) {
 		},
 	}
 
-	if err := engine.LoadSchema(s); err != nil {
-		t.Fatalf("LoadSchema failed: %v", err)
+	if loadErr := engine.LoadSchema(s); loadErr != nil {
+		t.Fatalf("LoadSchema failed: %v", loadErr)
 	}
 
 	err = engine.CheckAccess("posts", OpRead, &EvalContext{})
@@ -301,7 +302,7 @@ func TestEngine_CheckAccess(t *testing.T) {
 		t.Error("Expected CheckAccess to return error for denied access")
 	}
 
-	if err != ErrAccessDenied {
+	if !errors.Is(err, ErrAccessDenied) {
 		t.Errorf("Expected ErrAccessDenied, got %v", err)
 	}
 }

@@ -93,7 +93,7 @@ func (e *Engine) LoadSchema(s *schema.Schema) error {
 func (e *Engine) compileRule(collection string, op Operation, expr string) error {
 	ast, issues := e.env.Compile(expr)
 	if issues != nil && issues.Err() != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidRuleExpr, issues.Err())
+		return fmt.Errorf("%w: %w", ErrInvalidRuleExpr, issues.Err())
 	}
 
 	program, err := e.env.Program(ast)
@@ -134,7 +134,7 @@ func (e *Engine) Evaluate(collection string, op Operation, ctx *EvalContext) (bo
 
 	result, _, err := program.Eval(vars)
 	if err != nil {
-		return false, fmt.Errorf("%w: %v", ErrRuleEvaluation, err)
+		return false, fmt.Errorf("%w: %w", ErrRuleEvaluation, err)
 	}
 
 	allowed, ok := result.Value().(bool)

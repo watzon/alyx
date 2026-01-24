@@ -365,6 +365,8 @@ func (pm *PoolManager) Stats() map[Runtime]PoolStats {
 				ready++
 			case ContainerStateBusy:
 				busy++
+			case ContainerStateCreating, ContainerStateError, ContainerStateStopping, ContainerStateStopped:
+				// Not ready or busy
 			}
 		}
 		pool.mu.RUnlock()

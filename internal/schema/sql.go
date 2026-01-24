@@ -14,7 +14,8 @@ func NewSQLGenerator(s *Schema) *SQLGenerator {
 }
 
 func (g *SQLGenerator) GenerateAll() []string {
-	var statements []string
+	estimatedSize := 2 + len(g.schema.Collections)*3
+	statements := make([]string, 0, estimatedSize)
 
 	statements = append(statements, g.GenerateInternalTables()...)
 
@@ -82,10 +83,11 @@ func (g *SQLGenerator) GenerateCreateTable(col *Collection) string {
 	sb.WriteString(col.Name)
 	sb.WriteString(" (\n")
 
-	var columnDefs []string
-	var constraints []string
+	orderedFields := col.OrderedFields()
+	columnDefs := make([]string, 0, len(orderedFields))
+	constraints := make([]string, 0, len(orderedFields))
 
-	for _, field := range col.OrderedFields() {
+	for _, field := range orderedFields {
 		columnDefs = append(columnDefs, g.generateColumnDef(field))
 
 		if field.References != "" {
@@ -93,7 +95,8 @@ func (g *SQLGenerator) GenerateCreateTable(col *Collection) string {
 		}
 	}
 
-	allDefs := append(columnDefs, constraints...)
+	columnDefs = append(columnDefs, constraints...)
+	allDefs := columnDefs
 	sb.WriteString("\t")
 	sb.WriteString(strings.Join(allDefs, ",\n\t"))
 	sb.WriteString("\n)")
@@ -137,7 +140,7 @@ func (g *SQLGenerator) generateForeignKey(f *Field) string {
 }
 
 func (g *SQLGenerator) GenerateIndexes(col *Collection) []string {
-	var indexes []string
+	indexes := make([]string, 0, len(col.Fields))
 
 	for _, field := range col.Fields {
 		if field.Index && !field.Primary && !field.Unique {
@@ -171,8 +174,9 @@ BEGIN
 	VALUES ('%s', 'INSERT', NEW.%s);
 END`, col.Name, col.Name, col.Name, pk.Name))
 
-	var updateFields []string
-	for _, field := range col.OrderedFields() {
+	orderedFields := col.OrderedFields()
+	updateFields := make([]string, 0, len(orderedFields))
+	for _, field := range orderedFields {
 		if field.Primary {
 			continue
 		}

@@ -226,14 +226,14 @@ func (p *baseProvider) ExchangeCode(ctx context.Context, code, redirectURI strin
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTokenExchange, err)
+		return nil, fmt.Errorf("%w: %w", ErrTokenExchange, err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTokenExchange, err)
+		return nil, fmt.Errorf("%w: %w", ErrTokenExchange, err)
 	}
 	defer resp.Body.Close()
 
@@ -251,7 +251,7 @@ func (p *baseProvider) ExchangeCode(ctx context.Context, code, redirectURI strin
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTokenExchange, err)
+		return nil, fmt.Errorf("%w: %w", ErrTokenExchange, err)
 	}
 
 	token := &OAuthToken{
@@ -271,14 +271,14 @@ func (p *baseProvider) ExchangeCode(ctx context.Context, code, redirectURI strin
 func fetchUserInfo(ctx context.Context, url, accessToken string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUserInfoFetch, err)
+		return nil, fmt.Errorf("%w: %w", ErrUserInfoFetch, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUserInfoFetch, err)
+		return nil, fmt.Errorf("%w: %w", ErrUserInfoFetch, err)
 	}
 	defer resp.Body.Close()
 
@@ -289,7 +289,7 @@ func fetchUserInfo(ctx context.Context, url, accessToken string) (map[string]any
 
 	var data map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUserInfoFetch, err)
+		return nil, fmt.Errorf("%w: %w", ErrUserInfoFetch, err)
 	}
 
 	return data, nil

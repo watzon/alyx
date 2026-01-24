@@ -154,8 +154,8 @@ func (c *Collection) Create(ctx context.Context, data Row) (Row, error) {
 	insertSQL, args := insert.Build()
 	_, err := c.db.ExecContext(ctx, insertSQL, args...)
 	if err != nil {
-		if classified := ClassifyError(err); classified != err {
-			return nil, classified
+		if !errors.Is(ClassifyError(err), err) {
+			return nil, ClassifyError(err)
 		}
 		return nil, fmt.Errorf("inserting document: %w", err)
 	}
@@ -204,8 +204,8 @@ func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, erro
 	updateSQL, args := update.Build()
 	result, err := c.db.ExecContext(ctx, updateSQL, args...)
 	if err != nil {
-		if classified := ClassifyError(err); classified != err {
-			return nil, classified
+		if !errors.Is(ClassifyError(err), err) {
+			return nil, ClassifyError(err)
 		}
 		return nil, fmt.Errorf("updating document: %w", err)
 	}
@@ -321,6 +321,8 @@ func (c *Collection) processRow(row Row) Row {
 					row[fieldName] = t
 				}
 			}
+		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
+			// No conversion needed
 		}
 	}
 
@@ -359,6 +361,8 @@ func (c *Collection) convertValue(value any, field *schema.Field) any {
 		case string:
 			return v
 		}
+	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
+		// Return as-is
 	}
 
 	return value

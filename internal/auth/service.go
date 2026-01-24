@@ -82,8 +82,8 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, *To
 		Metadata:  input.Metadata,
 	}
 
-	if err := s.createUser(ctx, user, passwordHash); err != nil {
-		return nil, nil, fmt.Errorf("creating user: %w", err)
+	if createErr := s.createUser(ctx, user, passwordHash); createErr != nil {
+		return nil, nil, fmt.Errorf("creating user: %w", createErr)
 	}
 
 	log.Info().Str("user_id", user.ID).Str("email", user.Email).Msg("User registered")
@@ -112,7 +112,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput, userAgent, ipAddr
 		return nil, nil, ErrInvalidCredentials
 	}
 
-	if err := VerifyPassword(input.Password, passwordHash); err != nil {
+	if verifyErr := VerifyPassword(input.Password, passwordHash); verifyErr != nil {
 		return nil, nil, ErrInvalidCredentials
 	}
 
@@ -369,36 +369,36 @@ func (s *Service) OAuthLogin(ctx context.Context, userInfo *OAuthUserInfo, userA
 	}
 
 	if oauthAccount != nil {
-		user, err := s.GetUserByID(ctx, oauthAccount.UserID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("getting user: %w", err)
+		user, getUserErr := s.GetUserByID(ctx, oauthAccount.UserID)
+		if getUserErr != nil {
+			return nil, nil, fmt.Errorf("getting user: %w", getUserErr)
 		}
 
 		log.Info().Str("user_id", user.ID).Str("provider", userInfo.Provider).Msg("OAuth login")
 
-		tokens, err := s.createSession(ctx, user, userAgent, ipAddress)
-		if err != nil {
-			return nil, nil, fmt.Errorf("creating session: %w", err)
+		tokens, sessionErr := s.createSession(ctx, user, userAgent, ipAddress)
+		if sessionErr != nil {
+			return nil, nil, fmt.Errorf("creating session: %w", sessionErr)
 		}
 
 		return user, tokens, nil
 	}
 
-	existingUser, err := s.getUserByEmail(ctx, userInfo.Email)
-	if err != nil && !errors.Is(err, ErrUserNotFound) {
-		return nil, nil, fmt.Errorf("checking existing user: %w", err)
+	existingUser, getUserErr := s.getUserByEmail(ctx, userInfo.Email)
+	if getUserErr != nil && !errors.Is(getUserErr, ErrUserNotFound) {
+		return nil, nil, fmt.Errorf("checking existing user: %w", getUserErr)
 	}
 
 	if existingUser != nil {
-		if err := s.linkOAuthAccount(ctx, existingUser.ID, userInfo); err != nil {
-			return nil, nil, fmt.Errorf("linking oauth account: %w", err)
+		if linkErr := s.linkOAuthAccount(ctx, existingUser.ID, userInfo); linkErr != nil {
+			return nil, nil, fmt.Errorf("linking oauth account: %w", linkErr)
 		}
 
 		log.Info().Str("user_id", existingUser.ID).Str("provider", userInfo.Provider).Msg("OAuth account linked to existing user")
 
-		tokens, err := s.createSession(ctx, existingUser, userAgent, ipAddress)
-		if err != nil {
-			return nil, nil, fmt.Errorf("creating session: %w", err)
+		tokens, sessionErr := s.createSession(ctx, existingUser, userAgent, ipAddress)
+		if sessionErr != nil {
+			return nil, nil, fmt.Errorf("creating session: %w", sessionErr)
 		}
 
 		return existingUser, tokens, nil
@@ -412,12 +412,12 @@ func (s *Service) OAuthLogin(ctx context.Context, userInfo *OAuthUserInfo, userA
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	if err := s.createUser(ctx, user, ""); err != nil {
-		return nil, nil, fmt.Errorf("creating user: %w", err)
+	if createErr := s.createUser(ctx, user, ""); createErr != nil {
+		return nil, nil, fmt.Errorf("creating user: %w", createErr)
 	}
 
-	if err := s.linkOAuthAccount(ctx, user.ID, userInfo); err != nil {
-		return nil, nil, fmt.Errorf("linking oauth account: %w", err)
+	if linkErr := s.linkOAuthAccount(ctx, user.ID, userInfo); linkErr != nil {
+		return nil, nil, fmt.Errorf("linking oauth account: %w", linkErr)
 	}
 
 	log.Info().Str("user_id", user.ID).Str("email", user.Email).Str("provider", userInfo.Provider).Msg("User registered via OAuth")

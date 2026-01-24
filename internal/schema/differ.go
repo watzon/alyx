@@ -61,11 +61,11 @@ func NewDiffer() *Differ {
 	return &Differ{}
 }
 
-func (d *Differ) Diff(old, new *Schema) []*Change {
+func (d *Differ) Diff(old, newSchema *Schema) []*Change {
 	var changes []*Change
 
 	for name := range old.Collections {
-		if _, exists := new.Collections[name]; !exists {
+		if _, exists := newSchema.Collections[name]; !exists {
 			changes = append(changes, &Change{
 				Type:           ChangeDropCollection,
 				Collection:     name,
@@ -76,7 +76,7 @@ func (d *Differ) Diff(old, new *Schema) []*Change {
 		}
 	}
 
-	for name, newCol := range new.Collections {
+	for name, newCol := range newSchema.Collections {
 		oldCol, exists := old.Collections[name]
 		if !exists {
 			changes = append(changes, &Change{
@@ -94,11 +94,11 @@ func (d *Differ) Diff(old, new *Schema) []*Change {
 	return changes
 }
 
-func (d *Differ) diffCollection(name string, old, new *Collection) []*Change {
+func (d *Differ) diffCollection(name string, old, newCol *Collection) []*Change {
 	var changes []*Change
 
 	for fieldName := range old.Fields {
-		if _, exists := new.Fields[fieldName]; !exists {
+		if _, exists := newCol.Fields[fieldName]; !exists {
 			changes = append(changes, &Change{
 				Type:           ChangeDropField,
 				Collection:     name,
@@ -111,7 +111,7 @@ func (d *Differ) diffCollection(name string, old, new *Collection) []*Change {
 		}
 	}
 
-	for fieldName, newField := range new.Fields {
+	for fieldName, newField := range newCol.Fields {
 		oldField, exists := old.Fields[fieldName]
 		if !exists {
 			safe := newField.Nullable || newField.HasDefault()
@@ -132,9 +132,9 @@ func (d *Differ) diffCollection(name string, old, new *Collection) []*Change {
 		}
 	}
 
-	changes = append(changes, d.diffIndexes(name, old, new)...)
+	changes = append(changes, d.diffIndexes(name, old, newCol)...)
 
-	if d.rulesChanged(old.Rules, new.Rules) {
+	if d.rulesChanged(old.Rules, newCol.Rules) {
 		changes = append(changes, &Change{
 			Type:        ChangeModifyRules,
 			Collection:  name,
@@ -146,65 +146,65 @@ func (d *Differ) diffCollection(name string, old, new *Collection) []*Change {
 	return changes
 }
 
-func (d *Differ) diffField(collection, fieldName string, old, new *Field) []*Change {
+func (d *Differ) diffField(collection, fieldName string, old, newField *Field) []*Change {
 	var changes []*Change
 
-	if old.Type != new.Type {
+	if old.Type != newField.Type {
 		changes = append(changes, &Change{
 			Type:           ChangeModifyField,
 			Collection:     collection,
 			Field:          fieldName,
 			OldField:       old,
-			NewField:       new,
+			NewField:       newField,
 			Safe:           false,
 			RequiresManual: true,
-			Description:    fmt.Sprintf("Field type change from %s to %s requires manual migration", old.Type, new.Type),
+			Description:    fmt.Sprintf("Field type change from %s to %s requires manual migration", old.Type, newField.Type),
 		})
 	}
 
-	if old.Nullable && !new.Nullable {
+	if old.Nullable && !newField.Nullable {
 		changes = append(changes, &Change{
 			Type:           ChangeModifyField,
 			Collection:     collection,
 			Field:          fieldName,
 			OldField:       old,
-			NewField:       new,
+			NewField:       newField,
 			Safe:           false,
 			RequiresManual: true,
 			Description:    "Making field non-nullable requires manual migration to handle existing NULL values",
 		})
-	} else if !old.Nullable && new.Nullable {
+	} else if !old.Nullable && newField.Nullable {
 		changes = append(changes, &Change{
 			Type:        ChangeModifyField,
 			Collection:  collection,
 			Field:       fieldName,
 			OldField:    old,
-			NewField:    new,
+			NewField:    newField,
 			Safe:        true,
 			Description: "Making field nullable is safe",
 		})
 	}
 
-	if !old.Unique && new.Unique {
+	if !old.Unique && newField.Unique {
 		changes = append(changes, &Change{
 			Type:           ChangeModifyField,
 			Collection:     collection,
 			Field:          fieldName,
 			OldField:       old,
-			NewField:       new,
+			NewField:       newField,
 			Safe:           false,
 			RequiresManual: true,
 			Description:    "Adding unique constraint requires manual verification of existing data",
 		})
 	}
 
-	if old.References != new.References {
+	if old.References != newField.References {
 		changes = append(changes, &Change{
 			Type:           ChangeModifyField,
 			Collection:     collection,
 			Field:          fieldName,
 			OldField:       old,
-			NewField:       new,
+			NewField:       newField,
 			Safe:           false,
 			RequiresManual: true,
 			Description:    "Changing foreign key reference requires manual migration",
@@ -214,7 +214,7 @@ func (d *Differ) diffField(collection, fieldName string, old, new *Field) []*Cha
 	return changes
 }
 
-func (d *Differ) diffIndexes(collection string, old, new *Collection) []*Change {
+func (d *Differ) diffIndexes(collection string, old, newCol *Collection) []*Change {
 	var changes []*Change
 
 	oldIndexes := make(map[string]*Index)
@@ -223,7 +223,7 @@ func (d *Differ) diffIndexes(collection string, old, new *Collection) []*Change 
 	}
 
 	newIndexes := make(map[string]*Index)
-	for _, idx := range new.Indexes {
+	for _, idx := range newCol.Indexes {
 		newIndexes[idx.Name] = idx
 	}
 
@@ -254,17 +254,17 @@ func (d *Differ) diffIndexes(collection string, old, new *Collection) []*Change 
 	return changes
 }
 
-func (d *Differ) rulesChanged(old, new *Rules) bool {
-	if old == nil && new == nil {
+func (d *Differ) rulesChanged(old, newRules *Rules) bool {
+	if old == nil && newRules == nil {
 		return false
 	}
-	if old == nil || new == nil {
+	if old == nil || newRules == nil {
 		return true
 	}
-	return old.Create != new.Create ||
-		old.Read != new.Read ||
-		old.Update != new.Update ||
-		old.Delete != new.Delete
+	return old.Create != newRules.Create ||
+		old.Read != newRules.Read ||
+		old.Update != newRules.Update ||
+		old.Delete != newRules.Delete
 }
 
 func (d *Differ) SafeChanges(changes []*Change) []*Change {

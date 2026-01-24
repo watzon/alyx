@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -156,7 +157,7 @@ func TestOAuthManager_GetProvider(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		_, err := m.GetProvider("nonexistent")
-		if err != ErrProviderNotFound {
+		if !errors.Is(err, ErrProviderNotFound) {
 			t.Errorf("expected ErrProviderNotFound, got %v", err)
 		}
 	})
@@ -190,14 +191,14 @@ func TestOAuthManager_StateValidation(t *testing.T) {
 		}
 
 		err = m.ValidateState(state)
-		if err != ErrInvalidState {
+		if !errors.Is(err, ErrInvalidState) {
 			t.Errorf("expected ErrInvalidState on second use, got %v", err)
 		}
 	})
 
 	t.Run("invalid state", func(t *testing.T) {
 		err := m.ValidateState("invalid-state-token")
-		if err != ErrInvalidState {
+		if !errors.Is(err, ErrInvalidState) {
 			t.Errorf("expected ErrInvalidState, got %v", err)
 		}
 	})

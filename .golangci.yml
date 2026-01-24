@@ -180,20 +180,14 @@ issues:
       linters:
         - all
 
-    # Allow err shadowing in error handling blocks
-    - linters:
-        - govet
-      text: "shadow: declaration of \"err\""
+
 
     # Allow init functions in CLI and test setup
     - path: internal/cli/
       linters:
         - gochecknoinits
 
-    # Allow predeclared identifiers as param names (common pattern)
-    - linters:
-        - predeclared
-      text: "param .* has same name as predeclared identifier"
+
 
     # Allow blank imports for SQL drivers
     - path: internal/database/database\.go
@@ -201,21 +195,7 @@ issues:
         - revive
       text: "blank-imports"
 
-    # Allow higher complexity in validation functions
-    - path: internal/database/validate\.go
-      linters:
-        - gocyclo
 
-    # Allow higher complexity in parser
-    - path: internal/schema/parser\.go
-      linters:
-        - gocyclo
-
-    # Allow higher complexity in openapi generation
-    - path: internal/openapi/
-      linters:
-        - gocyclo
-        - goconst
 
     # Allow ValidationErrors naming (established pattern)
     - linters:
@@ -227,30 +207,15 @@ issues:
       linters:
         - unparam
 
-    # Allow godot exclusions for inline comments
-    - linters:
-        - godot
-      text: "Comment should end in a period"
 
-    # Prealloc is good advice but not critical
-    - linters:
-        - prealloc
-      text: "Consider pre-allocating"
 
-    # Allow some gocritic patterns
-    - linters:
-        - gocritic
-      text: "appendAssign|exitAfterDefer"
 
-    # Allow exhaustive switch warnings where default is handled
-    - linters:
-        - exhaustive
-      text: "missing cases in switch"
 
-    # Allow some gosec warnings
-    - linters:
-        - gosec
-      text: "G306"
+
+
+
+
+
 
     # Allow config function naming
     - path: internal/config/loader\.go
@@ -258,15 +223,9 @@ issues:
         - revive
       text: "ConfigFilePath"
 
-    # Allow errorlint issues in existing error handling code
-    - linters:
-        - errorlint
-      text: "comparing with|type assertion|non-wrapping"
 
-    # Allow goconst for test fixtures
-    - path: _test\.go
-      linters:
-        - goconst
+
+
 
   max-issues-per-linter: 50
   max-same-issues: 10
