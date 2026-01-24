@@ -214,13 +214,13 @@ Supported languages:
 
 Alyx is under active development following a phased approach:
 
-**Current Status**: Phase 1 Complete ✅ (~19% to MVP)
+**Current Status**: Phase 3 Complete ✅ (~50% to MVP)
 
 | Phase | Status | Features |
 |-------|--------|----------|
 | **Phase 1: Foundation** | ✅ Complete | Schema system, database layer, REST API |
-| **Phase 2: Realtime** | 🔜 Next | WebSocket subscriptions, live updates |
-| **Phase 3: Authentication** | ⏳ Planned | JWT auth, OAuth, CEL-based access control |
+| **Phase 2: Realtime** | ✅ Complete | WebSocket subscriptions, live updates |
+| **Phase 3: Authentication** | ✅ Complete | JWT auth, OAuth, CEL-based access control |
 | **Phase 4: Functions** | ⏳ Planned | Container-based serverless functions |
 | **Phase 5: CLI & DX** | ⏳ Planned | Dev mode, code generation, deployment |
 | **Phase 6: Polish** | ⏳ Planned | Admin UI, documentation, examples |

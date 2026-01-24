@@ -1583,31 +1583,44 @@ require (
 
 ### Phase 3: Authentication (Week 4)
 
-**Goal**: Complete auth system with CEL rules
+**Goal**: Complete auth system with CEL rules and OAuth
 
-#### 3.1 Auth Infrastructure (2 days)
+#### 3.1 Auth Infrastructure (2 days) ✅
 
-- [ ] User table and session management
-- [ ] Password hashing (bcrypt)
-- [ ] JWT generation and validation
-- [ ] Refresh token rotation
+- [x] User table and session management
+- [x] Password hashing (bcrypt)
+- [x] JWT generation and validation
+- [x] Refresh token rotation
 
-#### 3.2 Auth Endpoints (2 days)
+#### 3.2 Auth Endpoints (2 days) ✅
 
-- [ ] Register endpoint
-- [ ] Login endpoint
-- [ ] Refresh endpoint
-- [ ] Logout endpoint
-- [ ] Auth middleware
+- [x] Register endpoint
+- [x] Login endpoint
+- [x] Refresh endpoint
+- [x] Logout endpoint
+- [x] Auth middleware
 
-#### 3.3 CEL Rules Engine (3 days)
+#### 3.3 CEL Rules Engine (3 days) ✅
 
-- [ ] CEL environment setup
-- [ ] Rule compilation and caching
-- [ ] Rule evaluation on CRUD operations
-- [ ] Integration with realtime (filter by permission)
+- [x] CEL environment setup
+- [x] Rule compilation and caching
+- [x] Rule evaluation on CRUD operations
+- [x] Integration with realtime (filter by permission)
 
-**Deliverable**: Protected endpoints with CEL-based access control
+#### 3.4 OAuth / Social Login (2 days) ✅
+
+- [x] OAuth configuration in config structs
+- [x] OAuth provider abstraction (internal/auth/oauth.go)
+- [x] GitHub OAuth provider
+- [x] Google OAuth provider
+- [x] GET /api/auth/providers endpoint
+- [x] GET /api/auth/oauth/:provider redirect endpoint
+- [x] GET /api/auth/oauth/:provider/callback endpoint
+- [x] _alyx_oauth_accounts table and user linking
+- [x] Account linking (existing user with same email)
+- [x] OpenAPI spec updates for OAuth endpoints
+
+**Deliverable**: Protected endpoints with CEL-based access control and social login
 
 ---
 
