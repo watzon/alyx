@@ -2,13 +2,16 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/watzon/alyx/internal/codegen"
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/schema"
@@ -19,6 +22,7 @@ var (
 	devPort       int
 	devHost       string
 	devSchemaPath string
+	devNoWatch    bool
 )
 
 var devCmd = &cobra.Command{
@@ -30,7 +34,9 @@ The development server will:
   - Load schema from schema.yaml
   - Create/update database tables
   - Start the HTTP server
-  - Watch for file changes (schema, functions)`,
+  - Watch for file changes (schema, functions)
+  
+Use --no-watch to disable file watching.`,
 	RunE: runDev,
 }
 
@@ -38,6 +44,7 @@ func init() {
 	devCmd.Flags().IntVarP(&devPort, "port", "p", 8090, "Port to listen on")
 	devCmd.Flags().StringVar(&devHost, "host", "localhost", "Host to bind to")
 	devCmd.Flags().StringVar(&devSchemaPath, "schema", "", "Path to schema file (default: schema.yaml or schema.yml)")
+	devCmd.Flags().BoolVar(&devNoWatch, "no-watch", false, "Disable file watching")
 
 	rootCmd.AddCommand(devCmd)
 }
@@ -82,15 +89,9 @@ func runDev(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	gen := schema.NewSQLGenerator(s)
-	for _, stmt := range gen.GenerateAll() {
-		if _, execErr := db.Exec(stmt); execErr != nil {
-			log.Debug().Str("sql", stmt).Msg("Executing SQL")
-			log.Error().Err(execErr).Msg("Failed to execute schema SQL")
-			return execErr
-		}
+	if err := applySchema(db, s); err != nil {
+		return err
 	}
-	log.Info().Msg("Database schema applied")
 
 	srv := server.New(cfg, db, s)
 
@@ -107,6 +108,41 @@ func runDev(cmd *cobra.Command, args []string) error {
 		_ = srv.Shutdown(context.Background())
 	}()
 
+	if !devNoWatch && cfg.Dev.Watch {
+		watcher, watchErr := setupDevWatcher(ctx, schemaPath, cfg.Functions.Path, db, srv, cfg)
+		if watchErr != nil {
+			log.Warn().Err(watchErr).Msg("Failed to set up file watcher, continuing without hot-reload")
+		} else {
+			defer func() { _ = watcher.Stop() }()
+			log.Info().Msg("File watching enabled")
+		}
+	}
+
+	logServerInfo(cfg, s)
+
+	if err := srv.Start(ctx); err != nil {
+		log.Error().Err(err).Msg("Server error")
+		return err
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+func applySchema(db *database.DB, s *schema.Schema) error {
+	gen := schema.NewSQLGenerator(s)
+	for _, stmt := range gen.GenerateAll() {
+		if _, err := db.Exec(stmt); err != nil {
+			log.Debug().Str("sql", stmt).Msg("Executing SQL")
+			log.Error().Err(err).Msg("Failed to execute schema SQL")
+			return err
+		}
+	}
+	log.Info().Msg("Database schema applied")
+	return nil
+}
+
+func logServerInfo(cfg *config.Config, s *schema.Schema) {
 	log.Info().
 		Str("url", "http://"+cfg.Server.Address()).
 		Msg("Server started")
@@ -132,13 +168,143 @@ func runDev(cmd *cobra.Command, args []string) error {
 			Msg("Realtime WebSocket endpoint")
 	}
 
-	if err := srv.Start(ctx); err != nil {
-		log.Error().Err(err).Msg("Server error")
-		return err
+	if cfg.Functions.Enabled {
+		log.Info().
+			Str("functions", cfg.Functions.Path).
+			Msg("Functions directory")
+	}
+}
+
+func setupDevWatcher(ctx context.Context, schemaPath, functionsPath string, db *database.DB, srv *server.Server, cfg *config.Config) (*DevWatcher, error) {
+	absSchemaPath, _ := filepath.Abs(schemaPath)
+	absFunctionsPath := ""
+	if functionsPath != "" {
+		absFunctionsPath, _ = filepath.Abs(functionsPath)
 	}
 
-	<-ctx.Done()
-	return nil
+	watcher, err := NewDevWatcher(DevWatcherConfig{
+		SchemaPath:    absSchemaPath,
+		FunctionsPath: absFunctionsPath,
+		OnSchemaChange: func(path string) {
+			handleSchemaChange(path, db, srv, cfg)
+		},
+		OnFunctionChange: func(path string, eventType EventType) {
+			handleFunctionChange(path, eventType, srv)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	watcher.Start(ctx)
+	return watcher, nil
+}
+
+func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *config.Config) {
+	log.Info().Str("path", path).Msg("Schema file changed")
+
+	newSchema, err := schema.ParseFile(path)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to parse updated schema")
+		return
+	}
+
+	currentSchema := srv.Schema()
+	differ := schema.NewDiffer()
+	changes := differ.Diff(currentSchema, newSchema)
+
+	if len(changes) == 0 {
+		log.Debug().Msg("No schema changes detected")
+		return
+	}
+
+	safeChanges := differ.SafeChanges(changes)
+	unsafeChanges := differ.UnsafeChanges(changes)
+
+	for _, c := range safeChanges {
+		log.Info().Str("change", c.String()).Msg("Applying schema change")
+	}
+
+	if len(safeChanges) > 0 {
+		migrator := schema.NewMigrator(db.DB, path, "migrations")
+		if err := migrator.ApplySafeChanges(safeChanges); err != nil {
+			log.Error().Err(err).Msg("Failed to apply schema changes")
+			return
+		}
+	}
+
+	if err := srv.UpdateSchema(newSchema); err != nil {
+		log.Error().Err(err).Msg("Failed to update server schema")
+		return
+	}
+
+	log.Info().
+		Int("applied", len(safeChanges)).
+		Int("pending", len(unsafeChanges)).
+		Msg("Schema changes applied")
+
+	if len(unsafeChanges) > 0 {
+		log.Warn().Msg("Some changes require manual migration:")
+		for _, c := range unsafeChanges {
+			log.Warn().Str("change", c.String()).Msg("  Requires migration")
+		}
+	}
+
+	// Auto-regenerate client SDKs if configured
+	if cfg.Dev.AutoGenerate && len(cfg.Dev.GenerateLanguages) > 0 {
+		regenerateClients(newSchema, cfg)
+	}
+}
+
+func regenerateClients(s *schema.Schema, cfg *config.Config) {
+	languages := make([]codegen.Language, 0, len(cfg.Dev.GenerateLanguages))
+	for _, langStr := range cfg.Dev.GenerateLanguages {
+		lang, err := codegen.ParseLanguage(langStr)
+		if err != nil {
+			log.Warn().Str("language", langStr).Msg("Unknown language, skipping")
+			continue
+		}
+		languages = append(languages, lang)
+	}
+
+	if len(languages) == 0 {
+		return
+	}
+
+	genCfg := &codegen.Config{
+		OutputDir:   cfg.Dev.GenerateOutput,
+		Languages:   languages,
+		ServerURL:   fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port),
+		PackageName: "alyx",
+	}
+
+	if genCfg.OutputDir == "" {
+		genCfg.OutputDir = "./generated"
+	}
+
+	if err := codegen.GenerateAll(genCfg, s); err != nil {
+		log.Error().Err(err).Msg("Failed to regenerate client SDKs")
+		return
+	}
+
+	log.Info().
+		Strs("languages", cfg.Dev.GenerateLanguages).
+		Str("output", genCfg.OutputDir).
+		Msg("Client SDKs regenerated")
+}
+
+func handleFunctionChange(path string, eventType EventType, srv *server.Server) {
+	log.Info().
+		Str("path", path).
+		Str("event", eventType.String()).
+		Msg("Function file changed")
+
+	if err := srv.ReloadFunctions(); err != nil {
+		log.Error().Err(err).Msg("Failed to reload functions")
+		return
+	}
+
+	log.Info().Msg("Functions reloaded successfully")
 }
 
 func resolveSchemaPath(explicit string) string {

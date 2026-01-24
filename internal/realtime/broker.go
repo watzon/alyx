@@ -455,6 +455,13 @@ func (b *Broker) SubscriptionCount() int {
 	return len(b.subscriptions)
 }
 
+// UpdateSchema updates the broker's schema reference for hot-reloading.
+func (b *Broker) UpdateSchema(s *schema.Schema) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.schema = s
+}
+
 func convertFilter(field string, filter Filter) []*database.Filter {
 	var filters []*database.Filter
 

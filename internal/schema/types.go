@@ -92,6 +92,32 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 	return base
 }
 
+func (t FieldType) PythonType(nullable bool) string {
+	var base string
+	switch t {
+	case FieldTypeUUID, FieldTypeString, FieldTypeText:
+		base = "str"
+	case FieldTypeInt:
+		base = "int"
+	case FieldTypeFloat:
+		base = "float"
+	case FieldTypeBool:
+		base = "bool"
+	case FieldTypeTimestamp:
+		base = "datetime"
+	case FieldTypeJSON:
+		base = "Any"
+	case FieldTypeBlob:
+		base = "bytes"
+	default:
+		base = "str"
+	}
+	if nullable {
+		return "Optional[" + base + "]"
+	}
+	return base
+}
+
 type OnDeleteAction string
 
 const (

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -26,6 +27,7 @@ type Server struct {
 	funcService *functions.Service
 	httpServer  *http.Server
 	router      *Router
+	mu          sync.RWMutex
 }
 
 func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
@@ -147,11 +149,47 @@ func (s *Server) FuncService() *functions.Service {
 }
 
 func (s *Server) GetCollection(name string) (*database.Collection, error) {
+	s.mu.RLock()
 	col, ok := s.schema.Collections[name]
+	s.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("collection %q not found", name)
 	}
 	return database.NewCollection(s.db, col), nil
+}
+
+// UpdateSchema replaces the server's schema and reloads dependent components.
+func (s *Server) UpdateSchema(newSchema *schema.Schema) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.schema = newSchema
+
+	if s.rules != nil {
+		if err := s.rules.LoadSchema(newSchema); err != nil {
+			log.Warn().Err(err).Msg("Failed to reload schema rules")
+		}
+	}
+
+	if s.broker != nil {
+		s.broker.UpdateSchema(newSchema)
+	}
+
+	return nil
+}
+
+// ReloadFunctions triggers rediscovery of serverless functions.
+func (s *Server) ReloadFunctions() error {
+	if s.funcService == nil {
+		return nil
+	}
+
+	if err := s.funcService.ReloadFunctions(); err != nil {
+		return fmt.Errorf("reloading functions: %w", err)
+	}
+
+	log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Functions reloaded")
+	return nil
 }
 
 type contextKey string

@@ -1665,25 +1665,25 @@ require (
 
 **Goal**: Complete development workflow
 
-#### 5.1 CLI Commands (3 days)
+#### 5.1 CLI Commands (3 days) ✅
 
-- [ ] `alyx init` with templates
-- [ ] `alyx migrate` commands
-- [ ] `alyx db` utilities
+- [x] `alyx init` with templates (basic, blog, saas)
+- [x] `alyx migrate` commands (status, apply, rollback, create)
+- [x] `alyx db` utilities (seed, dump, reset)
 
-#### 5.2 Dev Mode (4 days)
+#### 5.2 Dev Mode (4 days) ✅
 
-- [ ] File watcher implementation
-- [ ] Schema change detection + auto-migrate
-- [ ] Function change detection + hot-reload
-- [ ] Dev server with all features
+- [x] File watcher implementation (fsnotify-based)
+- [x] Schema change detection + auto-migrate
+- [x] Function change detection + hot-reload
+- [x] Dev server with all features
 
-#### 5.3 Code Generation (4 days)
+#### 5.3 Code Generation (4 days) ✅
 
-- [ ] TypeScript client generator
-- [ ] Go client generator
-- [ ] Python client generator
-- [ ] Integration with dev mode (auto-regenerate)
+- [x] TypeScript client generator
+- [x] Go client generator
+- [x] Python client generator
+- [x] Integration with dev mode (auto-regenerate)
 
 #### 5.4 Deploy Command (2 days)
 

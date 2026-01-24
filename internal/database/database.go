@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,6 +22,10 @@ type DB struct {
 }
 
 func Open(cfg *config.DatabaseConfig) (*DB, error) {
+	if err := ensureDir(cfg.Path); err != nil {
+		return nil, fmt.Errorf("creating database directory: %w", err)
+	}
+
 	dsn := buildDSN(cfg)
 
 	sqlDB, err := sql.Open("sqlite", dsn)
@@ -48,6 +54,14 @@ func Open(cfg *config.DatabaseConfig) (*DB, error) {
 
 func buildDSN(cfg *config.DatabaseConfig) string {
 	return cfg.Path
+}
+
+func ensureDir(dbPath string) error {
+	dir := filepath.Dir(dbPath)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
 }
 
 func (db *DB) configure() error {
