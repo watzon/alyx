@@ -45,9 +45,6 @@ type ServerConfig struct {
 	// Maximum request body size in bytes
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 
-	// Enable admin UI
-	AdminUI bool `mapstructure:"admin_ui"`
-
 	// TLS configuration (optional)
 	TLS *TLSConfig `mapstructure:"tls"`
 }

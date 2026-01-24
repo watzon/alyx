@@ -144,6 +144,40 @@ make lint
 make fmt
 ```
 
+### Admin UI Development
+
+The admin UI is a SvelteKit application located in the `ui/` directory. It's embedded into the Go binary at build time.
+
+**Production Build:**
+```bash
+make ui-build  # Builds UI and copies to internal/adminui/dist/
+make build     # Go binary now includes the admin UI
+```
+
+**Development with Hot Reload:**
+
+Run two terminals for full hot-reload development:
+
+```bash
+# Terminal 1: Start Vite dev server
+make ui-dev
+
+# Terminal 2: Start Go server with UI proxy
+make dev-ui
+```
+
+This setup:
+- Runs Vite dev server at `http://localhost:5173`
+- Runs Go server at `http://localhost:8090`
+- Proxies `/_admin/*` requests from Go to Vite
+- Provides hot reload for both Go and frontend changes
+
+The `ALYX_ADMIN_UI_DEV` environment variable controls the proxy:
+```bash
+# Manually set if needed
+ALYX_ADMIN_UI_DEV=http://localhost:5173 ./build/alyx dev
+```
+
 ### Docker Deployment
 
 Alyx provides official Docker images for easy deployment:
@@ -323,6 +357,9 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ```
 cmd/alyx/           # Application entrypoint
 internal/
+  adminui/          # Embedded admin UI (go:embed)
+    dist/           # Built SvelteKit app (copied from ui/build)
+    adminui.go      # HTTP handler with dev proxy support
   cli/              # Cobra CLI commands
   config/           # Viper-based configuration
   database/         # SQLite database layer, query builders, CRUD
@@ -333,6 +370,11 @@ internal/
   functions/        # Serverless function runtime
   auth/             # Authentication and authorization
   realtime/         # WebSocket real-time subscriptions
+ui/                 # Admin UI source (SvelteKit + Svelte 5)
+  src/
+    routes/         # SvelteKit routes
+    lib/            # Components, stores, API client
+  build/            # Production build output
 pkg/
   client/           # Client library code
 runtimes/           # Language-specific function runtimes

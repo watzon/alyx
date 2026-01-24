@@ -1702,11 +1702,11 @@ require (
 
 #### 6.1 Admin UI (3 days)
 
-- [ ] Basic Svelte app structure
-- [ ] Schema viewer
-- [ ] Collection browser (CRUD)
-- [ ] Function list and logs
-- [ ] Embed in binary
+- [x] Basic Svelte app structure
+- [x] Schema viewer
+- [x] Collection browser (CRUD)
+- [x] Function list and logs
+- [x] Embed in binary
 
 #### 6.2 Error Handling & Observability (2 days)
 

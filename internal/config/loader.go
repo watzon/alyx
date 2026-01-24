@@ -84,7 +84,6 @@ func setViperDefaults(v *viper.Viper, cfg *Config) {
 	v.SetDefault("server.write_timeout", cfg.Server.WriteTimeout)
 	v.SetDefault("server.idle_timeout", cfg.Server.IdleTimeout)
 	v.SetDefault("server.max_body_size", cfg.Server.MaxBodySize)
-	v.SetDefault("server.admin_ui", cfg.Server.AdminUI)
 
 	v.SetDefault("server.cors.enabled", cfg.Server.CORS.Enabled)
 	v.SetDefault("server.cors.allowed_origins", cfg.Server.CORS.AllowedOrigins)

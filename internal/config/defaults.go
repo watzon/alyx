@@ -59,7 +59,6 @@ func Default() *Config {
 			WriteTimeout: DefaultWriteTimeout,
 			IdleTimeout:  DefaultIdleTimeout,
 			MaxBodySize:  DefaultMaxBodySize,
-			AdminUI:      true,
 			CORS: CORSConfig{
 				Enabled:          true,
 				AllowedOrigins:   []string{"*"},
