@@ -186,7 +186,233 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 		Required: []string{"docs", "total"},
 	}
 
+	addAuthEndpoints(spec)
+
 	return spec
+}
+
+func addAuthEndpoints(spec *Spec) {
+	spec.Tags = append(spec.Tags, Tag{
+		Name:        "auth",
+		Description: "Authentication endpoints",
+	})
+
+	spec.Components.Schemas["User"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"id":         {Type: "string", Format: "uuid"},
+			"email":      {Type: "string", Format: "email"},
+			"verified":   {Type: "boolean"},
+			"created_at": {Type: "string", Format: "date-time"},
+			"updated_at": {Type: "string", Format: "date-time"},
+			"metadata":   {Type: "object", AdditionalProperties: &Schema{}},
+		},
+		Required: []string{"id", "email", "verified", "created_at", "updated_at"},
+	}
+
+	spec.Components.Schemas["TokenPair"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"access_token":  {Type: "string", Description: "JWT access token"},
+			"refresh_token": {Type: "string", Description: "JWT refresh token"},
+			"expires_at":    {Type: "string", Format: "date-time", Description: "Access token expiration time"},
+			"token_type":    {Type: "string", Description: "Token type (Bearer)"},
+		},
+		Required: []string{"access_token", "refresh_token", "expires_at", "token_type"},
+	}
+
+	spec.Components.Schemas["AuthResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"user":   {Ref: "#/components/schemas/User"},
+			"tokens": {Ref: "#/components/schemas/TokenPair"},
+		},
+		Required: []string{"user", "tokens"},
+	}
+
+	spec.Components.Schemas["RegisterInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"email":    {Type: "string", Format: "email"},
+			"password": {Type: "string", MinLength: intPtr(8)},
+			"metadata": {Type: "object", AdditionalProperties: &Schema{}},
+		},
+		Required: []string{"email", "password"},
+	}
+
+	spec.Components.Schemas["LoginInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"email":    {Type: "string", Format: "email"},
+			"password": {Type: "string"},
+		},
+		Required: []string{"email", "password"},
+	}
+
+	spec.Components.Schemas["RefreshInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"refresh_token": {Type: "string"},
+		},
+		Required: []string{"refresh_token"},
+	}
+
+	spec.Paths["/api/auth/register"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "Register a new user",
+			Description: "Create a new user account and return authentication tokens",
+			OperationID: "register",
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "User registration data",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/RegisterInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"201": {Description: "User registered successfully", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AuthResponse"}}}},
+				"400": {Description: "Invalid input or password too weak", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"403": {Description: "Registration is disabled", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"409": {Description: "User already exists", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/login"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "Login",
+			Description: "Authenticate with email and password",
+			OperationID: "login",
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "Login credentials",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/LoginInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "Login successful", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AuthResponse"}}}},
+				"401": {Description: "Invalid credentials", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"403": {Description: "Email not verified", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/refresh"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "Refresh tokens",
+			Description: "Exchange a refresh token for new access and refresh tokens",
+			OperationID: "refreshToken",
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "Refresh token",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/RefreshInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "Tokens refreshed", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AuthResponse"}}}},
+				"401": {Description: "Invalid or expired refresh token", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/logout"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "Logout",
+			Description: "Invalidate a refresh token",
+			OperationID: "logout",
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "Refresh token to invalidate",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/RefreshInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"204": {Description: "Logged out successfully"},
+				"400": {Description: "Invalid request", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/me"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "Get current user",
+			Description: "Get the currently authenticated user's information",
+			OperationID: "getCurrentUser",
+			Responses: map[string]Response{
+				"200": {Description: "Current user", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/User"}}}},
+				"401": {Description: "Not authenticated", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Components.Schemas["ProvidersResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"providers": {Type: "array", Items: &Schema{Type: "string"}, Description: "List of enabled OAuth provider names"},
+		},
+		Required: []string{"providers"},
+	}
+
+	spec.Paths["/api/auth/providers"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "List OAuth providers",
+			Description: "Get a list of enabled OAuth providers",
+			OperationID: "listOAuthProviders",
+			Responses: map[string]Response{
+				"200": {Description: "List of enabled OAuth providers", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/ProvidersResponse"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/oauth/{provider}"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "OAuth redirect",
+			Description: "Initiates the OAuth flow by redirecting to the provider's authorization URL",
+			OperationID: "oauthRedirect",
+			Parameters: []Parameter{
+				{Name: "provider", In: "path", Required: true, Description: "OAuth provider name (e.g., github, google)", Schema: &Schema{Type: "string"}},
+			},
+			Responses: map[string]Response{
+				"307": {Description: "Redirect to OAuth provider"},
+				"400": {Description: "Provider name is required", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "OAuth provider not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/auth/oauth/{provider}/callback"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"auth"},
+			Summary:     "OAuth callback",
+			Description: "Handles the OAuth callback from the provider and completes authentication",
+			OperationID: "oauthCallback",
+			Parameters: []Parameter{
+				{Name: "provider", In: "path", Required: true, Description: "OAuth provider name", Schema: &Schema{Type: "string"}},
+				{Name: "code", In: "query", Required: true, Description: "Authorization code from provider", Schema: &Schema{Type: "string"}},
+				{Name: "state", In: "query", Required: true, Description: "State parameter for CSRF protection", Schema: &Schema{Type: "string"}},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "OAuth login successful", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AuthResponse"}}}},
+				"400": {Description: "Invalid callback parameters or OAuth error", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "OAuth provider not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"409": {Description: "OAuth account already linked to another user", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+}
+
+func intPtr(i int) *int {
+	return &i
 }
 
 func generateSchema(col *schema.Collection) *Schema {
