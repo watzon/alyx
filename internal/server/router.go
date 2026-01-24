@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/watzon/alyx/internal/adminui"
 	"github.com/watzon/alyx/internal/auth"
+	"github.com/watzon/alyx/internal/functions"
 	"github.com/watzon/alyx/internal/server/handlers"
 )
 
@@ -45,6 +47,13 @@ func (r *Router) Use(mw Middleware) {
 func (r *Router) setupRoutes() {
 	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config(), r.server.Rules())
 
+	if r.server.cfg.AdminUI.Enabled {
+		uiHandler := adminui.New(&r.server.cfg.AdminUI)
+		basePath := r.server.cfg.AdminUI.Path
+		r.mux.Handle("GET "+basePath+"/{path...}", http.StripPrefix(basePath, uiHandler))
+		r.mux.Handle("GET "+basePath, http.RedirectHandler(basePath+"/", http.StatusMovedPermanently))
+	}
+
 	r.mux.HandleFunc("GET /", r.wrap(h.HealthCheck))
 	r.mux.HandleFunc("GET /health", r.wrap(h.HealthCheck))
 
@@ -56,6 +65,7 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("DELETE /api/collections/{collection}/{id}", r.wrap(h.DeleteDocument))
 
 	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth)
+	r.mux.HandleFunc("GET /api/auth/status", r.wrap(authHandlers.Status))
 	r.mux.HandleFunc("POST /api/auth/register", r.wrap(authHandlers.Register))
 	r.mux.HandleFunc("POST /api/auth/login", r.wrap(authHandlers.Login))
 	r.mux.HandleFunc("POST /api/auth/refresh", r.wrap(authHandlers.Refresh))
@@ -97,7 +107,12 @@ func (r *Router) setupRoutes() {
 	}
 
 	if r.server.DeployService() != nil {
-		adminHandlers := handlers.NewAdminHandlers(r.server.DeployService())
+		var funcSvc *functions.Service
+		if r.server.FuncService() != nil {
+			funcSvc = r.server.FuncService()
+		}
+		adminHandlers := handlers.NewAdminHandlers(r.server.DeployService(), authHandlers.Service(), r.server.DB(), r.server.Schema(), funcSvc)
+		r.mux.HandleFunc("GET /api/admin/stats", r.wrap(adminHandlers.Stats))
 		r.mux.HandleFunc("POST /api/admin/deploy/prepare", r.wrap(adminHandlers.DeployPrepare))
 		r.mux.HandleFunc("POST /api/admin/deploy/execute", r.wrap(adminHandlers.DeployExecute))
 		r.mux.HandleFunc("POST /api/admin/deploy/rollback", r.wrap(adminHandlers.DeployRollback))
@@ -106,6 +121,13 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
 		r.mux.HandleFunc("GET /api/admin/tokens", r.wrap(adminHandlers.TokenList))
 		r.mux.HandleFunc("DELETE /api/admin/tokens/{name}", r.wrap(adminHandlers.TokenDelete))
+
+		r.mux.HandleFunc("GET /api/admin/users", r.wrap(adminHandlers.UserList))
+		r.mux.HandleFunc("POST /api/admin/users", r.wrap(adminHandlers.UserCreate))
+		r.mux.HandleFunc("GET /api/admin/users/{id}", r.wrap(adminHandlers.UserGet))
+		r.mux.HandleFunc("PATCH /api/admin/users/{id}", r.wrap(adminHandlers.UserUpdate))
+		r.mux.HandleFunc("DELETE /api/admin/users/{id}", r.wrap(adminHandlers.UserDelete))
+		r.mux.HandleFunc("POST /api/admin/users/{id}/password", r.wrap(adminHandlers.UserSetPassword))
 	}
 }
 
