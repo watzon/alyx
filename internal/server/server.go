@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
+	"github.com/watzon/alyx/internal/server/requestlog"
 )
 
 type Server struct {
@@ -27,16 +27,20 @@ type Server struct {
 	broker        *realtime.Broker
 	funcService   *functions.Service
 	deployService *deploy.Service
+	requestLogs   *requestlog.Store
 	httpServer    *http.Server
 	router        *Router
 	mu            sync.RWMutex
 }
 
+const defaultRequestLogCapacity = 1000
+
 func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 	srv := &Server{
-		cfg:    cfg,
-		db:     db,
-		schema: s,
+		cfg:         cfg,
+		db:          db,
+		schema:      s,
+		requestLogs: requestlog.NewStore(defaultRequestLogCapacity),
 	}
 
 	rulesEngine, err := rules.NewEngine()
@@ -206,23 +210,6 @@ func (s *Server) DeployService() *deploy.Service {
 	return s.deployService
 }
 
-type contextKey string
-
-const (
-	requestIDKey   contextKey = "request_id"
-	requestTimeKey contextKey = "request_time"
-)
-
-func RequestID(ctx context.Context) string {
-	if id, ok := ctx.Value(requestIDKey).(string); ok {
-		return id
-	}
-	return ""
-}
-
-func RequestTime(ctx context.Context) time.Time {
-	if t, ok := ctx.Value(requestTimeKey).(time.Time); ok {
-		return t
-	}
-	return time.Time{}
+func (s *Server) RequestLogs() *requestlog.Store {
+	return s.requestLogs
 }

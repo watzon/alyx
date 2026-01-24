@@ -1708,20 +1708,20 @@ require (
 - [x] Function list and logs
 - [x] Embed in binary
 
-#### 6.2 Error Handling & Observability (2 days)
+#### 6.2 Error Handling & Observability (2 days) ✅
 
-- [ ] Structured error responses
-- [ ] Request ID tracing
-- [ ] Metrics endpoint
-- [ ] Health check endpoint
+- [x] Structured error responses (with request_id and timestamp)
+- [x] Request ID tracing (middleware + context propagation)
+- [x] Metrics endpoint (Prometheus at /metrics)
+- [x] Health check endpoint (comprehensive /health, /health/live, /health/ready, /health/stats)
 
-#### 6.3 Documentation (3 days)
+#### 6.3 Documentation (3 days) ✅
 
-- [ ] Getting started guide
-- [ ] Schema reference
-- [ ] Functions guide
-- [ ] Client SDK docs
-- [ ] Deployment guide
+- [x] Getting started guide
+- [x] Schema reference
+- [x] Functions guide
+- [x] Client SDK docs
+- [x] Deployment guide
 
 #### 6.4 Examples (2 days)
 

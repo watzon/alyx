@@ -180,9 +180,11 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 	spec.Components.Schemas["Error"] = &Schema{
 		Type: "object",
 		Properties: map[string]*Schema{
-			"error":   {Type: "string", Description: "Error message"},
-			"code":    {Type: "string", Description: "Error code"},
-			"details": {Type: "object", Description: "Additional error details"},
+			"error":      {Type: "string", Description: "Error message"},
+			"code":       {Type: "string", Description: "Error code"},
+			"details":    {Type: "object", Description: "Additional error details"},
+			"request_id": {Type: "string", Description: "Request ID for tracing"},
+			"timestamp":  {Type: "string", Format: "date-time", Description: "Error timestamp in RFC3339 format"},
 		},
 		Required: []string{"error"},
 	}
@@ -198,11 +200,103 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 		Required: []string{"docs", "total"},
 	}
 
+	addHealthEndpoints(spec)
 	addAuthEndpoints(spec)
 	addFunctionEndpoints(spec)
 	addAdminEndpoints(spec)
 
 	return spec
+}
+
+func addHealthEndpoints(spec *Spec) {
+	spec.Tags = append(spec.Tags, Tag{
+		Name:        "health",
+		Description: "Health and observability endpoints",
+	})
+
+	spec.Components.Schemas["HealthResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"status":    {Type: "string", Enum: []string{"healthy", "degraded", "unhealthy"}},
+			"version":   {Type: "string"},
+			"uptime":    {Type: "string"},
+			"timestamp": {Type: "string", Format: "date-time"},
+			"components": {
+				Type: "object",
+				AdditionalProperties: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"status":  {Type: "string", Enum: []string{"healthy", "degraded", "unhealthy"}},
+						"latency": {Type: "string"},
+						"message": {Type: "string"},
+					},
+				},
+			},
+		},
+		Required: []string{"status", "version", "timestamp"},
+	}
+
+	spec.Paths["/health"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"health"},
+			Summary:     "Comprehensive health check",
+			Description: "Returns detailed health status including all components (database, realtime, functions)",
+			OperationID: "health",
+			Responses: map[string]Response{
+				"200": {Description: "Healthy", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/HealthResponse"}}}},
+				"503": {Description: "Unhealthy", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/HealthResponse"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/health/live"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"health"},
+			Summary:     "Liveness probe",
+			Description: "Simple liveness check for Kubernetes. Returns 200 if the server is running.",
+			OperationID: "liveness",
+			Responses: map[string]Response{
+				"200": {Description: "Server is alive", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}}}}}},
+			},
+		},
+	}
+
+	spec.Paths["/health/ready"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"health"},
+			Summary:     "Readiness probe",
+			Description: "Readiness check for Kubernetes. Returns 200 if the server can handle requests (database connected).",
+			OperationID: "readiness",
+			Responses: map[string]Response{
+				"200": {Description: "Server is ready", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}}}}}},
+				"503": {Description: "Server is not ready", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}, "reason": {Type: "string"}}}}}},
+			},
+		},
+	}
+
+	spec.Paths["/health/stats"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"health"},
+			Summary:     "Runtime statistics",
+			Description: "Returns detailed runtime statistics including memory usage, goroutines, database pool stats, and function pool stats.",
+			OperationID: "stats",
+			Responses: map[string]Response{
+				"200": {Description: "Runtime statistics", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/metrics"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"health"},
+			Summary:     "Prometheus metrics",
+			Description: "Returns metrics in Prometheus text format",
+			OperationID: "metrics",
+			Responses: map[string]Response{
+				"200": {Description: "Prometheus metrics", Content: map[string]MediaType{"text/plain": {Schema: &Schema{Type: "string"}}}},
+			},
+		},
+	}
 }
 
 func addAuthEndpoints(spec *Spec) {
@@ -1004,6 +1098,95 @@ func addAdminEndpoints(spec *Spec) {
 				"400": {Description: "Invalid password", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
 				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
 				"404": {Description: "User not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Components.Schemas["RequestLogEntry"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"id":          {Type: "string", Description: "Request ID"},
+			"timestamp":   {Type: "string", Format: "date-time", Description: "Request timestamp"},
+			"method":      {Type: "string", Description: "HTTP method"},
+			"path":        {Type: "string", Description: "Request path"},
+			"query":       {Type: "string", Description: "Query string"},
+			"status":      {Type: "integer", Description: "HTTP status code"},
+			"duration":    {Type: "integer", Description: "Duration in nanoseconds"},
+			"duration_ms": {Type: "number", Description: "Duration in milliseconds"},
+			"bytes_in":    {Type: "integer", Description: "Request body size"},
+			"bytes_out":   {Type: "integer", Description: "Response body size"},
+			"client_ip":   {Type: "string", Description: "Client IP address"},
+			"user_agent":  {Type: "string", Description: "User agent string"},
+			"user_id":     {Type: "string", Description: "Authenticated user ID"},
+			"error":       {Type: "string", Description: "Error message if any"},
+			"error_code":  {Type: "string", Description: "Error code if any"},
+		},
+	}
+
+	spec.Components.Schemas["RequestLogListResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"entries": {Type: "array", Items: &Schema{Ref: "#/components/schemas/RequestLogEntry"}},
+			"total":   {Type: "integer", Description: "Total matching entries"},
+			"limit":   {Type: "integer", Description: "Page size"},
+			"offset":  {Type: "integer", Description: "Page offset"},
+		},
+		Required: []string{"entries", "total", "limit", "offset"},
+	}
+
+	spec.Components.Schemas["RequestLogStats"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"capacity": {Type: "integer", Description: "Maximum log capacity"},
+			"count":    {Type: "integer", Description: "Current entry count"},
+		},
+		Required: []string{"capacity", "count"},
+	}
+
+	spec.Paths["/api/admin/logs"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "List request logs",
+			Description: "Get a paginated list of HTTP request logs",
+			OperationID: "listRequestLogs",
+			Parameters: []Parameter{
+				{Name: "limit", In: "query", Description: "Maximum entries to return (default: 100, max: 1000)", Schema: &Schema{Type: "integer"}},
+				{Name: "offset", In: "query", Description: "Number of entries to skip", Schema: &Schema{Type: "integer"}},
+				{Name: "method", In: "query", Description: "Filter by HTTP method", Schema: &Schema{Type: "string"}},
+				{Name: "path", In: "query", Description: "Filter by exact path", Schema: &Schema{Type: "string"}},
+				{Name: "status", In: "query", Description: "Filter by exact status code", Schema: &Schema{Type: "integer"}},
+				{Name: "min_status", In: "query", Description: "Filter by minimum status code", Schema: &Schema{Type: "integer"}},
+				{Name: "max_status", In: "query", Description: "Filter by maximum status code", Schema: &Schema{Type: "integer"}},
+				{Name: "user_id", In: "query", Description: "Filter by user ID", Schema: &Schema{Type: "string"}},
+				{Name: "since", In: "query", Description: "Filter by start time (RFC3339)", Schema: &Schema{Type: "string", Format: "date-time"}},
+				{Name: "until", In: "query", Description: "Filter by end time (RFC3339)", Schema: &Schema{Type: "string", Format: "date-time"}},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "List of request logs", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/RequestLogListResponse"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/admin/logs/stats"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Get log store stats",
+			Description: "Get statistics about the request log store",
+			OperationID: "getRequestLogStats",
+			Responses: map[string]Response{
+				"200": {Description: "Log store statistics", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/RequestLogStats"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/admin/logs/clear"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Clear request logs",
+			Description: "Clear all request logs from the store",
+			OperationID: "clearRequestLogs",
+			Responses: map[string]Response{
+				"200": {Description: "Logs cleared"},
 			},
 		},
 	}

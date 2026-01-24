@@ -7,7 +7,9 @@ import (
 	"github.com/watzon/alyx/internal/adminui"
 	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/functions"
+	"github.com/watzon/alyx/internal/metrics"
 	"github.com/watzon/alyx/internal/server/handlers"
+	"github.com/watzon/alyx/internal/server/requestlog"
 )
 
 type Router struct {
@@ -33,7 +35,9 @@ func NewRouter(srv *Server) *Router {
 func (r *Router) setupMiddleware() {
 	r.Use(RecoveryMiddleware)
 	r.Use(RequestIDMiddleware)
+	r.Use(MetricsMiddleware)
 	r.Use(LoggingMiddleware)
+	r.Use(requestlog.Middleware(r.server.RequestLogs()))
 
 	if r.server.cfg.Server.CORS.Enabled {
 		r.Use(CORSMiddleware(r.server.cfg.Server.CORS))
@@ -54,8 +58,18 @@ func (r *Router) setupRoutes() {
 		r.mux.Handle("GET "+basePath, http.RedirectHandler(basePath+"/", http.StatusMovedPermanently))
 	}
 
-	r.mux.HandleFunc("GET /", r.wrap(h.HealthCheck))
-	r.mux.HandleFunc("GET /health", r.wrap(h.HealthCheck))
+	healthHandlers := handlers.NewHealthHandlers(
+		r.server.DB(),
+		r.server.Broker(),
+		r.server.FuncService(),
+		"0.1.0",
+	)
+	r.mux.HandleFunc("GET /", r.wrap(healthHandlers.Liveness))
+	r.mux.HandleFunc("GET /health", r.wrap(healthHandlers.Health))
+	r.mux.HandleFunc("GET /health/live", r.wrap(healthHandlers.Liveness))
+	r.mux.HandleFunc("GET /health/ready", r.wrap(healthHandlers.Readiness))
+	r.mux.HandleFunc("GET /health/stats", r.wrap(healthHandlers.Stats))
+	r.mux.Handle("GET /metrics", metrics.Handler())
 
 	r.mux.HandleFunc("GET /api/collections/{collection}", r.wrap(h.ListDocuments))
 	r.mux.HandleFunc("POST /api/collections/{collection}", r.wrap(h.CreateDocument))
@@ -105,6 +119,11 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("POST /internal/v1/db/exec", r.wrap(internalHandlers.Exec))
 		r.mux.HandleFunc("POST /internal/v1/db/tx", r.wrap(internalHandlers.Transaction))
 	}
+
+	logsHandlers := handlers.NewLogsHandlers(r.server.RequestLogs())
+	r.mux.HandleFunc("GET /api/admin/logs", r.wrap(logsHandlers.List))
+	r.mux.HandleFunc("GET /api/admin/logs/stats", r.wrap(logsHandlers.Stats))
+	r.mux.HandleFunc("POST /api/admin/logs/clear", r.wrap(logsHandlers.Clear))
 
 	if r.server.DeployService() != nil {
 		var funcSvc *functions.Service

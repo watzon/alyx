@@ -287,6 +287,36 @@ export interface AuthStatus {
 	allow_registration: boolean;
 }
 
+export interface RequestLogEntry {
+	id: string;
+	timestamp: string;
+	method: string;
+	path: string;
+	query?: string;
+	status: number;
+	duration: number;
+	duration_ms: number;
+	bytes_in: number;
+	bytes_out: number;
+	client_ip: string;
+	user_agent?: string;
+	user_id?: string;
+	error?: string;
+	error_code?: string;
+}
+
+export interface RequestLogListResponse {
+	entries: RequestLogEntry[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+export interface RequestLogStats {
+	capacity: number;
+	count: number;
+}
+
 export const auth = {
 	status: () => api.get<AuthStatus>('/auth/status'),
 
@@ -351,6 +381,39 @@ export const admin = {
 		stats: () => api.get<Record<string, unknown>>('/functions/stats'),
 		invoke: (name: string, input?: unknown) => api.post(`/functions/${name}`, input),
 		reload: () => api.post('/functions/reload')
+	},
+
+	logs: {
+		list: (params?: {
+			limit?: number;
+			offset?: number;
+			method?: string;
+			path?: string;
+			exclude_path_prefix?: string;
+			status?: number;
+			min_status?: number;
+			max_status?: number;
+			user_id?: string;
+			since?: string;
+			until?: string;
+		}) => {
+			const query = new URLSearchParams();
+			if (params?.limit) query.set('limit', String(params.limit));
+			if (params?.offset) query.set('offset', String(params.offset));
+			if (params?.method) query.set('method', params.method);
+			if (params?.path) query.set('path', params.path);
+			if (params?.exclude_path_prefix) query.set('exclude_path_prefix', params.exclude_path_prefix);
+			if (params?.status) query.set('status', String(params.status));
+			if (params?.min_status) query.set('min_status', String(params.min_status));
+			if (params?.max_status) query.set('max_status', String(params.max_status));
+			if (params?.user_id) query.set('user_id', params.user_id);
+			if (params?.since) query.set('since', params.since);
+			if (params?.until) query.set('until', params.until);
+			const qs = query.toString();
+			return api.get<RequestLogListResponse>(`/admin/logs${qs ? `?${qs}` : ''}`);
+		},
+		stats: () => api.get<RequestLogStats>('/admin/logs/stats'),
+		clear: () => api.post<{ message: string }>('/admin/logs/clear')
 	}
 };
 

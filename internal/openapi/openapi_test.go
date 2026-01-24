@@ -81,8 +81,8 @@ collections:
 		t.Error("expected server URL")
 	}
 
-	if len(spec.Tags) != 5 {
-		t.Errorf("expected 5 tags (2 collections + auth + functions + admin), got %d", len(spec.Tags))
+	if len(spec.Tags) != 6 {
+		t.Errorf("expected 6 tags (2 collections + health + auth + functions + admin), got %d", len(spec.Tags))
 	}
 
 	usersPath := "/api/collections/users"

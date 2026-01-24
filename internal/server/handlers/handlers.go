@@ -38,13 +38,6 @@ func (h *Handlers) Rules() *rules.Engine {
 	return h.rules
 }
 
-func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	JSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"version": "0.1.0",
-	})
-}
-
 func (h *Handlers) checkAccess(r *http.Request, collection string, op rules.Operation, doc map[string]any) error {
 	if h.rules == nil {
 		return nil

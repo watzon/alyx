@@ -2,7 +2,6 @@ package server
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/watzon/alyx/internal/config"
+	"github.com/watzon/alyx/internal/metrics"
+	"github.com/watzon/alyx/internal/requestctx"
 )
 
 func RecoveryMiddleware(next http.Handler) http.Handler {
@@ -43,8 +44,8 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 			requestID = uuid.New().String()
 		}
 
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
-		ctx = context.WithValue(ctx, requestTimeKey, time.Now())
+		ctx := requestctx.WithRequestID(r.Context(), requestID)
+		ctx = requestctx.WithRequestTime(ctx, time.Now())
 
 		w.Header().Set("X-Request-ID", requestID)
 
@@ -55,7 +56,7 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		requestID := RequestID(r.Context())
+		requestID := requestctx.RequestID(r.Context())
 
 		wrapped := &responseWriter{
 			ResponseWriter: w,
@@ -167,4 +168,69 @@ func MaxBodySizeMiddleware(maxSize int64) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func MetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		metrics.IncrementInFlight()
+
+		wrapped := &responseWriter{
+			ResponseWriter: w,
+			status:         http.StatusOK,
+		}
+
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start)
+		metrics.DecrementInFlight()
+
+		path := normalizePath(r.URL.Path)
+		metrics.RecordHTTPRequest(r.Method, path, wrapped.status, duration, wrapped.bytes)
+	})
+}
+
+func normalizePath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if isUUID(part) || isNumeric(part) {
+			parts[i] = ":id"
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+const uuidLength = 36
+
+func isUUID(s string) bool {
+	if len(s) != uuidLength {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNumeric(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

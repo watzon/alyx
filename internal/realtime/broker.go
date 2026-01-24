@@ -441,18 +441,30 @@ func (b *Broker) getClient(clientID string) *Client {
 	return b.clients[clientID]
 }
 
-// ClientCount returns the number of connected clients.
 func (b *Broker) ClientCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return len(b.clients)
 }
 
-// SubscriptionCount returns the total number of active subscriptions.
 func (b *Broker) SubscriptionCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return len(b.subscriptions)
+}
+
+type BrokerStats struct {
+	Connections   int `json:"connections"`
+	Subscriptions int `json:"subscriptions"`
+}
+
+func (b *Broker) Stats() BrokerStats {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return BrokerStats{
+		Connections:   len(b.clients),
+		Subscriptions: len(b.subscriptions),
+	}
 }
 
 // UpdateSchema updates the broker's schema reference for hot-reloading.

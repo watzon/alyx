@@ -78,9 +78,16 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, *To
 		return nil, nil, fmt.Errorf("hashing password: %w", err)
 	}
 
+	// First user becomes admin, subsequent users get default role
+	role := RoleUser
+	if !hasUsers {
+		role = RoleAdmin
+	}
+
 	user := &User{
 		ID:        uuid.New().String(),
 		Email:     input.Email,
+		Role:      role,
 		Verified:  !s.cfg.RequireVerification,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),

@@ -80,24 +80,61 @@ collections:
 }
 
 func TestHealthCheck(t *testing.T) {
-	h, _ := setupTestHandlers(t)
+	_, db := setupTestHandlers(t)
+	h := NewHealthHandlers(db, nil, nil, "test")
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 
-	h.HealthCheck(w, req)
+	h.Health(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var resp map[string]any
+	var resp HealthResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if resp["status"] != "ok" {
-		t.Errorf("expected status 'ok', got %v", resp["status"])
+	if resp.Status != HealthStatusHealthy {
+		t.Errorf("expected status 'healthy', got %v", resp.Status)
+	}
+
+	if resp.Version != "test" {
+		t.Errorf("expected version 'test', got %v", resp.Version)
+	}
+
+	if resp.Components["database"].Status != HealthStatusHealthy {
+		t.Errorf("expected database status 'healthy', got %v", resp.Components["database"].Status)
+	}
+}
+
+func TestLiveness(t *testing.T) {
+	_, db := setupTestHandlers(t)
+	h := NewHealthHandlers(db, nil, nil, "test")
+
+	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
+	w := httptest.NewRecorder()
+
+	h.Liveness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestReadiness(t *testing.T) {
+	_, db := setupTestHandlers(t)
+	h := NewHealthHandlers(db, nil, nil, "test")
+
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	w := httptest.NewRecorder()
+
+	h.Readiness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 }
 
