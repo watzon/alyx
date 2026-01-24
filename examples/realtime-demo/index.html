@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alyx Realtime Demo</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 0.5rem;
+            color: #00d9ff;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 2rem;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .status.connected {
+            background: #0f3d0f;
+            color: #4ade80;
+        }
+        
+        .status.disconnected {
+            background: #3d0f0f;
+            color: #f87171;
+        }
+        
+        .status.connecting {
+            background: #3d3d0f;
+            color: #fbbf24;
+        }
+        
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        .panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid #0f3460;
+        }
+        
+        .panel h2 {
+            font-size: 1rem;
+            color: #00d9ff;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .panel h2::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #00d9ff;
+            border-radius: 50%;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        label {
+            display: block;
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f3460;
+            border: 1px solid #1a4a7a;
+            border-radius: 6px;
+            color: #eee;
+            font-size: 0.875rem;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #00d9ff;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
+            border: none;
+            border-radius: 6px;
+            color: #000;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 217, 255, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .messages {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .message {
+            padding: 1rem;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.new {
+            border-left: 3px solid #4ade80;
+        }
+        
+        .message.updated {
+            border-left: 3px solid #fbbf24;
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .message-author {
+            font-weight: 600;
+            color: #00d9ff;
+        }
+        
+        .message-channel {
+            font-size: 0.75rem;
+            color: #888;
+            background: #1a1a2e;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .message-content {
+            color: #ccc;
+            line-height: 1.5;
+        }
+        
+        .message-time {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 2rem;
+        }
+        
+        .log {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.75rem;
+            background: #0a0a15;
+            padding: 1rem;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 1.5rem;
+        }
+        
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .log-entry.send {
+            color: #4ade80;
+        }
+        
+        .log-entry.receive {
+            color: #00d9ff;
+        }
+        
+        .log-entry.error {
+            color: #f87171;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+        }
+        
+        .stat {
+            background: #0f3460;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Alyx Realtime Demo</h1>
+        <p class="subtitle">WebSocket subscriptions with live updates</p>
+        
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <span id="status" class="status connecting">Connecting...</span>
+        </div>
+        
+        <div class="panels">
+            <div class="panel">
+                <h2>Send Message</h2>
+                <form id="messageForm">
+                    <div class="form-group">
+                        <label>Channel</label>
+                        <input type="text" id="channel" value="general" placeholder="general">
+                    </div>
+                    <div class="form-group">
+                        <label>Author</label>
+                        <input type="text" id="author" placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                        <label>Message</label>
+                        <textarea id="content" placeholder="Type your message..."></textarea>
+                    </div>
+                    <button type="submit">Send Message</button>
+                </form>
+                
+                <div class="stats">
+                    <div class="stat">Messages: <span class="stat-value" id="messageCount">0</span></div>
+                    <div class="stat">Subscriptions: <span class="stat-value" id="subCount">0</span></div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>Live Messages</h2>
+                <div class="messages" id="messages">
+                    <div class="empty-state">No messages yet. Send one!</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8090';
+        const WS_URL = 'ws://localhost:8090/api/realtime';
+        
+        let ws = null;
+        let subscriptionId = null;
+        let messageCount = 0;
+        
+        const statusEl = document.getElementById('status');
+        const messagesEl = document.getElementById('messages');
+        const logEl = document.getElementById('log');
+        const messageCountEl = document.getElementById('messageCount');
+        const subCountEl = document.getElementById('subCount');
+        
+        function log(type, message) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${type.toUpperCase()}: ${message}`;
+            logEl.insertBefore(entry, logEl.firstChild);
+        }
+        
+        function setStatus(status, text) {
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = text;
+        }
+        
+        function connect() {
+            setStatus('connecting', 'Connecting...');
+            log('send', 'Connecting to WebSocket...');
+            
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                log('receive', 'WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                log('receive', `${msg.type}: ${JSON.stringify(msg.payload).slice(0, 100)}...`);
+                
+                switch (msg.type) {
+                    case 'connected':
+                        setStatus('connected', `Connected (${msg.payload.client_id.slice(0, 8)}...)`);
+                        subscribe();
+                        break;
+                    case 'snapshot':
+                        subscriptionId = msg.payload.subscription_id;
+                        subCountEl.textContent = '1';
+                        renderMessages(msg.payload.docs);
+                        messageCount = msg.payload.docs.length;
+                        messageCountEl.textContent = messageCount;
+                        break;
+                    case 'delta':
+                        handleDelta(msg.payload.changes);
+                        break;
+                    case 'error':
+                        log('error', msg.payload.message);
+                        break;
+                }
+            };
+            
+            ws.onclose = () => {
+                setStatus('disconnected', 'Disconnected');
+                log('error', 'WebSocket closed');
+                subCountEl.textContent = '0';
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onerror = (err) => {
+                log('error', 'WebSocket error');
+            };
+        }
+        
+        function subscribe() {
+            const msg = {
+                id: 'sub_1',
+                type: 'subscribe',
+                payload: {
+                    collection: 'messages',
+                    sort: ['-created_at'],
+                    limit: 50
+                }
+            };
+            ws.send(JSON.stringify(msg));
+            log('send', `subscribe to messages`);
+        }
+        
+        function renderMessages(docs) {
+            if (docs.length === 0) {
+                messagesEl.innerHTML = '<div class="empty-state">No messages yet. Send one!</div>';
+                return;
+            }
+            
+            messagesEl.innerHTML = docs.map(doc => createMessageHTML(doc)).join('');
+        }
+        
+        function createMessageHTML(doc, isNew = false) {
+            const time = new Date(doc.created_at).toLocaleTimeString();
+            return `
+                <div class="message ${isNew ? 'new' : ''}" data-id="${doc.id}">
+                    <div class="message-header">
+                        <span class="message-author">${escapeHTML(doc.author)}</span>
+                        <span class="message-channel">#${escapeHTML(doc.channel)}</span>
+                    </div>
+                    <div class="message-content">${escapeHTML(doc.content)}</div>
+                    <div class="message-time">${time}</div>
+                </div>
+            `;
+        }
+        
+        function handleDelta(changes) {
+            if (changes.inserts && changes.inserts.length > 0) {
+                const emptyState = messagesEl.querySelector('.empty-state');
+                if (emptyState) emptyState.remove();
+                
+                changes.inserts.forEach(doc => {
+                    messagesEl.insertAdjacentHTML('afterbegin', createMessageHTML(doc, true));
+                    messageCount++;
+                });
+                messageCountEl.textContent = messageCount;
+            }
+            
+            if (changes.updates && changes.updates.length > 0) {
+                changes.updates.forEach(doc => {
+                    const existing = messagesEl.querySelector(`[data-id="${doc.id}"]`);
+                    if (existing) {
+                        existing.outerHTML = createMessageHTML(doc);
+                        existing.classList.add('updated');
+                    }
+                });
+            }
+            
+            if (changes.deletes && changes.deletes.length > 0) {
+                changes.deletes.forEach(id => {
+                    const existing = messagesEl.querySelector(`[data-id="${id}"]`);
+                    if (existing) {
+                        existing.remove();
+                        messageCount--;
+                    }
+                });
+                messageCountEl.textContent = messageCount;
+            }
+        }
+        
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
+        
+        document.getElementById('messageForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const channel = document.getElementById('channel').value || 'general';
+            const author = document.getElementById('author').value || 'Anonymous';
+            const content = document.getElementById('content').value;
+            
+            if (!content.trim()) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/collections/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channel, author, content })
+                });
+                
+                if (res.ok) {
+                    document.getElementById('content').value = '';
+                    log('send', `POST /api/collections/messages`);
+                } else {
+                    const err = await res.json();
+                    log('error', err.message || 'Failed to send');
+                }
+            } catch (err) {
+                log('error', err.message);
+            }
+        });
+        
+        connect();
+    </script>
+</body>
+</html>

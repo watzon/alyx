@@ -11,6 +11,7 @@ type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Functions FunctionsConfig `mapstructure:"functions"`
+	Realtime  RealtimeConfig  `mapstructure:"realtime"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	Dev       DevConfig       `mapstructure:"dev"`
 	Docs      DocsConfig      `mapstructure:"docs"`
@@ -295,23 +296,23 @@ type LoggingConfig struct {
 
 // DevConfig holds development mode settings.
 type DevConfig struct {
-	// Enable development mode
-	Enabled bool `mapstructure:"enabled"`
-
-	// Watch for file changes
-	Watch bool `mapstructure:"watch"`
-
-	// Auto-apply safe migrations
-	AutoMigrate bool `mapstructure:"auto_migrate"`
-
-	// Auto-regenerate client SDKs
-	AutoGenerate bool `mapstructure:"auto_generate"`
-
-	// Languages to generate clients for
+	Enabled           bool     `mapstructure:"enabled"`
+	Watch             bool     `mapstructure:"watch"`
+	AutoMigrate       bool     `mapstructure:"auto_migrate"`
+	AutoGenerate      bool     `mapstructure:"auto_generate"`
 	GenerateLanguages []string `mapstructure:"generate_languages"`
+	GenerateOutput    string   `mapstructure:"generate_output"`
+}
 
-	// Output directory for generated clients
-	GenerateOutput string `mapstructure:"generate_output"`
+// RealtimeConfig holds real-time subscription settings.
+type RealtimeConfig struct {
+	Enabled                   bool          `mapstructure:"enabled"`
+	PollInterval              time.Duration `mapstructure:"poll_interval"`
+	MaxConnections            int           `mapstructure:"max_connections"`
+	MaxSubscriptionsPerClient int           `mapstructure:"max_subscriptions_per_client"`
+	ChangeBufferSize          int           `mapstructure:"change_buffer_size"`
+	CleanupInterval           time.Duration `mapstructure:"cleanup_interval"`
+	CleanupAge                time.Duration `mapstructure:"cleanup_age"`
 }
 
 // Address returns the server address in host:port format.

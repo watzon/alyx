@@ -1,0 +1,19 @@
+version: 1
+
+collections:
+  messages:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      channel:
+        type: string
+        index: true
+      author:
+        type: string
+      content:
+        type: text
+      created_at:
+        type: timestamp
+        default: now

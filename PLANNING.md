@@ -1558,24 +1558,24 @@ require (
 
 #### 2.1 WebSocket Infrastructure (2 days)
 
-- [ ] WebSocket upgrade handler
-- [ ] Client connection management
-- [ ] Ping/pong keepalive
-- [ ] Clean disconnection handling
+- [x] WebSocket upgrade handler
+- [x] Client connection management
+- [x] Ping/pong keepalive
+- [x] Clean disconnection handling
 
 #### 2.2 Subscription System (3 days)
 
-- [ ] Subscription protocol implementation
-- [ ] Filter parsing and validation
-- [ ] Initial snapshot sending
-- [ ] Subscription indexing for efficient matching
+- [x] Subscription protocol implementation
+- [x] Filter parsing and validation
+- [x] Initial snapshot sending
+- [x] Subscription indexing for efficient matching
 
 #### 2.3 Change Broadcasting (2 days)
 
-- [ ] Change detector (poll \_alyx_changes)
-- [ ] Change → subscription matching
-- [ ] Delta calculation
-- [ ] Fan-out to subscribers
+- [x] Change detector (poll \_alyx_changes)
+- [x] Change → subscription matching
+- [x] Delta calculation
+- [x] Fan-out to subscribers
 
 **Deliverable**: Clients can subscribe to queries and receive live updates
 

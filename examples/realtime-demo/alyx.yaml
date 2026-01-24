@@ -1,0 +1,17 @@
+server:
+  host: localhost
+  port: 8090
+
+database:
+  path: demo.db
+
+realtime:
+  enabled: true
+  poll_interval: 50ms
+
+docs:
+  enabled: true
+
+logging:
+  level: debug
+  format: console

@@ -39,6 +39,14 @@ const (
 	// Logging defaults
 	DefaultLogLevel  = "info"
 	DefaultLogFormat = "console"
+
+	// Realtime defaults
+	DefaultPollInterval              = 50 * time.Millisecond
+	DefaultMaxConnections            = 1000
+	DefaultMaxSubscriptionsPerClient = 100
+	DefaultChangeBufferSize          = 1000
+	DefaultCleanupInterval           = 5 * time.Minute
+	DefaultCleanupAge                = time.Hour
 )
 
 // Default returns a Config with sensible defaults.
@@ -152,6 +160,15 @@ func Default() *Config {
 			Title:       "Alyx API",
 			Description: "Auto-generated API documentation",
 			Version:     "1.0.0",
+		},
+		Realtime: RealtimeConfig{
+			Enabled:                   true,
+			PollInterval:              DefaultPollInterval,
+			MaxConnections:            DefaultMaxConnections,
+			MaxSubscriptionsPerClient: DefaultMaxSubscriptionsPerClient,
+			ChangeBufferSize:          DefaultChangeBufferSize,
+			CleanupInterval:           DefaultCleanupInterval,
+			CleanupAge:                DefaultCleanupAge,
 		},
 	}
 }

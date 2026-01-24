@@ -60,6 +60,11 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("GET /api/docs", r.wrap(docs.DocsUI))
 		r.mux.HandleFunc("GET /api/docs/", r.wrap(docs.DocsUI))
 	}
+
+	if r.server.cfg.Realtime.Enabled && r.server.Broker() != nil {
+		rt := handlers.NewRealtimeHandler(r.server.Broker())
+		r.mux.HandleFunc("GET /api/realtime", rt.HandleWebSocket)
+	}
 }
 
 func (r *Router) wrap(fn handlers.HandlerFunc) http.HandlerFunc {

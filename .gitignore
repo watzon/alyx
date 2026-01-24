@@ -33,6 +33,10 @@ Thumbs.db
 alyx.y*ml
 schema.y*ml
 
+# But allow example configs
+!examples/**/alyx.y*ml
+!examples/**/schema.y*ml
+
 # Database files
 *.db
 *.db-shm

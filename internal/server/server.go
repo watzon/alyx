@@ -11,6 +11,7 @@ import (
 
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/schema"
 )
 
@@ -18,6 +19,7 @@ type Server struct {
 	cfg        *config.Config
 	db         *database.DB
 	schema     *schema.Schema
+	broker     *realtime.Broker
 	httpServer *http.Server
 	router     *Router
 }
@@ -27,6 +29,15 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 		cfg:    cfg,
 		db:     db,
 		schema: s,
+	}
+
+	if cfg.Realtime.Enabled {
+		brokerCfg := &realtime.BrokerConfig{
+			PollInterval:   cfg.Realtime.PollInterval.Milliseconds(),
+			MaxConnections: cfg.Realtime.MaxConnections,
+			BufferSize:     cfg.Realtime.ChangeBufferSize,
+		}
+		srv.broker = realtime.NewBroker(db, s, brokerCfg)
 	}
 
 	srv.router = NewRouter(srv)
@@ -41,10 +52,17 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 	return srv
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	log.Info().
 		Str("addr", s.cfg.Server.Address()).
 		Msg("Starting server")
+
+	if s.broker != nil {
+		if err := s.broker.Start(ctx); err != nil {
+			return fmt.Errorf("starting realtime broker: %w", err)
+		}
+		log.Info().Msg("Realtime broker started")
+	}
 
 	err := s.httpServer.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
@@ -55,6 +73,12 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	log.Info().Msg("Shutting down server")
+
+	if s.broker != nil {
+		s.broker.Stop()
+		log.Info().Msg("Realtime broker stopped")
+	}
+
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -68,6 +92,10 @@ func (s *Server) Schema() *schema.Schema {
 
 func (s *Server) Config() *config.Config {
 	return s.cfg
+}
+
+func (s *Server) Broker() *realtime.Broker {
+	return s.broker
 }
 
 func (s *Server) GetCollection(name string) (*database.Collection, error) {

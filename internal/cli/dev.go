@@ -121,7 +121,13 @@ func runDev(cmd *cobra.Command, args []string) error {
 			Msg("API documentation")
 	}
 
-	if err := srv.Start(); err != nil {
+	if cfg.Realtime.Enabled {
+		log.Info().
+			Str("ws", "ws://"+cfg.Server.Address()+"/api/realtime").
+			Msg("Realtime WebSocket endpoint")
+	}
+
+	if err := srv.Start(ctx); err != nil {
 		log.Error().Err(err).Msg("Server error")
 		return err
 	}
