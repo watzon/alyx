@@ -292,6 +292,11 @@
                     <div class="stat">Messages: <span class="stat-value" id="messageCount">0</span></div>
                     <div class="stat">Subscriptions: <span class="stat-value" id="subCount">0</span></div>
                 </div>
+                
+                <button type="button" id="statsBtn" style="margin-top: 1rem; background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);">
+                    Get Stats (via Function)
+                </button>
+                <div id="statsResult" style="margin-top: 0.5rem; font-size: 0.875rem; color: #888; display: none;"></div>
             </div>
             
             <div class="panel">
@@ -459,26 +464,65 @@
             e.preventDefault();
             
             const channel = document.getElementById('channel').value || 'general';
-            const author = document.getElementById('author').value || 'Anonymous';
+            const author = document.getElementById('author').value;  // Let function handle empty
             const content = document.getElementById('content').value;
             
             if (!content.trim()) return;
             
             try {
-                const res = await fetch(`${API_URL}/api/collections/messages`, {
+                // Use sendMessage function instead of direct API
+                const res = await fetch(`${API_URL}/api/functions/sendMessage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ channel, author, content })
+                    body: JSON.stringify({ 
+                        input: { channel, content, author: author || undefined }
+                    })
                 });
                 
-                if (res.ok) {
+                const result = await res.json();
+                
+                if (result.success) {
                     document.getElementById('content').value = '';
-                    log('send', `POST /api/collections/messages`);
+                    log('send', `Function sendMessage → author: ${result.output.author}`);
                 } else {
-                    const err = await res.json();
-                    log('error', err.message || 'Failed to send');
+                    log('error', result.error?.message || 'Failed to send');
                 }
             } catch (err) {
+                log('error', err.message);
+            }
+        });
+        
+        document.getElementById('statsBtn').addEventListener('click', async () => {
+            const statsResult = document.getElementById('statsResult');
+            statsResult.style.display = 'block';
+            statsResult.textContent = 'Loading...';
+            
+            try {
+                const res = await fetch(`${API_URL}/api/functions/getStats`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: {} })
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    const stats = result.output;
+                    const channelList = Object.entries(stats.channels || {})
+                        .map(([ch, count]) => `#${ch}: ${count}`)
+                        .join(', ');
+                    statsResult.innerHTML = `
+                        <strong>Total:</strong> ${stats.totalMessages} messages<br>
+                        <strong>Channels:</strong> ${channelList || 'none'}<br>
+                        <strong>Recent authors:</strong> ${(stats.recentAuthors || []).join(', ') || 'none'}
+                    `;
+                    log('receive', `Function getStats → ${stats.totalMessages} messages`);
+                } else {
+                    statsResult.textContent = result.error?.message || 'Failed to get stats';
+                    log('error', result.error?.message || 'getStats failed');
+                }
+            } catch (err) {
+                statsResult.textContent = err.message;
                 log('error', err.message);
             }
         });

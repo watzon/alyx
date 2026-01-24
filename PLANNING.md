@@ -1642,22 +1642,22 @@ require (
 - [x] Function SDK for each language
 - [x] Build and publish images (GitHub Actions + GHCR)
 
-#### 4.3 Function Execution (3 days)
+#### 4.3 Function Execution (3 days) ✅
 
-- [ ] Function discovery (scan functions/)
-- [ ] Routing to appropriate runtime
-- [ ] Request/response protocol
-- [ ] Internal callback API for DB access
-- [ ] Timeout and error handling
+- [x] Function discovery (scan functions/)
+- [x] Routing to appropriate runtime
+- [x] Request/response protocol
+- [x] Internal callback API for DB access
+- [x] Timeout and error handling
 
-#### 4.4 Function SDK Polish (2 days)
+#### 4.4 Function SDK Polish (2 days) ✅
 
-- [ ] Transaction support
-- [ ] Logging integration
-- [ ] Environment variables
-- [ ] TypeScript types for SDK
+- [x] Transaction support (placeholder - full support TBD)
+- [x] Logging integration
+- [x] Environment variables
+- [ ] TypeScript types for SDK (deferred to Phase 5)
 
-**Deliverable**: Invoke functions in Node.js/Python via HTTP
+**Deliverable**: Invoke functions in Node.js/Python via HTTP ✅
 
 ---
 

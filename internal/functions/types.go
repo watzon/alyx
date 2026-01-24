@@ -125,20 +125,14 @@ type Container struct {
 
 // PoolConfig holds configuration for a container pool.
 type PoolConfig struct {
-	// MinWarm is the minimum number of warm instances to maintain.
-	MinWarm int
-	// MaxInstances is the maximum number of concurrent instances.
-	MaxInstances int
-	// IdleTimeout is how long an idle container can stay before being removed.
-	IdleTimeout time.Duration
-	// Image is the container image to use.
-	Image string
-	// MemoryLimit is the memory limit in MB.
-	MemoryLimit int
-	// CPULimit is the CPU limit in cores.
-	CPULimit float64
-	// ExecutionTimeout is the maximum execution time per request.
+	MinWarm          int
+	MaxInstances     int
+	IdleTimeout      time.Duration
+	Image            string
+	MemoryLimit      int
+	CPULimit         float64
 	ExecutionTimeout time.Duration
+	FunctionsDir     string
 }
 
 // Executor defines the interface for executing functions.

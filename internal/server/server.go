@@ -11,19 +11,21 @@ import (
 
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/functions"
 	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 )
 
 type Server struct {
-	cfg        *config.Config
-	db         *database.DB
-	schema     *schema.Schema
-	rules      *rules.Engine
-	broker     *realtime.Broker
-	httpServer *http.Server
-	router     *Router
+	cfg         *config.Config
+	db          *database.DB
+	schema      *schema.Schema
+	rules       *rules.Engine
+	broker      *realtime.Broker
+	funcService *functions.Service
+	httpServer  *http.Server
+	router      *Router
 }
 
 func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
@@ -51,6 +53,19 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 		srv.broker = realtime.NewBroker(db, s, rulesEngine, brokerCfg)
 	}
 
+	if cfg.Functions.Enabled {
+		funcService, err := functions.NewService(&functions.ServiceConfig{
+			FunctionsDir: cfg.Functions.Path,
+			Config:       &cfg.Functions,
+			ServerPort:   cfg.Server.Port,
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create function service")
+		} else {
+			srv.funcService = funcService
+		}
+	}
+
 	srv.router = NewRouter(srv)
 	srv.httpServer = &http.Server{
 		Addr:         cfg.Server.Address(),
@@ -75,6 +90,13 @@ func (s *Server) Start(ctx context.Context) error {
 		log.Info().Msg("Realtime broker started")
 	}
 
+	if s.funcService != nil {
+		if err := s.funcService.Start(ctx); err != nil {
+			return fmt.Errorf("starting function service: %w", err)
+		}
+		log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Function service started")
+	}
+
 	err := s.httpServer.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -88,6 +110,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.broker != nil {
 		s.broker.Stop()
 		log.Info().Msg("Realtime broker stopped")
+	}
+
+	if s.funcService != nil {
+		if err := s.funcService.Close(); err != nil {
+			log.Warn().Err(err).Msg("Error closing function service")
+		}
+		log.Info().Msg("Function service stopped")
 	}
 
 	return s.httpServer.Shutdown(ctx)
@@ -111,6 +140,10 @@ func (s *Server) Broker() *realtime.Broker {
 
 func (s *Server) Rules() *rules.Engine {
 	return s.rules
+}
+
+func (s *Server) FuncService() *functions.Service {
+	return s.funcService
 }
 
 func (s *Server) GetCollection(name string) (*database.Collection, error) {

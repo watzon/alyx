@@ -1,6 +1,6 @@
 # Alyx Realtime Demo
 
-A simple chat application demonstrating Alyx's real-time WebSocket subscriptions.
+A simple chat application demonstrating Alyx's real-time WebSocket subscriptions and serverless functions.
 
 ## Quick Start
 
@@ -99,9 +99,71 @@ collections:
    }
    ```
 
-### REST API
+### Serverless Functions
 
-Messages are created via the REST API:
+This demo uses serverless functions instead of direct REST API calls:
+
+#### sendMessage Function
+
+Creates a new message with optional auto-generated author name:
+
+```bash
+curl -X POST http://localhost:8090/api/functions/sendMessage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "channel": "general",
+      "content": "Hello world!",
+      "author": "Bob"
+    }
+  }'
+```
+
+If `author` is omitted, the function generates a random name like `Anon-x7k2`.
+
+Response:
+```json
+{
+  "success": true,
+  "output": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "channel": "general",
+    "author": "Bob",
+    "content": "Hello world!"
+  },
+  "duration_ms": 15
+}
+```
+
+#### getStats Function
+
+Returns message statistics across channels:
+
+```bash
+curl -X POST http://localhost:8090/api/functions/getStats \
+  -H "Content-Type: application/json" \
+  -d '{"input": {}}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "output": {
+    "totalMessages": 42,
+    "channels": {
+      "general": 30,
+      "random": 12
+    },
+    "recentAuthors": ["Alice", "Bob", "Anon-x7k2"]
+  },
+  "duration_ms": 8
+}
+```
+
+### REST API (Direct)
+
+You can also create messages directly via the REST API:
 
 ```bash
 curl -X POST http://localhost:8090/api/collections/messages \
@@ -147,4 +209,52 @@ realtime:
   max_connections: 1000        # Max concurrent WebSocket clients
   max_subscriptions_per_client: 100
   change_buffer_size: 1000     # Buffer size for change events
+
+functions:
+  enabled: true
+  path: ./functions            # Directory containing function files
+  runtime: docker              # Container runtime (docker or podman)
+  timeout: 30s                 # Default execution timeout
+  memory_limit: 128            # Default memory limit in MB
+  pools:
+    node:
+      min_warm: 1              # Minimum warm containers
+      max_instances: 5         # Maximum concurrent containers
+      idle_timeout: 5m         # Idle container timeout
+      image: ghcr.io/watzon/alyx-runtime-node:latest
 ```
+
+## Functions Directory
+
+The `functions/` directory contains serverless functions:
+
+```
+functions/
+  sendMessage.js    # Message creation with validation
+  sendMessage.yaml  # Optional manifest (timeout, memory overrides)
+  getStats.js       # Message statistics aggregation
+  getStats.yaml
+```
+
+Each function exports a default object with an async `handler`:
+
+```javascript
+export default {
+  input: {
+    channel: { type: "string", required: true },
+    content: { type: "string", required: true },
+  },
+  async handler(input, context) {
+    const result = await context.db.messages.create({
+      channel: input.channel,
+      content: input.content,
+    });
+    return { id: result.id };
+  },
+};
+```
+
+The `context` object provides:
+- `context.db` - Database client with collection proxies
+- `context.log` - Structured logger (debug, info, warn, error)
+- `context.auth` - Authenticated user info (if present)

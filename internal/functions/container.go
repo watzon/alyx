@@ -107,13 +107,14 @@ func detectHostNetwork(runtime string) string {
 		return "host.containers.internal"
 	}
 
-	// Check if we're running on Docker Desktop (macOS/Windows)
+	// Check if we're running on Docker Desktop (macOS/Windows) or compatible VMs
 	out, err := exec.Command(runtime, "info", "--format", "{{.OperatingSystem}}").Output()
 	if err == nil {
 		os := strings.ToLower(strings.TrimSpace(string(out)))
 		if strings.Contains(os, "docker desktop") ||
 			strings.Contains(os, "colima") ||
-			strings.Contains(os, "lima") {
+			strings.Contains(os, "lima") ||
+			strings.Contains(os, "orbstack") {
 			return "host.docker.internal"
 		}
 	}
@@ -144,7 +145,6 @@ func (m *DockerManager) Create(ctx context.Context, rt Runtime, config *PoolConf
 		"--label", fmt.Sprintf("%s=%s", containerRuntimeLabel, rt),
 	}
 
-	// Add resource limits
 	if config.MemoryLimit > 0 {
 		args = append(args, "--memory", fmt.Sprintf("%dm", config.MemoryLimit))
 	}
@@ -152,7 +152,10 @@ func (m *DockerManager) Create(ctx context.Context, rt Runtime, config *PoolConf
 		args = append(args, "--cpus", fmt.Sprintf("%.2f", config.CPULimit))
 	}
 
-	// Add image
+	if config.FunctionsDir != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/functions:ro", config.FunctionsDir))
+	}
+
 	args = append(args, config.Image)
 
 	log.Debug().

@@ -9,6 +9,19 @@ realtime:
   enabled: true
   poll_interval: 50ms
 
+functions:
+  enabled: true
+  path: ./functions
+  runtime: docker
+  timeout: 30s
+  memory_limit: 128
+  pools:
+    node:
+      min_warm: 1
+      max_instances: 5
+      idle_timeout: 5m
+      image: ghcr.io/watzon/alyx-runtime-node:latest
+
 docs:
   enabled: true
 

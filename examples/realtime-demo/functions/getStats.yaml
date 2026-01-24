@@ -1,0 +1,4 @@
+name: getStats
+runtime: node
+timeout: 10s
+memory: 128mb

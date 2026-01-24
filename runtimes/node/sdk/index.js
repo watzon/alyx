@@ -13,28 +13,20 @@ function createDbClient(context) {
   const { alyxUrl, internalToken } = context;
 
   async function query(collection, options = {}) {
-    const params = new URLSearchParams();
-    if (options.filter) {
-      for (const [key, value] of Object.entries(options.filter)) {
-        params.append("filter", `${key}:eq:${value}`);
-      }
-    }
-    if (options.sort) {
-      params.append("sort", options.sort);
-    }
-    if (options.limit) {
-      params.append("limit", String(options.limit));
-    }
-    if (options.offset) {
-      params.append("offset", String(options.offset));
-    }
-
-    const url = `${alyxUrl}/internal/v1/db/query?collection=${collection}&${params}`;
+    const url = `${alyxUrl}/internal/v1/db/query`;
     const response = await fetch(url, {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${internalToken}`,
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        collection,
+        filter: options.filter,
+        sort: options.sort,
+        limit: options.limit,
+        offset: options.offset,
+      }),
     });
 
     if (!response.ok) {

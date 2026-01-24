@@ -76,6 +76,25 @@ func (r *Router) setupRoutes() {
 		rt := handlers.NewRealtimeHandler(r.server.Broker())
 		r.mux.HandleFunc("GET /api/realtime", rt.HandleWebSocket)
 	}
+
+	if r.server.cfg.Functions.Enabled && r.server.FuncService() != nil {
+		funcHandlers := handlers.NewFunctionHandlers(r.server.FuncService())
+		r.mux.HandleFunc("POST /api/functions/{name}", r.wrap(funcHandlers.Invoke))
+		r.mux.HandleFunc("GET /api/functions", r.wrap(funcHandlers.List))
+		r.mux.HandleFunc("GET /api/functions/stats", r.wrap(funcHandlers.Stats))
+		r.mux.HandleFunc("POST /api/functions/reload", r.wrap(funcHandlers.Reload))
+
+		internalHandlers := handlers.NewInternalHandlers(
+			r.server.DB(),
+			r.server.Schema(),
+			r.server.FuncService().TokenStore(),
+			r.server.FuncService(),
+		)
+		r.mux.HandleFunc("POST /internal/v1/db/query", r.wrap(internalHandlers.Query))
+		r.mux.HandleFunc("GET /internal/v1/db/query", r.wrap(internalHandlers.QueryGET))
+		r.mux.HandleFunc("POST /internal/v1/db/exec", r.wrap(internalHandlers.Exec))
+		r.mux.HandleFunc("POST /internal/v1/db/tx", r.wrap(internalHandlers.Transaction))
+	}
 }
 
 func (r *Router) wrap(fn handlers.HandlerFunc) http.HandlerFunc {

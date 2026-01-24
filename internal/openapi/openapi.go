@@ -191,6 +191,7 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 	}
 
 	addAuthEndpoints(spec)
+	addFunctionEndpoints(spec)
 
 	return spec
 }
@@ -643,6 +644,166 @@ func capitalize(s string) string {
 		return s
 	}
 	return string(s[0]-32) + s[1:]
+}
+
+func addFunctionEndpoints(spec *Spec) {
+	spec.Tags = append(spec.Tags, Tag{
+		Name:        "functions",
+		Description: "Serverless function endpoints",
+	})
+
+	spec.Components.Schemas["FunctionInfo"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"name":    {Type: "string"},
+			"runtime": {Type: "string", Enum: []string{"node", "python", "go"}},
+		},
+		Required: []string{"name", "runtime"},
+	}
+
+	spec.Components.Schemas["FunctionInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"input": {Type: "object", AdditionalProperties: &Schema{}},
+		},
+	}
+
+	spec.Components.Schemas["FunctionError"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"code":    {Type: "string"},
+			"message": {Type: "string"},
+			"details": {Type: "object", AdditionalProperties: &Schema{}},
+		},
+		Required: []string{"code", "message"},
+	}
+
+	spec.Components.Schemas["LogEntry"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"level":     {Type: "string", Enum: []string{"debug", "info", "warn", "error"}},
+			"message":   {Type: "string"},
+			"data":      {Type: "object", AdditionalProperties: &Schema{}},
+			"timestamp": {Type: "string", Format: "date-time"},
+		},
+		Required: []string{"level", "message"},
+	}
+
+	spec.Components.Schemas["FunctionResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"success":     {Type: "boolean"},
+			"output":      {Type: "object", AdditionalProperties: &Schema{}},
+			"error":       {Ref: "#/components/schemas/FunctionError"},
+			"logs":        {Type: "array", Items: &Schema{Ref: "#/components/schemas/LogEntry"}},
+			"duration_ms": {Type: "integer"},
+		},
+		Required: []string{"success", "duration_ms"},
+	}
+
+	spec.Components.Schemas["PoolStats"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"ready": {Type: "integer"},
+			"busy":  {Type: "integer"},
+			"total": {Type: "integer"},
+		},
+		Required: []string{"ready", "busy", "total"},
+	}
+
+	spec.Paths["/api/functions"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"functions"},
+			Summary:     "List functions",
+			Description: "List all discovered functions",
+			OperationID: "listFunctions",
+			Responses: map[string]Response{
+				"200": {
+					Description: "List of functions",
+					Content: map[string]MediaType{
+						"application/json": {Schema: &Schema{
+							Type: "object",
+							Properties: map[string]*Schema{
+								"functions": {Type: "array", Items: &Schema{Ref: "#/components/schemas/FunctionInfo"}},
+								"count":     {Type: "integer"},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	spec.Paths["/api/functions/stats"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"functions"},
+			Summary:     "Get pool statistics",
+			Description: "Get container pool statistics for all runtimes",
+			OperationID: "getFunctionStats",
+			Responses: map[string]Response{
+				"200": {
+					Description: "Pool statistics",
+					Content: map[string]MediaType{
+						"application/json": {Schema: &Schema{
+							Type: "object",
+							Properties: map[string]*Schema{
+								"pools": {Type: "object", AdditionalProperties: &Schema{Ref: "#/components/schemas/PoolStats"}},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	spec.Paths["/api/functions/reload"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"functions"},
+			Summary:     "Reload functions",
+			Description: "Rediscover and reload all functions",
+			OperationID: "reloadFunctions",
+			Responses: map[string]Response{
+				"200": {
+					Description: "Functions reloaded",
+					Content: map[string]MediaType{
+						"application/json": {Schema: &Schema{
+							Type: "object",
+							Properties: map[string]*Schema{
+								"success": {Type: "boolean"},
+								"count":   {Type: "integer"},
+								"message": {Type: "string"},
+							},
+						}},
+					},
+				},
+				"500": {Description: "Failed to reload functions", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/functions/{name}"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"functions"},
+			Summary:     "Invoke function",
+			Description: "Invoke a serverless function by name",
+			OperationID: "invokeFunction",
+			Parameters: []Parameter{
+				{Name: "name", In: "path", Required: true, Description: "Function name", Schema: &Schema{Type: "string"}},
+			},
+			RequestBody: &RequestBody{
+				Description: "Function input data",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/FunctionInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "Function executed", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/FunctionResponse"}}}},
+				"400": {Description: "Invalid input", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "Function not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"500": {Description: "Invocation error", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
 }
 
 func (s *Spec) JSON() ([]byte, error) {

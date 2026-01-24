@@ -1,0 +1,4 @@
+name: sendMessage
+runtime: node
+timeout: 5s
+memory: 128mb
