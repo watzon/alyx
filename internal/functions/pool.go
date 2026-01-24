@@ -228,7 +228,7 @@ func (p *Pool) cleanupIdle(ctx context.Context) {
 
 	for _, id := range toRemove {
 		if err := p.manager.Remove(ctx, id); err != nil {
-			log.Warn().Err(err).Str("container_id", id[:min(12, len(id))]).Msg("Failed to remove idle container")
+			log.Warn().Err(err).Str("container_id", id[:min(containerIDLogLength, len(id))]).Msg("Failed to remove idle container")
 		}
 
 		p.mu.Lock()

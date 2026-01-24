@@ -332,9 +332,12 @@ func TestWebSocketHandshake(t *testing.T) {
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	conn, resp, err := websocket.Dial(context.Background(), wsURL, nil)
 	if err != nil {
 		t.Fatalf("Failed to connect WebSocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
 

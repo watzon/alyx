@@ -41,37 +41,52 @@ func VerifyPassword(password, hash string) error {
 	return err
 }
 
+// passwordCharacteristics holds the character type flags for a password.
+type passwordCharacteristics struct {
+	hasUpper   bool
+	hasLower   bool
+	hasNumber  bool
+	hasSpecial bool
+}
+
+// analyzePassword analyzes a password and returns its character characteristics.
+func analyzePassword(password string) passwordCharacteristics {
+	var chars passwordCharacteristics
+
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			chars.hasUpper = true
+		case unicode.IsLower(r):
+			chars.hasLower = true
+		case unicode.IsDigit(r):
+			chars.hasNumber = true
+		case unicode.IsPunct(r) || unicode.IsSymbol(r):
+			chars.hasSpecial = true
+		}
+	}
+
+	return chars
+}
+
 // ValidatePassword checks if a password meets the configured requirements.
 func ValidatePassword(password string, cfg config.PasswordConfig) error {
 	if len(password) < cfg.MinLength {
 		return ErrPasswordTooShort
 	}
 
-	var hasUpper, hasLower, hasNumber, hasSpecial bool
+	chars := analyzePassword(password)
 
-	for _, r := range password {
-		switch {
-		case unicode.IsUpper(r):
-			hasUpper = true
-		case unicode.IsLower(r):
-			hasLower = true
-		case unicode.IsDigit(r):
-			hasNumber = true
-		case unicode.IsPunct(r) || unicode.IsSymbol(r):
-			hasSpecial = true
-		}
-	}
-
-	if cfg.RequireUppercase && !hasUpper {
+	if cfg.RequireUppercase && !chars.hasUpper {
 		return ErrPasswordNoUppercase
 	}
-	if cfg.RequireLowercase && !hasLower {
+	if cfg.RequireLowercase && !chars.hasLower {
 		return ErrPasswordNoLowercase
 	}
-	if cfg.RequireNumber && !hasNumber {
+	if cfg.RequireNumber && !chars.hasNumber {
 		return ErrPasswordNoNumber
 	}
-	if cfg.RequireSpecial && !hasSpecial {
+	if cfg.RequireSpecial && !chars.hasSpecial {
 		return ErrPasswordNoSpecial
 	}
 

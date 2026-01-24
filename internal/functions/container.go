@@ -28,6 +28,10 @@ const (
 	healthCheckPath = "/health"
 	// invokePath is the path to invoke functions.
 	invokePath = "/invoke"
+	// containerReadyTimeoutSeconds is the timeout for waiting for a container to be ready.
+	containerReadyTimeoutSeconds = 30
+	// containerIDLogLength is the length of container ID to show in logs.
+	containerIDLogLength = 12
 )
 
 // DockerManager implements ContainerManager using Docker or Podman.
@@ -204,7 +208,7 @@ func (m *DockerManager) waitForReady(ctx context.Context, container *Container) 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(containerReadyTimeoutSeconds * time.Second)
 
 	for {
 		select {
@@ -267,7 +271,7 @@ func (m *DockerManager) Remove(ctx context.Context, containerID string) error {
 	}
 
 	log.Debug().
-		Str("container_id", containerID[:min(12, len(containerID))]).
+		Str("container_id", containerID[:min(containerIDLogLength, len(containerID))]).
 		Msg("Container removed")
 
 	return nil
@@ -368,7 +372,7 @@ func (m *DockerManager) Close() error {
 	ctx := context.Background()
 	for _, id := range containerIDs {
 		if err := m.Remove(ctx, id); err != nil {
-			log.Warn().Err(err).Str("container_id", id[:min(12, len(id))]).Msg("Failed to remove container during shutdown")
+			log.Warn().Err(err).Str("container_id", id[:min(containerIDLogLength, len(id))]).Msg("Failed to remove container during shutdown")
 		}
 	}
 
@@ -410,7 +414,7 @@ func (m *DockerManager) CleanupStaleContainers(ctx context.Context) error {
 	for _, id := range containerIDs {
 		rmCmd := exec.CommandContext(ctx, m.runtime, "rm", "-f", id) //nolint:gosec // Runtime is controlled
 		if output, err := rmCmd.CombinedOutput(); err != nil {
-			log.Warn().Err(err).Str("container_id", id[:min(12, len(id))]).Str("output", string(output)).Msg("Failed to remove stale container")
+			log.Warn().Err(err).Str("container_id", id[:min(containerIDLogLength, len(id))]).Str("output", string(output)).Msg("Failed to remove stale container")
 		}
 	}
 

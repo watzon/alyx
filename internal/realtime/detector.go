@@ -59,6 +59,19 @@ func (d *ChangeDetector) poll(ctx context.Context) {
 	lastID := d.lastID
 	d.mu.Unlock()
 
+	changes, maxID, err := d.fetchChanges(ctx, lastID)
+	if err != nil {
+		return
+	}
+
+	if len(changes) > 0 {
+		d.updateLastID(maxID)
+		d.broadcastChanges(ctx, changes)
+		d.markProcessed(ctx, maxID)
+	}
+}
+
+func (d *ChangeDetector) fetchChanges(ctx context.Context, lastID int64) ([]*Change, int64, error) {
 	query := `
 		SELECT id, collection, operation, doc_id, changed_fields, timestamp
 		FROM _alyx_changes
@@ -70,7 +83,7 @@ func (d *ChangeDetector) poll(ctx context.Context) {
 	rows, err := d.db.QueryContext(ctx, query, lastID)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to poll changes")
-		return
+		return nil, lastID, err
 	}
 	defer rows.Close()
 
@@ -78,44 +91,9 @@ func (d *ChangeDetector) poll(ctx context.Context) {
 	maxID := lastID
 
 	for rows.Next() {
-		var (
-			id            int64
-			collection    string
-			operation     string
-			docID         string
-			changedFields sql.NullString
-			timestamp     string
-		)
-
-		if err := rows.Scan(&id, &collection, &operation, &docID, &changedFields, &timestamp); err != nil {
-			log.Error().Err(err).Msg("Failed to scan change row")
+		change, id, err := d.scanChangeRow(rows)
+		if err != nil {
 			continue
-		}
-
-		change := &Change{
-			ID:         id,
-			Collection: collection,
-			Operation:  Operation(operation),
-			DocID:      docID,
-		}
-
-		if changedFields.Valid {
-			var fields []string
-			if err := json.Unmarshal([]byte(changedFields.String), &fields); err == nil {
-				var nonNullFields []string
-				for _, f := range fields {
-					if f != "" {
-						nonNullFields = append(nonNullFields, f)
-					}
-				}
-				change.ChangedFields = nonNullFields
-			}
-		}
-
-		if ts, err := time.Parse(time.RFC3339, timestamp); err == nil {
-			change.Timestamp = ts
-		} else if ts, err := time.Parse("2006-01-02 15:04:05", timestamp); err == nil {
-			change.Timestamp = ts
 		}
 
 		changes = append(changes, change)
@@ -126,27 +104,73 @@ func (d *ChangeDetector) poll(ctx context.Context) {
 
 	if err := rows.Err(); err != nil {
 		log.Error().Err(err).Msg("Error iterating change rows")
-		return
+		return nil, lastID, err
 	}
 
-	if len(changes) > 0 {
-		d.mu.Lock()
-		d.lastID = maxID
-		d.mu.Unlock()
+	return changes, maxID, nil
+}
 
-		for _, change := range changes {
-			select {
-			case d.changeCh <- change:
-			case <-d.done:
-				return
-			case <-ctx.Done():
-				return
-			default:
-				log.Warn().Int64("change_id", change.ID).Msg("Change channel full, dropping change")
+func (d *ChangeDetector) scanChangeRow(rows *sql.Rows) (*Change, int64, error) {
+	var (
+		id            int64
+		collection    string
+		operation     string
+		docID         string
+		changedFields sql.NullString
+		timestamp     string
+	)
+
+	if err := rows.Scan(&id, &collection, &operation, &docID, &changedFields, &timestamp); err != nil {
+		log.Error().Err(err).Msg("Failed to scan change row")
+		return nil, 0, err
+	}
+
+	change := &Change{
+		ID:         id,
+		Collection: collection,
+		Operation:  Operation(operation),
+		DocID:      docID,
+	}
+
+	if changedFields.Valid {
+		var fields []string
+		if err := json.Unmarshal([]byte(changedFields.String), &fields); err == nil {
+			var nonNullFields []string
+			for _, f := range fields {
+				if f != "" {
+					nonNullFields = append(nonNullFields, f)
+				}
 			}
+			change.ChangedFields = nonNullFields
 		}
+	}
 
-		d.markProcessed(ctx, maxID)
+	if ts, err := time.Parse(time.RFC3339, timestamp); err == nil {
+		change.Timestamp = ts
+	} else if ts, err := time.Parse("2006-01-02 15:04:05", timestamp); err == nil {
+		change.Timestamp = ts
+	}
+
+	return change, id, nil
+}
+
+func (d *ChangeDetector) updateLastID(maxID int64) {
+	d.mu.Lock()
+	d.lastID = maxID
+	d.mu.Unlock()
+}
+
+func (d *ChangeDetector) broadcastChanges(ctx context.Context, changes []*Change) {
+	for _, change := range changes {
+		select {
+		case d.changeCh <- change:
+		case <-d.done:
+			return
+		case <-ctx.Done():
+			return
+		default:
+			log.Warn().Int64("change_id", change.ID).Msg("Change channel full, dropping change")
+		}
 	}
 }
 

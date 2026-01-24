@@ -8,6 +8,10 @@ import (
 	"github.com/watzon/alyx/internal/schema"
 )
 
+const (
+	defaultPasswordMinLength = 8
+)
+
 type Spec struct {
 	OpenAPI    string               `json:"openapi"`
 	Info       Info                 `json:"info"`
@@ -234,7 +238,7 @@ func addAuthEndpoints(spec *Spec) {
 		Type: "object",
 		Properties: map[string]*Schema{
 			"email":    {Type: "string", Format: "email"},
-			"password": {Type: "string", MinLength: intPtr(8)},
+			"password": {Type: "string", MinLength: intPtr(defaultPasswordMinLength)},
 			"metadata": {Type: "object", AdditionalProperties: &Schema{}},
 		},
 		Required: []string{"email", "password"},
