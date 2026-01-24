@@ -262,6 +262,7 @@ issues:
     # Allow errorlint issues in existing error handling code
     - linters:
         - errorlint
+      text: "comparing with|type assertion|non-wrapping"
 
     # Allow goconst for test fixtures
     - path: _test\.go
