@@ -15,6 +15,7 @@ type Config struct {
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	Dev       DevConfig       `mapstructure:"dev"`
 	Docs      DocsConfig      `mapstructure:"docs"`
+	AdminUI   AdminUIConfig   `mapstructure:"admin_ui"`
 }
 
 type DocsConfig struct {
@@ -302,6 +303,12 @@ type DevConfig struct {
 	AutoGenerate      bool     `mapstructure:"auto_generate"`
 	GenerateLanguages []string `mapstructure:"generate_languages"`
 	GenerateOutput    string   `mapstructure:"generate_output"`
+}
+
+// AdminUIConfig holds admin UI settings.
+type AdminUIConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Path    string `mapstructure:"path"`
 }
 
 // RealtimeConfig holds real-time subscription settings.

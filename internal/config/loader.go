@@ -144,6 +144,9 @@ func setViperDefaults(v *viper.Viper, cfg *Config) {
 	v.SetDefault("docs.title", cfg.Docs.Title)
 	v.SetDefault("docs.description", cfg.Docs.Description)
 	v.SetDefault("docs.version", cfg.Docs.Version)
+
+	v.SetDefault("admin_ui.enabled", cfg.AdminUI.Enabled)
+	v.SetDefault("admin_ui.path", cfg.AdminUI.Path)
 }
 
 func expandEnvInConfig(v *viper.Viper) {

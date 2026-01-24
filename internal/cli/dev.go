@@ -138,6 +138,7 @@ func applySchema(db *database.DB, s *schema.Schema) error {
 			return err
 		}
 	}
+
 	log.Info().Msg("Database schema applied")
 	return nil
 }
@@ -172,6 +173,12 @@ func logServerInfo(cfg *config.Config, s *schema.Schema) {
 		log.Info().
 			Str("functions", cfg.Functions.Path).
 			Msg("Functions directory")
+	}
+
+	if cfg.AdminUI.Enabled {
+		log.Info().
+			Str("admin", "http://"+cfg.Server.Address()+cfg.AdminUI.Path).
+			Msg("Admin UI")
 	}
 }
 

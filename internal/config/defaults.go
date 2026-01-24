@@ -170,5 +170,9 @@ func Default() *Config {
 			CleanupInterval:           DefaultCleanupInterval,
 			CleanupAge:                DefaultCleanupAge,
 		},
+		AdminUI: AdminUIConfig{
+			Enabled: true,
+			Path:    "/_admin",
+		},
 	}
 }
