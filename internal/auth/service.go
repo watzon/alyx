@@ -50,19 +50,24 @@ func (s *Service) OAuth() *OAuthManager {
 
 // Register creates a new user account.
 func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, *TokenPair, error) {
-	if !s.cfg.AllowRegistration {
+	hasUsers, err := s.HasUsers(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("checking for existing users: %w", err)
+	}
+
+	if hasUsers && !s.cfg.AllowRegistration {
 		return nil, nil, ErrRegistrationClosed
 	}
 
-	if err := ValidatePassword(input.Password, s.cfg.Password); err != nil {
-		return nil, nil, fmt.Errorf("password validation: %w", err)
+	if validationErr := ValidatePassword(input.Password, s.cfg.Password); validationErr != nil {
+		return nil, nil, fmt.Errorf("password validation: %w", validationErr)
 	}
 
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 
-	existing, err := s.getUserByEmail(ctx, input.Email)
-	if err != nil && !errors.Is(err, ErrUserNotFound) {
-		return nil, nil, fmt.Errorf("checking existing user: %w", err)
+	existing, existingErr := s.getUserByEmail(ctx, input.Email)
+	if existingErr != nil && !errors.Is(existingErr, ErrUserNotFound) {
+		return nil, nil, fmt.Errorf("checking existing user: %w", existingErr)
 	}
 	if existing != nil {
 		return nil, nil, ErrUserAlreadyExists
@@ -137,10 +142,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*User, *Tok
 		return nil, nil, fmt.Errorf("validating refresh token: %w", err)
 	}
 
-	refreshHash, err := HashPassword(refreshToken)
-	if err != nil {
-		return nil, nil, fmt.Errorf("hashing refresh token: %w", err)
-	}
+	refreshHash := HashToken(refreshToken)
 
 	session, err := s.getSessionByRefreshHash(ctx, refreshHash)
 	if err != nil {
@@ -173,10 +175,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*User, *Tok
 
 // Logout invalidates a session.
 func (s *Service) Logout(ctx context.Context, refreshToken string) error {
-	refreshHash, err := HashPassword(refreshToken)
-	if err != nil {
-		return fmt.Errorf("hashing refresh token: %w", err)
-	}
+	refreshHash := HashToken(refreshToken)
 
 	session, err := s.getSessionByRefreshHash(ctx, refreshHash)
 	if err != nil {
@@ -194,38 +193,35 @@ func (s *Service) ValidateToken(token string) (*Claims, error) {
 	return s.jwt.ValidateAccessToken(token)
 }
 
+// HasUsers returns true if any users exist in the system.
+func (s *Service) HasUsers(ctx context.Context) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM _alyx_users LIMIT 1)`
+	var exists bool
+	err := s.db.QueryRowContext(ctx, query).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking for users: %w", err)
+	}
+	return exists, nil
+}
+
 // GetUserByID retrieves a user by ID.
 func (s *Service) GetUserByID(ctx context.Context, id string) (*User, error) {
-	query := `SELECT id, email, verified, created_at, updated_at, metadata FROM _alyx_users WHERE id = ?`
-	row := s.db.QueryRowContext(ctx, query, id)
-
-	user := &User{}
-	var metadataJSON sql.NullString
-	var createdAt, updatedAt string
-
-	err := row.Scan(&user.ID, &user.Email, &user.Verified, &createdAt, &updatedAt, &metadataJSON)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("scanning user: %w", err)
-	}
-
-	user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	user.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-
-	return user, nil
+	query := `SELECT id, email, verified, role, created_at, updated_at, metadata FROM _alyx_users WHERE id = ?`
+	return s.scanUserRow(s.db.QueryRowContext(ctx, query, id))
 }
 
 func (s *Service) getUserByEmail(ctx context.Context, email string) (*User, error) {
-	query := `SELECT id, email, verified, created_at, updated_at, metadata FROM _alyx_users WHERE email = ?`
-	row := s.db.QueryRowContext(ctx, query, email)
+	query := `SELECT id, email, verified, role, created_at, updated_at, metadata FROM _alyx_users WHERE email = ?`
+	return s.scanUserRow(s.db.QueryRowContext(ctx, query, email))
+}
 
+func (s *Service) scanUserRow(row *sql.Row) (*User, error) {
 	user := &User{}
 	var metadataJSON sql.NullString
+	var role sql.NullString
 	var createdAt, updatedAt string
 
-	err := row.Scan(&user.ID, &user.Email, &user.Verified, &createdAt, &updatedAt, &metadataJSON)
+	err := row.Scan(&user.ID, &user.Email, &user.Verified, &role, &createdAt, &updatedAt, &metadataJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -233,6 +229,10 @@ func (s *Service) getUserByEmail(ctx context.Context, email string) (*User, erro
 		return nil, fmt.Errorf("scanning user: %w", err)
 	}
 
+	user.Role = role.String
+	if user.Role == "" {
+		user.Role = RoleUser
+	}
 	user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	user.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 
@@ -240,15 +240,16 @@ func (s *Service) getUserByEmail(ctx context.Context, email string) (*User, erro
 }
 
 func (s *Service) getUserWithPassword(ctx context.Context, email string) (*User, string, error) {
-	query := `SELECT id, email, password_hash, verified, created_at, updated_at, metadata FROM _alyx_users WHERE email = ?`
+	query := `SELECT id, email, password_hash, verified, role, created_at, updated_at, metadata FROM _alyx_users WHERE email = ?`
 	row := s.db.QueryRowContext(ctx, query, email)
 
 	user := &User{}
 	var passwordHash sql.NullString
 	var metadataJSON sql.NullString
+	var role sql.NullString
 	var createdAt, updatedAt string
 
-	err := row.Scan(&user.ID, &user.Email, &passwordHash, &user.Verified, &createdAt, &updatedAt, &metadataJSON)
+	err := row.Scan(&user.ID, &user.Email, &passwordHash, &user.Verified, &role, &createdAt, &updatedAt, &metadataJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", ErrUserNotFound
 	}
@@ -256,6 +257,10 @@ func (s *Service) getUserWithPassword(ctx context.Context, email string) (*User,
 		return nil, "", fmt.Errorf("scanning user: %w", err)
 	}
 
+	user.Role = role.String
+	if user.Role == "" {
+		user.Role = RoleUser
+	}
 	user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	user.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 
@@ -294,10 +299,7 @@ func (s *Service) createSession(ctx context.Context, user *User, userAgent, ipAd
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
-	refreshHash, err := HashPassword(refreshToken)
-	if err != nil {
-		return nil, fmt.Errorf("hashing refresh token: %w", err)
-	}
+	refreshHash := HashToken(refreshToken)
 
 	session := &Session{
 		ID:               uuid.New().String(),
@@ -472,4 +474,307 @@ func (s *Service) linkOAuthAccount(ctx context.Context, userID string, userInfo 
 	)
 
 	return err
+}
+
+const (
+	defaultListLimit = 20
+	maxListLimit     = 100
+	defaultSortField = "created_at"
+	defaultSortDir   = "desc"
+	sortDirAsc       = "asc"
+)
+
+var allowedSortFields = map[string]bool{
+	"id": true, "email": true, "verified": true, "role": true, "created_at": true, "updated_at": true,
+}
+
+// ListUsers returns a paginated list of users with optional filtering.
+func (s *Service) ListUsers(ctx context.Context, opts ListUsersOptions) (*ListUsersResult, error) {
+	opts = normalizeListOptions(opts)
+
+	whereClause, args := buildUserWhereClause(opts)
+
+	total, err := s.countUsers(ctx, whereClause, args)
+	if err != nil {
+		return nil, err
+	}
+
+	users, err := s.queryUsers(ctx, whereClause, args, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListUsersResult{Users: users, Total: total}, nil
+}
+
+func normalizeListOptions(opts ListUsersOptions) ListUsersOptions {
+	if opts.Limit <= 0 {
+		opts.Limit = defaultListLimit
+	}
+	if opts.Limit > maxListLimit {
+		opts.Limit = maxListLimit
+	}
+	if opts.SortBy == "" || !allowedSortFields[opts.SortBy] {
+		opts.SortBy = defaultSortField
+	}
+	if opts.SortDir != sortDirAsc && opts.SortDir != defaultSortDir {
+		opts.SortDir = defaultSortDir
+	}
+	return opts
+}
+
+func buildUserWhereClause(opts ListUsersOptions) (string, []any) {
+	var conditions []string
+	var args []any
+
+	if opts.Search != "" {
+		conditions = append(conditions, "email LIKE ?")
+		args = append(args, "%"+opts.Search+"%")
+	}
+	if opts.Role != "" {
+		conditions = append(conditions, "role = ?")
+		args = append(args, opts.Role)
+	}
+
+	if len(conditions) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(conditions, " AND "), args
+}
+
+func (s *Service) countUsers(ctx context.Context, whereClause string, args []any) (int, error) {
+	var total int
+	query := "SELECT COUNT(*) FROM _alyx_users" + whereClause
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("counting users: %w", err)
+	}
+	return total, nil
+}
+
+func (s *Service) queryUsers(ctx context.Context, whereClause string, args []any, opts ListUsersOptions) ([]*User, error) {
+	query := fmt.Sprintf(
+		"SELECT id, email, verified, role, created_at, updated_at, metadata FROM _alyx_users%s ORDER BY %s %s LIMIT ? OFFSET ?",
+		whereClause, opts.SortBy, strings.ToUpper(opts.SortDir),
+	)
+	args = append(args, opts.Limit, opts.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying users: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]*User, 0)
+	for rows.Next() {
+		user, scanErr := s.scanUserFromRows(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating users: %w", err)
+	}
+
+	return users, nil
+}
+
+func (s *Service) scanUserFromRows(rows *sql.Rows) (*User, error) {
+	user := &User{}
+	var metadataJSON sql.NullString
+	var role sql.NullString
+	var createdAt, updatedAt string
+
+	if err := rows.Scan(&user.ID, &user.Email, &user.Verified, &role, &createdAt, &updatedAt, &metadataJSON); err != nil {
+		return nil, fmt.Errorf("scanning user: %w", err)
+	}
+
+	user.Role = role.String
+	if user.Role == "" {
+		user.Role = RoleUser
+	}
+	user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	user.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return user, nil
+}
+
+// UpdateUser updates a user's information by ID.
+func (s *Service) UpdateUser(ctx context.Context, id string, input UpdateUserInput) (*User, error) {
+	user, err := s.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var updates []string
+	var args []any
+
+	if input.Email != nil {
+		email := strings.ToLower(strings.TrimSpace(*input.Email))
+		existing, existingErr := s.getUserByEmail(ctx, email)
+		if existingErr != nil && !errors.Is(existingErr, ErrUserNotFound) {
+			return nil, fmt.Errorf("checking existing email: %w", existingErr)
+		}
+		if existing != nil && existing.ID != id {
+			return nil, ErrUserAlreadyExists
+		}
+		updates = append(updates, "email = ?")
+		args = append(args, email)
+	}
+
+	if input.Verified != nil {
+		updates = append(updates, "verified = ?")
+		args = append(args, *input.Verified)
+	}
+
+	if input.Role != nil {
+		role := strings.TrimSpace(*input.Role)
+		if role != RoleUser && role != RoleAdmin {
+			return nil, fmt.Errorf("invalid role: %s", role)
+		}
+		updates = append(updates, "role = ?")
+		args = append(args, role)
+	}
+
+	if input.Metadata != nil {
+		updates = append(updates, "metadata = ?")
+		args = append(args, *input.Metadata)
+	}
+
+	if len(updates) == 0 {
+		return user, nil
+	}
+
+	updates = append(updates, "updated_at = ?")
+	args = append(args, time.Now().UTC().Format(time.RFC3339))
+	args = append(args, id)
+
+	query := fmt.Sprintf("UPDATE _alyx_users SET %s WHERE id = ?", strings.Join(updates, ", "))
+	if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+		return nil, fmt.Errorf("updating user: %w", err)
+	}
+
+	return s.GetUserByID(ctx, id)
+}
+
+// DeleteUser deletes a user by ID.
+func (s *Service) DeleteUser(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM _alyx_users WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("deleting user: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrUserNotFound
+	}
+
+	log.Info().Str("user_id", id).Msg("User deleted")
+	return nil
+}
+
+// CreateUserByAdmin creates a new user via admin API (bypasses registration settings).
+func (s *Service) CreateUserByAdmin(ctx context.Context, input CreateUserInput) (*User, error) {
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+
+	existing, existingErr := s.getUserByEmail(ctx, input.Email)
+	if existingErr != nil && !errors.Is(existingErr, ErrUserNotFound) {
+		return nil, fmt.Errorf("checking existing user: %w", existingErr)
+	}
+	if existing != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	if validationErr := ValidatePassword(input.Password, s.cfg.Password); validationErr != nil {
+		return nil, fmt.Errorf("password validation: %w", validationErr)
+	}
+
+	passwordHash, err := HashPassword(input.Password)
+	if err != nil {
+		return nil, fmt.Errorf("hashing password: %w", err)
+	}
+
+	role := input.Role
+	if role == "" {
+		role = RoleUser
+	}
+	if role != RoleUser && role != RoleAdmin {
+		return nil, fmt.Errorf("invalid role: %s", role)
+	}
+
+	user := &User{
+		ID:        uuid.New().String(),
+		Email:     input.Email,
+		Verified:  input.Verified,
+		Role:      role,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Metadata:  input.Metadata,
+	}
+
+	if createErr := s.createUserWithRole(ctx, user, passwordHash); createErr != nil {
+		return nil, fmt.Errorf("creating user: %w", createErr)
+	}
+
+	log.Info().Str("user_id", user.ID).Str("email", user.Email).Str("role", user.Role).Msg("User created by admin")
+
+	return user, nil
+}
+
+func (s *Service) createUserWithRole(ctx context.Context, user *User, passwordHash string) error {
+	query := `INSERT INTO _alyx_users (id, email, password_hash, verified, role, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+
+	var metadata any
+	if user.Metadata != nil {
+		metadata = user.Metadata
+	}
+
+	_, err := s.db.ExecContext(ctx, query,
+		user.ID,
+		user.Email,
+		passwordHash,
+		user.Verified,
+		user.Role,
+		user.CreatedAt.Format(time.RFC3339),
+		user.UpdatedAt.Format(time.RFC3339),
+		metadata,
+	)
+
+	return err
+}
+
+// SetPassword sets a new password for a user (admin operation).
+func (s *Service) SetPassword(ctx context.Context, userID, newPassword string) error {
+	if validationErr := ValidatePassword(newPassword, s.cfg.Password); validationErr != nil {
+		return fmt.Errorf("password validation: %w", validationErr)
+	}
+
+	passwordHash, err := HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	result, err := s.db.ExecContext(ctx,
+		"UPDATE _alyx_users SET password_hash = ?, updated_at = ? WHERE id = ?",
+		passwordHash, time.Now().UTC().Format(time.RFC3339), userID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrUserNotFound
+	}
+
+	log.Info().Str("user_id", userID).Msg("Password reset by admin")
+	return nil
 }

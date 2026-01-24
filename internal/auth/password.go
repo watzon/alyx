@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"unicode"
 
@@ -91,4 +93,10 @@ func ValidatePassword(password string, cfg config.PasswordConfig) error {
 	}
 
 	return nil
+}
+
+// HashToken hashes a token using SHA-256 (suitable for long tokens like JWTs).
+func HashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }

@@ -11,9 +11,54 @@ type User struct {
 	ID        string         `json:"id"`
 	Email     string         `json:"email"`
 	Verified  bool           `json:"verified"`
+	Role      string         `json:"role"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// UserRole constants for the built-in role system.
+const (
+	RoleUser  = "user"
+	RoleAdmin = "admin"
+)
+
+// IsAdmin returns true if the user has admin role.
+func (u *User) IsAdmin() bool {
+	return u.Role == RoleAdmin
+}
+
+// ListUsersOptions contains options for listing users.
+type ListUsersOptions struct {
+	Limit   int
+	Offset  int
+	SortBy  string
+	SortDir string // "asc" or "desc"
+	Search  string // Search in email
+	Role    string // Filter by role
+}
+
+// ListUsersResult contains the result of listing users.
+type ListUsersResult struct {
+	Users []*User `json:"users"`
+	Total int     `json:"total"`
+}
+
+// UpdateUserInput contains the data for updating a user.
+type UpdateUserInput struct {
+	Email    *string         `json:"email,omitempty"`
+	Verified *bool           `json:"verified,omitempty"`
+	Role     *string         `json:"role,omitempty"`
+	Metadata *map[string]any `json:"metadata,omitempty"`
+}
+
+// CreateUserInput contains the data for creating a user via admin API.
+type CreateUserInput struct {
+	Email    string         `json:"email"`
+	Password string         `json:"password"`
+	Verified bool           `json:"verified"`
+	Role     string         `json:"role"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Session represents an active user session.

@@ -29,6 +29,20 @@ func (h *AuthHandlers) Service() *auth.Service {
 	return h.service
 }
 
+func (h *AuthHandlers) Status(w http.ResponseWriter, r *http.Request) {
+	hasUsers, err := h.service.HasUsers(r.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to check for users")
+		InternalError(w, "Failed to check auth status")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"needs_setup":        !hasUsers,
+		"allow_registration": h.cfg.AllowRegistration,
+	})
+}
+
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	var input auth.RegisterInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
