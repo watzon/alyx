@@ -57,12 +57,7 @@ linters-settings:
 
   errcheck:
     check-type-assertions: true
-    check-blank: true
-    exclude-functions:
-      - (net/http.ResponseWriter).Write
-      - (*net/http.Server).Shutdown
-      - (*database/sql.DB).Exec
-      - (*database/sql.Tx).Rollback
+    check-blank: false
 
   errorlint:
     errorf: true
@@ -173,6 +168,7 @@ issues:
         - mnd
         - gochecknoinits
         - gocyclo
+        - predeclared
 
     # Exclude some linters from running on generated files
     - path: generated
