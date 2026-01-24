@@ -17,8 +17,17 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o alyx ./cmd/alyx
+# Build the binary for target platform
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+    case ${TARGETPLATFORM} in \
+        "linux/amd64")  export GOARCH=amd64 ;; \
+        "linux/arm64")  export GOARCH=arm64 ;; \
+        *)              export GOARCH=amd64 ;; \
+    esac && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o alyx ./cmd/alyx
 
 # Runtime stage
 FROM alpine:latest
