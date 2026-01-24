@@ -1,0 +1,355 @@
+const BASE_URL = '/api';
+
+export interface ApiError {
+	code: string;
+	error: string;
+	message: string;
+	details?: { field: string; code: string; message: string }[];
+}
+
+interface ApiResponse<T> {
+	data?: T;
+	error?: ApiError;
+}
+
+class ApiClient {
+	private accessToken: string | null = null;
+	private refreshPromise: Promise<boolean> | null = null;
+	private onAuthFailure: (() => void) | null = null;
+
+	setToken(token: string | null) {
+		this.accessToken = token;
+		if (token) {
+			localStorage.setItem('alyx_access_token', token);
+		} else {
+			localStorage.removeItem('alyx_access_token');
+		}
+	}
+
+	getToken(): string | null {
+		if (this.accessToken) return this.accessToken;
+		if (typeof localStorage !== 'undefined') {
+			this.accessToken = localStorage.getItem('alyx_access_token');
+		}
+		return this.accessToken;
+	}
+
+	getRefreshToken(): string | null {
+		if (typeof localStorage !== 'undefined') {
+			return localStorage.getItem('alyx_refresh_token');
+		}
+		return null;
+	}
+
+	setRefreshToken(token: string | null) {
+		if (typeof localStorage !== 'undefined') {
+			if (token) {
+				localStorage.setItem('alyx_refresh_token', token);
+			} else {
+				localStorage.removeItem('alyx_refresh_token');
+			}
+		}
+	}
+
+	/**
+	 * Register a callback to be invoked when authentication fails
+	 * (i.e., both access token and refresh token are invalid/expired)
+	 */
+	onAuthenticationFailure(callback: () => void) {
+		this.onAuthFailure = callback;
+	}
+
+	/**
+	 * Attempt to refresh the access token using the stored refresh token.
+	 * Returns true if refresh succeeded, false otherwise.
+	 * Uses a single promise to prevent concurrent refresh attempts.
+	 */
+	private async refreshAccessToken(): Promise<boolean> {
+		// If already refreshing, wait for that to complete
+		if (this.refreshPromise) {
+			return this.refreshPromise;
+		}
+
+		const refreshToken = this.getRefreshToken();
+		if (!refreshToken) {
+			return false;
+		}
+
+		this.refreshPromise = (async () => {
+			try {
+				const response = await fetch(`${BASE_URL}/auth/refresh`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ refresh_token: refreshToken })
+				});
+
+				if (!response.ok) {
+					// Refresh token is invalid/expired - clear everything
+					this.setToken(null);
+					this.setRefreshToken(null);
+					return false;
+				}
+
+				const data = await response.json();
+				const tokens = data.tokens;
+				this.setToken(tokens.access_token);
+				if (tokens.refresh_token) {
+					this.setRefreshToken(tokens.refresh_token);
+				}
+				return true;
+			} catch {
+				return false;
+			} finally {
+				this.refreshPromise = null;
+			}
+		})();
+
+		return this.refreshPromise;
+	}
+
+	private async request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+		isRetry = false
+	): Promise<ApiResponse<T>> {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json'
+		};
+
+		const token = this.getToken();
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
+		}
+
+		try {
+			const response = await fetch(`${BASE_URL}${path}`, {
+				method,
+				headers,
+				body: body ? JSON.stringify(body) : undefined
+			});
+
+			// Handle 401 - attempt token refresh (but not for auth endpoints or retries)
+			if (response.status === 401 && !isRetry && !path.startsWith('/auth/')) {
+				const refreshed = await this.refreshAccessToken();
+				if (refreshed) {
+					// Retry the original request with the new token
+					return this.request<T>(method, path, body, true);
+				}
+				// Refresh failed - notify auth store to handle logout
+				this.onAuthFailure?.();
+			}
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				const apiError = data as ApiError;
+				// Backend uses 'error' field, normalize to 'message' for consistency
+				if (apiError.error && !apiError.message) {
+					apiError.message = apiError.error;
+				}
+				return { error: apiError };
+			}
+
+			return { data: data as T };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Network request failed';
+			return {
+				error: {
+					code: 'NETWORK_ERROR',
+					error: message,
+					message: message
+				}
+			};
+		}
+	}
+
+	get<T>(path: string) {
+		return this.request<T>('GET', path);
+	}
+
+	post<T>(path: string, body?: unknown) {
+		return this.request<T>('POST', path, body);
+	}
+
+	patch<T>(path: string, body?: unknown) {
+		return this.request<T>('PATCH', path, body);
+	}
+
+	delete<T>(path: string) {
+		return this.request<T>('DELETE', path);
+	}
+}
+
+export const api = new ApiClient();
+
+export interface AuthTokens {
+	access_token: string;
+	refresh_token: string;
+	expires_in: number;
+}
+
+export interface AuthResponse {
+	user: User;
+	tokens: AuthTokens;
+}
+
+export interface User {
+	id: string;
+	email: string;
+	role: string;
+	verified: boolean;
+	created_at: string;
+	updated_at: string;
+	metadata?: Record<string, unknown>;
+}
+
+export interface Collection {
+	name: string;
+	fields: Field[];
+	indexes?: Index[];
+	rules?: Rules;
+}
+
+export interface Field {
+	name: string;
+	type: string;
+	primary?: boolean;
+	unique?: boolean;
+	nullable?: boolean;
+	index?: boolean;
+	default?: unknown;
+	references?: string;
+	onDelete?: string;
+	validate?: Record<string, unknown>;
+}
+
+export interface Index {
+	name: string;
+	fields: string[];
+	unique?: boolean;
+}
+
+export interface Rules {
+	create?: string;
+	read?: string;
+	update?: string;
+	delete?: string;
+}
+
+export interface Schema {
+	version: number;
+	collections: Collection[];
+}
+
+export interface Stats {
+	uptime: number;
+	collections: number;
+	documents: number;
+	users: number;
+	functions: number;
+}
+
+export interface FunctionInfo {
+	name: string;
+	runtime: string;
+	path: string;
+	enabled: boolean;
+}
+
+export interface AuthStatus {
+	needs_setup: boolean;
+	allow_registration: boolean;
+}
+
+export const auth = {
+	status: () => api.get<AuthStatus>('/auth/status'),
+
+	login: (email: string, password: string) =>
+		api.post<AuthResponse>('/auth/login', { email, password }),
+
+	register: (email: string, password: string) =>
+		api.post<AuthResponse>('/auth/register', { email, password }),
+
+	logout: () => api.post('/auth/logout'),
+
+	refresh: (refreshToken: string) =>
+		api.post<AuthTokens>('/auth/refresh', { refresh_token: refreshToken }),
+
+	me: () => api.get<User>('/auth/me'),
+
+	providers: () => api.get<{ providers: string[] }>('/auth/providers')
+};
+
+export const admin = {
+	stats: () => api.get<Stats>('/admin/stats'),
+
+	schema: () => api.get<Schema>('/admin/schema'),
+
+	users: {
+		list: (params?: {
+			limit?: number;
+			offset?: number;
+			sort_by?: string;
+			sort_dir?: 'asc' | 'desc';
+			search?: string;
+			role?: string;
+		}) => {
+			const query = new URLSearchParams();
+			if (params?.limit) query.set('limit', String(params.limit));
+			if (params?.offset) query.set('offset', String(params.offset));
+			if (params?.sort_by) query.set('sort_by', params.sort_by);
+			if (params?.sort_dir) query.set('sort_dir', params.sort_dir);
+			if (params?.search) query.set('search', params.search);
+			if (params?.role) query.set('role', params.role);
+			const qs = query.toString();
+			return api.get<{ users: User[]; total: number }>(`/admin/users${qs ? `?${qs}` : ''}`);
+		},
+		get: (id: string) => api.get<User>(`/admin/users/${id}`),
+		create: (data: { email: string; password: string; role?: string; verified?: boolean }) =>
+			api.post<User>('/admin/users', data),
+		update: (id: string, data: { email?: string; role?: string; verified?: boolean }) =>
+			api.patch<User>(`/admin/users/${id}`, data),
+		delete: (id: string) => api.delete<{ deleted: boolean; id: string }>(`/admin/users/${id}`),
+		setPassword: (id: string, password: string) =>
+			api.post<{ success: boolean }>(`/admin/users/${id}/password`, { password })
+	},
+
+	tokens: {
+		list: () => api.get<{ tokens: { name: string; created_at: string }[] }>('/admin/tokens'),
+		create: (name: string) => api.post<{ token: string }>('/admin/tokens', { name }),
+		delete: (name: string) => api.delete(`/admin/tokens/${name}`)
+	},
+
+	functions: {
+		list: () => api.get<{ functions: FunctionInfo[] }>('/functions'),
+		stats: () => api.get<Record<string, unknown>>('/functions/stats'),
+		invoke: (name: string, input?: unknown) => api.post(`/functions/${name}`, input),
+		reload: () => api.post('/functions/reload')
+	}
+};
+
+export const collections = {
+	list: (collection: string, params?: { filter?: string; sort?: string; page?: number; perPage?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.filter) query.set('filter', params.filter);
+		if (params?.sort) query.set('sort', params.sort);
+		if (params?.page) query.set('page', String(params.page));
+		if (params?.perPage) query.set('perPage', String(params.perPage));
+		const qs = query.toString();
+		return api.get<{ docs: Record<string, unknown>[]; total: number; limit: number; offset: number }>(
+			`/collections/${collection}${qs ? `?${qs}` : ''}`
+		);
+	},
+
+	get: (collection: string, id: string) =>
+		api.get<Record<string, unknown>>(`/collections/${collection}/${id}`),
+
+	create: (collection: string, data: Record<string, unknown>) =>
+		api.post<Record<string, unknown>>(`/collections/${collection}`, data),
+
+	update: (collection: string, id: string, data: Record<string, unknown>) =>
+		api.patch<Record<string, unknown>>(`/collections/${collection}/${id}`, data),
+
+	delete: (collection: string, id: string) => api.delete(`/collections/${collection}/${id}`)
+};
