@@ -144,3 +144,28 @@ docker-build:
 docker-run:
 	@echo "Running Docker container..."
 	docker run -p 8090:8090 alyx:$(VERSION)
+
+## ui-build: Build the admin UI
+ui-build:
+	@echo "Building admin UI..."
+	@cd ui && npm install && npm run build
+	@rm -rf internal/adminui/dist
+	@cp -r ui/build internal/adminui/dist
+	@echo "Admin UI built and copied to internal/adminui/dist"
+
+## ui-dev: Start admin UI dev server
+ui-dev:
+	@echo "Starting admin UI dev server..."
+	@cd ui && npm run dev
+
+## dev-ui: Run Go server with admin UI proxying to Vite dev server
+## Use this when developing the admin UI itself
+dev-ui:
+	@echo "Starting development environment with UI proxy..."
+	@echo "Run 'make ui-dev' in another terminal first!"
+	@if command -v air >/dev/null 2>&1; then \
+		ALYX_ADMIN_UI_DEV=http://localhost:5173 air; \
+	else \
+		echo "air not installed. Run: go install github.com/air-verse/air@latest"; \
+		exit 1; \
+	fi

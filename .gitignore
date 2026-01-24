@@ -46,6 +46,7 @@ data/
 # Generated files
 generated/
 ui/build/
+internal/adminui/dist/
 
 # Logs
 *.log
