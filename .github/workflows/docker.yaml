@@ -8,6 +8,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +24,12 @@ permissions:
 
 jobs:
   build-and-push:
+    # Only run if CI passed or this is a manual trigger
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     steps:

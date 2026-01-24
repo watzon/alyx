@@ -11,13 +11,17 @@ on:
     paths:
       - 'runtimes/**'
       - '.github/workflows/runtimes.yaml'
-  # Allow manual trigger
   workflow_dispatch:
     inputs:
       push_images:
         description: 'Push images to GHCR'
         required: false
         default: 'true'
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -29,6 +33,11 @@ permissions:
 
 jobs:
   build-node:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     name: Build Node.js Runtime
     runs-on: ubuntu-latest
     steps:
@@ -72,6 +81,11 @@ jobs:
   build-python:
     name: Build Python Runtime
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
