@@ -200,6 +200,7 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 
 	addAuthEndpoints(spec)
 	addFunctionEndpoints(spec)
+	addAdminEndpoints(spec)
 
 	return spec
 }
@@ -216,11 +217,12 @@ func addAuthEndpoints(spec *Spec) {
 			"id":         {Type: "string", Format: "uuid"},
 			"email":      {Type: "string", Format: "email"},
 			"verified":   {Type: "boolean"},
+			"role":       {Type: "string", Enum: []string{"user", "admin"}},
 			"created_at": {Type: "string", Format: "date-time"},
 			"updated_at": {Type: "string", Format: "date-time"},
 			"metadata":   {Type: "object", AdditionalProperties: &Schema{}},
 		},
-		Required: []string{"id", "email", "verified", "created_at", "updated_at"},
+		Required: []string{"id", "email", "verified", "role", "created_at", "updated_at"},
 	}
 
 	spec.Components.Schemas["TokenPair"] = &Schema{
@@ -826,4 +828,183 @@ func addFunctionEndpoints(spec *Spec) {
 
 func (s *Spec) JSON() ([]byte, error) {
 	return json.MarshalIndent(s, "", "  ")
+}
+
+func addAdminEndpoints(spec *Spec) {
+	spec.Tags = append(spec.Tags, Tag{
+		Name:        "admin",
+		Description: "Admin API endpoints (requires admin authentication)",
+	})
+
+	spec.Components.Schemas["AdminUser"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"id":         {Type: "string", Format: "uuid"},
+			"email":      {Type: "string", Format: "email"},
+			"verified":   {Type: "boolean"},
+			"role":       {Type: "string", Enum: []string{"user", "admin"}},
+			"created_at": {Type: "string", Format: "date-time"},
+			"updated_at": {Type: "string", Format: "date-time"},
+			"metadata":   {Type: "object", AdditionalProperties: &Schema{}},
+		},
+		Required: []string{"id", "email", "verified", "role", "created_at", "updated_at"},
+	}
+
+	spec.Components.Schemas["CreateUserInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"email":    {Type: "string", Format: "email"},
+			"password": {Type: "string", MinLength: intPtr(defaultPasswordMinLength)},
+			"verified": {Type: "boolean"},
+			"role":     {Type: "string", Enum: []string{"user", "admin"}},
+			"metadata": {Type: "object", AdditionalProperties: &Schema{}},
+		},
+		Required: []string{"email", "password"},
+	}
+
+	spec.Components.Schemas["UpdateUserInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"email":    {Type: "string", Format: "email"},
+			"verified": {Type: "boolean"},
+			"role":     {Type: "string", Enum: []string{"user", "admin"}},
+			"metadata": {Type: "object", AdditionalProperties: &Schema{}},
+		},
+	}
+
+	spec.Components.Schemas["SetPasswordInput"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"password": {Type: "string", MinLength: intPtr(defaultPasswordMinLength)},
+		},
+		Required: []string{"password"},
+	}
+
+	spec.Components.Schemas["UserListResponse"] = &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"users": {Type: "array", Items: &Schema{Ref: "#/components/schemas/AdminUser"}},
+			"total": {Type: "integer"},
+		},
+		Required: []string{"users", "total"},
+	}
+
+	spec.Paths["/api/admin/users"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "List users",
+			Description: "Get a paginated list of all users",
+			OperationID: "listUsers",
+			Parameters: []Parameter{
+				{Name: "limit", In: "query", Description: "Maximum users to return (default: 20, max: 100)", Schema: &Schema{Type: "integer"}},
+				{Name: "offset", In: "query", Description: "Number of users to skip", Schema: &Schema{Type: "integer"}},
+				{Name: "sort_by", In: "query", Description: "Field to sort by (id, email, verified, role, created_at, updated_at)", Schema: &Schema{Type: "string"}},
+				{Name: "sort_dir", In: "query", Description: "Sort direction (asc, desc)", Schema: &Schema{Type: "string"}},
+				{Name: "search", In: "query", Description: "Search in email", Schema: &Schema{Type: "string"}},
+				{Name: "role", In: "query", Description: "Filter by role", Schema: &Schema{Type: "string"}},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "List of users", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/UserListResponse"}}}},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+		Post: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Create user",
+			Description: "Create a new user with specified role",
+			OperationID: "createUser",
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "User data",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/CreateUserInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"201": {Description: "User created", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AdminUser"}}}},
+				"400": {Description: "Invalid input", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"409": {Description: "User already exists", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/admin/users/{id}"] = &PathItem{
+		Get: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Get user",
+			Description: "Get a user by ID",
+			OperationID: "getUser",
+			Parameters: []Parameter{
+				{Name: "id", In: "path", Required: true, Description: "User ID", Schema: &Schema{Type: "string", Format: "uuid"}},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "User details", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AdminUser"}}}},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "User not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+		Patch: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Update user",
+			Description: "Update a user's information",
+			OperationID: "updateUser",
+			Parameters: []Parameter{
+				{Name: "id", In: "path", Required: true, Description: "User ID", Schema: &Schema{Type: "string", Format: "uuid"}},
+			},
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "Fields to update",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/UpdateUserInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "User updated", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/AdminUser"}}}},
+				"400": {Description: "Invalid input", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "User not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"409": {Description: "Email already in use", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+		Delete: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Delete user",
+			Description: "Delete a user by ID",
+			OperationID: "deleteUser",
+			Parameters: []Parameter{
+				{Name: "id", In: "path", Required: true, Description: "User ID", Schema: &Schema{Type: "string", Format: "uuid"}},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "User deleted"},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "User not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
+
+	spec.Paths["/api/admin/users/{id}/password"] = &PathItem{
+		Post: &Operation{
+			Tags:        []string{"admin"},
+			Summary:     "Set user password",
+			Description: "Set a new password for a user",
+			OperationID: "setUserPassword",
+			Parameters: []Parameter{
+				{Name: "id", In: "path", Required: true, Description: "User ID", Schema: &Schema{Type: "string", Format: "uuid"}},
+			},
+			RequestBody: &RequestBody{
+				Required:    true,
+				Description: "New password",
+				Content: map[string]MediaType{
+					"application/json": {Schema: &Schema{Ref: "#/components/schemas/SetPasswordInput"}},
+				},
+			},
+			Responses: map[string]Response{
+				"200": {Description: "Password set"},
+				"400": {Description: "Invalid password", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"401": {Description: "Unauthorized", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+				"404": {Description: "User not found", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/Error"}}}},
+			},
+		},
+	}
 }
