@@ -253,6 +253,13 @@ These features are planned for future releases after the initial MVP is complete
 
 ### Near-term (v1.1 - v1.3)
 
+- **Embedded User Frontend**: Full-stack single-binary deployment with user's own SPA
+  - Framework-agnostic (React, Svelte, Vue, SolidJS, etc.) - just needs `index.html` entrypoint
+  - Vite-compatible build integration during `alyx build`
+  - SPA fallback routing (serves `index.html` for client-side routes)
+  - Coexists with Admin UI: user app at `/`, admin at `/_admin`, API at `/api/*`
+  - Dev mode: proxy to Vite dev server for HMR support
+  - Config-driven: `frontend.dist` for pre-built, `frontend.source` for build-from-source
 - **Multi-tenancy**: Database-per-tenant isolation with resource limits
 - **File Storage**: Local filesystem and S3-compatible backends
 - **Scheduled Functions**: Cron-based function execution

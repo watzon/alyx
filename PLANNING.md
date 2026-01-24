@@ -1783,6 +1783,52 @@ Buffer: +2 weeks for unknowns = ~11 weeks
 
 ### Near-term (v1.1 - v1.3)
 
+#### Embedded User Frontend
+
+Full-stack single-binary deployment allowing users to embed their own SPA alongside Alyx.
+
+**Configuration**:
+
+```yaml
+frontend:
+  enabled: true
+  root: "/"                       # Mount path for user frontend
+  dist: "./frontend/dist"         # Pre-built assets (embedded via go:embed)
+  source: "./frontend"            # Optional: source to build
+  build_command: "npm run build"  # Build command if source provided
+  output: "dist"                  # Output directory relative to source
+  dev_proxy: "http://localhost:5173"  # Vite dev server for HMR
+```
+
+**Behavior**:
+- If `dist/` exists → embed and serve directly
+- Else if `source/` exists → run `build_command`, then embed output
+- Else → frontend disabled (warning logged)
+
+**Route Priority** (critical ordering):
+```
+/_admin/*    → Admin UI (Svelte, embedded)
+/api/*       → REST API
+/internal/*  → Internal APIs (function callbacks)
+/*           → User frontend (SPA fallback to index.html)
+```
+
+**Implementation Details**:
+- Framework-agnostic: works with React, Svelte, Vue, SolidJS, etc.
+- SPA fallback: unmatched routes serve `index.html` for client-side routing
+- Cache headers: `no-cache` for HTML, `immutable` for hashed assets
+- Dev mode: reverse proxy to Vite dev server (non-API routes only)
+- Security: path traversal guard, CSP header support
+
+**Dev Workflow**:
+```bash
+# Terminal 1: Vite dev server with HMR
+cd frontend && npm run dev
+
+# Terminal 2: Alyx dev server (proxies to Vite)
+alyx dev
+```
+
 #### Multi-tenancy
 
 - Database-per-tenant isolation
