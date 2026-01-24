@@ -234,6 +234,7 @@ issues:
     # Prealloc is good advice but not critical
     - linters:
         - prealloc
+      text: "Consider pre-allocating"
 
     # Allow some gocritic patterns
     - linters:
@@ -243,6 +244,7 @@ issues:
     # Allow exhaustive switch warnings where default is handled
     - linters:
         - exhaustive
+      text: "missing cases in switch"
 
     # Allow some gosec warnings
     - linters:
