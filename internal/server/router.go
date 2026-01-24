@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/server/handlers"
 )
 
@@ -42,7 +43,7 @@ func (r *Router) Use(mw Middleware) {
 }
 
 func (r *Router) setupRoutes() {
-	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config())
+	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config(), r.server.Rules())
 
 	r.mux.HandleFunc("GET /", r.wrap(h.HealthCheck))
 	r.mux.HandleFunc("GET /health", r.wrap(h.HealthCheck))
@@ -53,6 +54,16 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("PATCH /api/collections/{collection}/{id}", r.wrap(h.UpdateDocument))
 	r.mux.HandleFunc("PUT /api/collections/{collection}/{id}", r.wrap(h.UpdateDocument))
 	r.mux.HandleFunc("DELETE /api/collections/{collection}/{id}", r.wrap(h.DeleteDocument))
+
+	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth)
+	r.mux.HandleFunc("POST /api/auth/register", r.wrap(authHandlers.Register))
+	r.mux.HandleFunc("POST /api/auth/login", r.wrap(authHandlers.Login))
+	r.mux.HandleFunc("POST /api/auth/refresh", r.wrap(authHandlers.Refresh))
+	r.mux.HandleFunc("POST /api/auth/logout", r.wrap(authHandlers.Logout))
+	r.mux.HandleFunc("GET /api/auth/providers", r.wrap(authHandlers.Providers))
+	r.mux.HandleFunc("GET /api/auth/oauth/{provider}", r.wrap(authHandlers.OAuthRedirect))
+	r.mux.HandleFunc("GET /api/auth/oauth/{provider}/callback", r.wrap(authHandlers.OAuthCallback))
+	r.mux.HandleFunc("GET /api/auth/me", r.wrapWithAuth(authHandlers.Me, authHandlers.Service()))
 
 	if r.server.cfg.Docs.Enabled {
 		docs := handlers.NewDocsHandler(r.server.Schema(), r.server.Config())
@@ -70,6 +81,16 @@ func (r *Router) setupRoutes() {
 func (r *Router) wrap(fn handlers.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		fn(w, req)
+	}
+}
+
+func (r *Router) wrapWithAuth(fn handlers.HandlerFunc, authService *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		middleware := auth.RequireAuth(authService)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			fn(w, req)
+		}))
+		handler.ServeHTTP(w, req)
 	}
 }
 

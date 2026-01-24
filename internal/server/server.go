@@ -12,6 +12,7 @@ import (
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/realtime"
+	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 )
 
@@ -19,6 +20,7 @@ type Server struct {
 	cfg        *config.Config
 	db         *database.DB
 	schema     *schema.Schema
+	rules      *rules.Engine
 	broker     *realtime.Broker
 	httpServer *http.Server
 	router     *Router
@@ -31,13 +33,22 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 		schema: s,
 	}
 
+	rulesEngine, err := rules.NewEngine()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to create rules engine, access control disabled")
+	} else if err := rulesEngine.LoadSchema(s); err != nil {
+		log.Warn().Err(err).Msg("Failed to load schema rules, access control disabled")
+		rulesEngine = nil
+	}
+	srv.rules = rulesEngine
+
 	if cfg.Realtime.Enabled {
 		brokerCfg := &realtime.BrokerConfig{
 			PollInterval:   cfg.Realtime.PollInterval.Milliseconds(),
 			MaxConnections: cfg.Realtime.MaxConnections,
 			BufferSize:     cfg.Realtime.ChangeBufferSize,
 		}
-		srv.broker = realtime.NewBroker(db, s, brokerCfg)
+		srv.broker = realtime.NewBroker(db, s, rulesEngine, brokerCfg)
 	}
 
 	srv.router = NewRouter(srv)
@@ -96,6 +107,10 @@ func (s *Server) Config() *config.Config {
 
 func (s *Server) Broker() *realtime.Broker {
 	return s.broker
+}
+
+func (s *Server) Rules() *rules.Engine {
+	return s.rules
 }
 
 func (s *Server) GetCollection(name string) (*database.Collection, error) {
