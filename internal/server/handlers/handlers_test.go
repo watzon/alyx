@@ -70,7 +70,7 @@ collections:
 		}
 	}
 
-	h := New(db, s, config.Default())
+	h := New(db, s, config.Default(), nil)
 
 	t.Cleanup(func() {
 		db.Close()

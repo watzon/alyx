@@ -9,8 +9,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 )
 
@@ -20,14 +22,20 @@ type Handlers struct {
 	db     *database.DB
 	schema *schema.Schema
 	cfg    *config.Config
+	rules  *rules.Engine
 }
 
-func New(db *database.DB, s *schema.Schema, cfg *config.Config) *Handlers {
+func New(db *database.DB, s *schema.Schema, cfg *config.Config, rulesEngine *rules.Engine) *Handlers {
 	return &Handlers{
 		db:     db,
 		schema: s,
 		cfg:    cfg,
+		rules:  rulesEngine,
 	}
+}
+
+func (h *Handlers) Rules() *rules.Engine {
+	return h.rules
 }
 
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +43,38 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"version": "0.1.0",
 	})
+}
+
+func (h *Handlers) checkAccess(r *http.Request, collection string, op rules.Operation, doc map[string]any) error {
+	if h.rules == nil {
+		return nil
+	}
+
+	user := auth.UserFromContext(r.Context())
+	claims := auth.ClaimsFromContext(r.Context())
+
+	evalCtx := &rules.EvalContext{
+		Auth:    rules.BuildAuthContext(user, claims),
+		Doc:     doc,
+		Request: rules.BuildRequestContext(r.Method, extractClientIP(r)),
+	}
+
+	return h.rules.CheckAccess(collection, op, evalCtx)
+}
+
+func extractClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	ip := r.RemoteAddr
+	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+		ip = ip[:colonIdx]
+	}
+	return ip
 }
 
 func (h *Handlers) getCollection(name string) (*database.Collection, error) {
@@ -96,6 +136,16 @@ func (h *Handlers) GetDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.checkAccess(r, collectionName, rules.OpRead, doc); err != nil {
+		if errors.Is(err, rules.ErrAccessDenied) {
+			Forbidden(w, "Access denied")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		InternalError(w, "Failed to check access")
+		return
+	}
+
 	JSON(w, http.StatusOK, doc)
 }
 
@@ -111,6 +161,16 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	var data database.Row
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
+		return
+	}
+
+	if err := h.checkAccess(r, collectionName, rules.OpCreate, data); err != nil {
+		if errors.Is(err, rules.ErrAccessDenied) {
+			Forbidden(w, "Access denied")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		InternalError(w, "Failed to check access")
 		return
 	}
 
@@ -140,6 +200,27 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 	col, err := h.getCollection(collectionName)
 	if err != nil {
 		Error(w, http.StatusNotFound, "COLLECTION_NOT_FOUND", "Collection not found")
+		return
+	}
+
+	existingDoc, err := col.FindOne(r.Context(), id)
+	if errors.Is(err, database.ErrNotFound) {
+		Error(w, http.StatusNotFound, "DOCUMENT_NOT_FOUND", "Document not found")
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).Str("collection", collectionName).Str("id", id).Msg("Failed to get document for update")
+		Error(w, http.StatusInternalServerError, "QUERY_ERROR", "Failed to get document")
+		return
+	}
+
+	if err := h.checkAccess(r, collectionName, rules.OpUpdate, existingDoc); err != nil {
+		if errors.Is(err, rules.ErrAccessDenied) {
+			Forbidden(w, "Access denied")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		InternalError(w, "Failed to check access")
 		return
 	}
 
@@ -179,6 +260,27 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	col, err := h.getCollection(collectionName)
 	if err != nil {
 		Error(w, http.StatusNotFound, "COLLECTION_NOT_FOUND", "Collection not found")
+		return
+	}
+
+	existingDoc, err := col.FindOne(r.Context(), id)
+	if errors.Is(err, database.ErrNotFound) {
+		Error(w, http.StatusNotFound, "DOCUMENT_NOT_FOUND", "Document not found")
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).Str("collection", collectionName).Str("id", id).Msg("Failed to get document for delete")
+		Error(w, http.StatusInternalServerError, "QUERY_ERROR", "Failed to get document")
+		return
+	}
+
+	if err := h.checkAccess(r, collectionName, rules.OpDelete, existingDoc); err != nil {
+		if errors.Is(err, rules.ErrAccessDenied) {
+			Forbidden(w, "Access denied")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("Rule evaluation failed")
+		InternalError(w, "Failed to check access")
 		return
 	}
 
