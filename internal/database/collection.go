@@ -210,8 +210,7 @@ func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, erro
 		return nil, fmt.Errorf("updating document: %w", err)
 	}
 
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
 		return nil, ErrNotFound
 	}
 
@@ -230,8 +229,7 @@ func (c *Collection) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("deleting document: %w", err)
 	}
 
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
 		return ErrNotFound
 	}
 

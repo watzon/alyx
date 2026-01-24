@@ -99,7 +99,7 @@ func runDev(cmd *cobra.Command, args []string) error {
 		<-sigChan
 		log.Info().Msg("Shutdown signal received")
 		cancel()
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background())
 	}()
 
 	log.Info().

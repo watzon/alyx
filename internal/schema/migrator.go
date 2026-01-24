@@ -86,7 +86,9 @@ func (m *Migrator) AppliedMigrations() ([]*AppliedMigration, error) {
 		if err := rows.Scan(&m.ID, &m.Version, &m.Name, &appliedAt, &m.Checksum); err != nil {
 			return nil, fmt.Errorf("scanning migration: %w", err)
 		}
-		m.AppliedAt, _ = time.Parse(time.RFC3339, appliedAt)
+		if parsed, err := time.Parse(time.RFC3339, appliedAt); err == nil {
+			m.AppliedAt = parsed
+		}
 		migrations = append(migrations, &m)
 	}
 	return migrations, rows.Err()
@@ -176,7 +178,7 @@ func (m *Migrator) Apply(mig *Migration) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for i, op := range mig.Operations {
 		sql, err := m.operationToSQL(op)
@@ -226,7 +228,7 @@ func (m *Migrator) ApplySchema(schema *Schema) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, stmt := range statements {
 		if _, err := tx.Exec(stmt); err != nil {
@@ -242,7 +244,7 @@ func (m *Migrator) ApplySafeChanges(changes []*Change) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, change := range changes {
 		if !change.Safe {
@@ -340,8 +342,7 @@ func (m *Migrator) NextVersion() (int, error) {
 
 	maxVersion := 0
 	for _, a := range applied {
-		v, _ := strconv.Atoi(a.Version)
-		if v > maxVersion {
+		if v, err := strconv.Atoi(a.Version); err == nil && v > maxVersion {
 			maxVersion = v
 		}
 	}

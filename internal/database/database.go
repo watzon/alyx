@@ -89,7 +89,7 @@ func (db *DB) Close() error {
 	db.closed = true
 
 	if db.cfg.WALMode {
-		db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	}
 
 	return db.DB.Close()
@@ -109,14 +109,14 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *Tx) error) error {
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			panic(p)
 		}
 	}()
 
 	if err := fn(tx); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("rollback failed: %v (original error: %w)", rbErr, err)
+			return fmt.Errorf("rollback failed: %w (original error: %v)", rbErr, err)
 		}
 		return err
 	}

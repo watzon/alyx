@@ -48,7 +48,7 @@ func (h *DocsHandler) OpenAPISpec(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(h.specCache)
+	_, _ = w.Write(h.specCache)
 }
 
 func (h *DocsHandler) DocsUI(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func (h *DocsHandler) DocsUI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(html))
+	_, _ = w.Write([]byte(html))
 }
 
 func scalarHTML(title string) string {
