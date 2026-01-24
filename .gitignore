@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-alyx
+/alyx
 build/
 
 # Test coverage
