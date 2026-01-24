@@ -1,0 +1,127 @@
+version: 1
+
+collections:
+  users:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      email:
+        type: string
+        unique: true
+        index: true
+        validate:
+          format: email
+      name:
+        type: string
+        maxLength: 100
+        nullable: true
+      avatar_url:
+        type: string
+        nullable: true
+      role:
+        type: string
+        default: "user"
+        validate:
+          enum: [user, moderator, admin]
+      created_at:
+        type: timestamp
+        default: now
+      updated_at:
+        type: timestamp
+        default: now
+        onUpdate: now
+
+    rules:
+      create: "true"
+      read: "auth.id == doc.id || auth.role == 'admin'"
+      update: "auth.id == doc.id"
+      delete: "auth.role == 'admin'"
+
+  posts:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      title:
+        type: string
+        minLength: 1
+        maxLength: 200
+      slug:
+        type: string
+        unique: true
+        index: true
+      content:
+        type: text
+      excerpt:
+        type: string
+        maxLength: 500
+        nullable: true
+      author_id:
+        type: uuid
+        references: users.id
+        onDelete: cascade
+        index: true
+      published:
+        type: bool
+        default: false
+      published_at:
+        type: timestamp
+        nullable: true
+      tags:
+        type: json
+        nullable: true
+      view_count:
+        type: int
+        default: 0
+      created_at:
+        type: timestamp
+        default: now
+      updated_at:
+        type: timestamp
+        default: now
+        onUpdate: now
+
+    indexes:
+      - name: idx_posts_published_date
+        fields: [published, published_at]
+        order: desc
+      - name: idx_posts_author_date
+        fields: [author_id, created_at]
+        order: desc
+
+    rules:
+      create: "auth.id != null"
+      read: "doc.published == true || auth.id == doc.author_id || auth.role == 'admin'"
+      update: "auth.id == doc.author_id || auth.role == 'admin'"
+      delete: "auth.id == doc.author_id || auth.role == 'admin'"
+
+  comments:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      post_id:
+        type: uuid
+        references: posts.id
+        onDelete: cascade
+        index: true
+      author_id:
+        type: uuid
+        references: users.id
+        onDelete: cascade
+      content:
+        type: text
+        maxLength: 5000
+      created_at:
+        type: timestamp
+        default: now
+
+    rules:
+      create: "auth.id != null"
+      read: "true"
+      update: "auth.id == doc.author_id"
+      delete: "auth.id == doc.author_id || auth.role in ['moderator', 'admin']"

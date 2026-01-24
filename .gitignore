@@ -1,0 +1,55 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+alyx
+build/
+
+# Test coverage
+coverage.out
+*.cover
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment
+.env
+.env.local
+*.local.y*ml
+alyx.y*ml
+schema.y*ml
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Generated files
+generated/
+ui/build/
+
+# Logs
+*.log
+logs/
+
+# Air (hot reload)
+tmp/
+.air.toml
+
+# Node modules (for admin UI)
+node_modules/

@@ -1,0 +1,149 @@
+# Alyx Configuration File
+# Copy this to alyx.yaml and customize for your project
+
+server:
+  host: localhost
+  port: 8090
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  max_body_size: 10485760  # 10MB
+  admin_ui: true
+
+  cors:
+    enabled: true
+    allowed_origins:
+      - "*"
+    allowed_methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+    allowed_headers:
+      - Accept
+      - Authorization
+      - Content-Type
+      - X-Request-ID
+    allow_credentials: false
+    max_age: 12h
+
+  # TLS configuration (optional)
+  # tls:
+  #   enabled: true
+  #   cert_file: /path/to/cert.pem
+  #   key_file: /path/to/key.pem
+  #   # Or use auto TLS via Let's Encrypt
+  #   auto_tls: true
+  #   domain: api.example.com
+
+database:
+  path: alyx.db
+  wal_mode: true
+  cache_size: -64000  # 64MB (negative = KB)
+  busy_timeout: 5s
+  foreign_keys: true
+  max_open_conns: 1
+  max_idle_conns: 1
+
+  # Turso configuration for distributed deployments (optional)
+  # turso:
+  #   enabled: true
+  #   url: libsql://your-db.turso.io
+  #   auth_token: ${TURSO_AUTH_TOKEN}
+
+auth:
+  jwt:
+    secret: ${JWT_SECRET}  # Required in production, min 32 chars
+    access_ttl: 15m
+    refresh_ttl: 168h  # 7 days
+    issuer: alyx
+
+  password:
+    min_length: 8
+    require_uppercase: false
+    require_lowercase: false
+    require_number: false
+    require_special: false
+
+  rate_limit:
+    login:
+      max: 5
+      window: 1m
+    register:
+      max: 3
+      window: 1m
+    password_reset:
+      max: 3
+      window: 1h
+
+  allow_registration: true
+  require_verification: false
+
+  # OAuth providers (optional)
+  # oauth:
+  #   github:
+  #     client_id: ${GITHUB_CLIENT_ID}
+  #     client_secret: ${GITHUB_CLIENT_SECRET}
+  #     scopes:
+  #       - user:email
+  #   google:
+  #     client_id: ${GOOGLE_CLIENT_ID}
+  #     client_secret: ${GOOGLE_CLIENT_SECRET}
+  #     scopes:
+  #       - email
+  #       - profile
+
+functions:
+  enabled: true
+  path: functions
+  runtime: docker  # docker or podman
+  timeout: 30s
+  memory_limit: 256  # MB
+  cpu_limit: 1.0
+
+  pools:
+    node:
+      min_warm: 1
+      max_instances: 10
+      idle_timeout: 60s
+      image: alyx-runtime-node:latest
+    python:
+      min_warm: 1
+      max_instances: 10
+      idle_timeout: 60s
+      image: alyx-runtime-python:latest
+    go:
+      min_warm: 0
+      max_instances: 10
+      idle_timeout: 60s
+      image: alyx-runtime-go:latest
+
+  # Environment variables passed to all functions
+  # env:
+  #   OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+
+logging:
+  level: info  # trace, debug, info, warn, error, fatal, panic
+  format: console  # json or console
+  caller: false
+  timestamp: true
+  # output: /var/log/alyx/alyx.log  # Empty for stdout
+
+dev:
+  enabled: false
+  watch: true
+  auto_migrate: true
+  auto_generate: true
+  generate_languages:
+    - typescript
+  generate_output: generated
+
+docs:
+  enabled: true
+  ui: scalar  # scalar, swagger, redoc, stoplight
+  title: "My API"
+  description: "API documentation generated from your schema"
+  version: "1.0.0"
