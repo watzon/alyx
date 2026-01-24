@@ -95,6 +95,18 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("POST /internal/v1/db/exec", r.wrap(internalHandlers.Exec))
 		r.mux.HandleFunc("POST /internal/v1/db/tx", r.wrap(internalHandlers.Transaction))
 	}
+
+	if r.server.DeployService() != nil {
+		adminHandlers := handlers.NewAdminHandlers(r.server.DeployService())
+		r.mux.HandleFunc("POST /api/admin/deploy/prepare", r.wrap(adminHandlers.DeployPrepare))
+		r.mux.HandleFunc("POST /api/admin/deploy/execute", r.wrap(adminHandlers.DeployExecute))
+		r.mux.HandleFunc("POST /api/admin/deploy/rollback", r.wrap(adminHandlers.DeployRollback))
+		r.mux.HandleFunc("GET /api/admin/deploy/history", r.wrap(adminHandlers.DeployHistory))
+		r.mux.HandleFunc("GET /api/admin/schema", r.wrap(adminHandlers.SchemaGet))
+		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
+		r.mux.HandleFunc("GET /api/admin/tokens", r.wrap(adminHandlers.TokenList))
+		r.mux.HandleFunc("DELETE /api/admin/tokens/{name}", r.wrap(adminHandlers.TokenDelete))
+	}
 }
 
 func (r *Router) wrap(fn handlers.HandlerFunc) http.HandlerFunc {

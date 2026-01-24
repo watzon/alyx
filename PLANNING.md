@@ -1687,10 +1687,10 @@ require (
 
 #### 5.4 Deploy Command (2 days)
 
-- [ ] Bundle preparation
-- [ ] Remote diff checking
-- [ ] Deployment execution
-- [ ] Rollback support
+- [x] Bundle preparation
+- [x] Remote diff checking
+- [x] Deployment execution
+- [x] Rollback support
 
 **Deliverable**: Complete `alyx dev` workflow with codegen
 

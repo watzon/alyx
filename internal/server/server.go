@@ -12,6 +12,7 @@ import (
 
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/deploy"
 	"github.com/watzon/alyx/internal/functions"
 	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/rules"
@@ -19,15 +20,16 @@ import (
 )
 
 type Server struct {
-	cfg         *config.Config
-	db          *database.DB
-	schema      *schema.Schema
-	rules       *rules.Engine
-	broker      *realtime.Broker
-	funcService *functions.Service
-	httpServer  *http.Server
-	router      *Router
-	mu          sync.RWMutex
+	cfg           *config.Config
+	db            *database.DB
+	schema        *schema.Schema
+	rules         *rules.Engine
+	broker        *realtime.Broker
+	funcService   *functions.Service
+	deployService *deploy.Service
+	httpServer    *http.Server
+	router        *Router
+	mu            sync.RWMutex
 }
 
 func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
@@ -66,6 +68,14 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
 		} else {
 			srv.funcService = funcService
 		}
+	}
+
+	schemaPath := "schema.yaml"
+	deployService := deploy.NewService(db.DB, schemaPath, cfg.Functions.Path, "migrations")
+	if err := deployService.Init(); err != nil {
+		log.Warn().Err(err).Msg("Failed to initialize deploy service")
+	} else {
+		srv.deployService = deployService
 	}
 
 	srv.router = NewRouter(srv)
@@ -190,6 +200,10 @@ func (s *Server) ReloadFunctions() error {
 
 	log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Functions reloaded")
 	return nil
+}
+
+func (s *Server) DeployService() *deploy.Service {
+	return s.deployService
 }
 
 type contextKey string
