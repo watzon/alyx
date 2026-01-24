@@ -99,12 +99,13 @@ func swaggerUIHTML(title string) string {
 <body>
   <div id="swagger-ui"></div>
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
   <script>
     window.onload = () => {
       SwaggerUIBundle({
         url: '/api/openapi.json',
         dom_id: '#swagger-ui',
-        presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
         layout: 'StandaloneLayout'
       });
     };
