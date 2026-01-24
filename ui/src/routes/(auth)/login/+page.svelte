@@ -6,7 +6,6 @@
 	import { Button } from '$ui/button';
 	import { Input } from '$ui/input';
 	import { Label } from '$ui/label';
-	import * as Card from '$ui/card';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
@@ -76,151 +75,126 @@
 	}
 </script>
 
+<div class="absolute left-6 top-6">
+	<img
+		src="{base}/alyx-icon.png"
+		alt="Alyx"
+		class="h-8 w-8 object-contain"
+	/>
+</div>
+
 {#if isCheckingStatus}
-	<Card.Root class="w-full max-w-sm border-border/50 shadow-2xl shadow-black/50">
-		<Card.Header class="pb-4">
-			<div class="flex flex-col items-center gap-3 pb-2">
-				<div class="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 p-2 ring-1 ring-primary/20">
-					<img
-						src="{base}/alyx-icon.png"
-						alt="Alyx"
-						class="h-10 w-10 object-contain"
-					/>
-				</div>
-				<div class="text-center">
-					<h1 class="text-xl font-semibold tracking-tight">Alyx Admin</h1>
-					<p class="text-sm text-muted-foreground mt-1">Backend-as-a-Service</p>
-				</div>
-			</div>
-		</Card.Header>
-		<Card.Content class="flex items-center justify-center py-8">
-			<div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-		</Card.Content>
-	</Card.Root>
+	<div class="w-full max-w-[340px]">
+		<div class="flex flex-col items-center justify-center py-12">
+			<div class="h-5 w-5 animate-spin rounded-full border-2 border-foreground/20 border-t-foreground"></div>
+		</div>
+	</div>
 {:else if needsSetup}
-	<Card.Root class="w-full max-w-sm border-border/50 shadow-2xl shadow-black/50">
-		<Card.Header class="pb-4">
-			<div class="flex flex-col items-center gap-3 pb-2">
-				<div class="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 p-2 ring-1 ring-primary/20">
-					<img
-						src="{base}/alyx-icon.png"
-						alt="Alyx"
-						class="h-10 w-10 object-contain"
-					/>
-				</div>
-				<div class="text-center">
-					<h1 class="text-xl font-semibold tracking-tight">Alyx Admin</h1>
-					<p class="text-sm text-muted-foreground mt-1">Backend-as-a-Service</p>
-				</div>
+	<div class="w-full max-w-[340px]">
+		<div class="mb-10 text-center">
+			<h1 class="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+				Create Admin Account
+			</h1>
+			<p class="mt-2 text-sm text-muted-foreground">
+				Set up your first administrator account
+			</p>
+		</div>
+
+		<form onsubmit={handleSetup} class="space-y-4">
+			<div class="space-y-1.5">
+				<Label for="email" class="text-sm font-normal text-foreground/70">Email Address</Label>
+				<Input
+					id="email"
+					type="email"
+					placeholder="admin@example.com"
+					bind:value={email}
+					required
+					disabled={isLoading}
+					class="h-10 rounded-md border-border/40 bg-transparent px-3 text-[15px] placeholder:text-muted-foreground/50 focus-visible:border-foreground/30 focus-visible:ring-0"
+				/>
 			</div>
-			<div class="pt-4 border-t border-border/50">
-				<Card.Title class="text-lg font-medium">Create Admin Account</Card.Title>
-				<Card.Description class="text-muted-foreground">
-					Set up your first administrator account
-				</Card.Description>
+
+			<div class="space-y-1.5">
+				<Label for="password" class="text-sm font-normal text-foreground/70">Password</Label>
+				<Input
+					id="password"
+					type="password"
+					placeholder="Create a password"
+					bind:value={password}
+					required
+					disabled={isLoading}
+					class="h-10 rounded-md border-border/40 bg-transparent px-3 text-[15px] placeholder:text-muted-foreground/50 focus-visible:border-foreground/30 focus-visible:ring-0"
+				/>
 			</div>
-		</Card.Header>
-		<form onsubmit={handleSetup}>
-			<Card.Content class="space-y-4 pb-6">
-				<div class="space-y-2">
-					<Label for="email" class="text-sm font-medium">Email</Label>
-					<Input
-						id="email"
-						type="email"
-						placeholder="admin@example.com"
-						bind:value={email}
-						required
-						disabled={isLoading}
-						class="h-10 bg-muted/50 border-border/50 focus-visible:ring-primary/50"
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="password" class="text-sm font-medium">Password</Label>
-					<Input
-						id="password"
-						type="password"
-						placeholder="Create a password"
-						bind:value={password}
-						required
-						disabled={isLoading}
-						class="h-10 bg-muted/50 border-border/50 focus-visible:ring-primary/50"
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="confirmPassword" class="text-sm font-medium">Confirm Password</Label>
-					<Input
-						id="confirmPassword"
-						type="password"
-						placeholder="Confirm your password"
-						bind:value={confirmPassword}
-						required
-						disabled={isLoading}
-						class="h-10 bg-muted/50 border-border/50 focus-visible:ring-primary/50"
-					/>
-				</div>
-			</Card.Content>
-			<Card.Footer class="pt-0">
-				<Button type="submit" class="w-full h-10 font-medium" disabled={isLoading}>
+
+			<div class="space-y-1.5">
+				<Label for="confirmPassword" class="text-sm font-normal text-foreground/70">Confirm Password</Label>
+				<Input
+					id="confirmPassword"
+					type="password"
+					placeholder="Confirm your password"
+					bind:value={confirmPassword}
+					required
+					disabled={isLoading}
+					class="h-10 rounded-md border-border/40 bg-transparent px-3 text-[15px] placeholder:text-muted-foreground/50 focus-visible:border-foreground/30 focus-visible:ring-0"
+				/>
+			</div>
+
+			<div class="pt-2">
+				<Button 
+					type="submit" 
+					class="h-10 w-full rounded-md bg-foreground font-medium text-background hover:bg-foreground/90" 
+					disabled={isLoading}
+				>
 					{isLoading ? 'Creating account...' : 'Create Admin Account'}
 				</Button>
-			</Card.Footer>
+			</div>
 		</form>
-	</Card.Root>
+	</div>
 {:else}
-	<Card.Root class="w-full max-w-sm border-border/50 shadow-2xl shadow-black/50">
-		<Card.Header class="pb-4">
-			<div class="flex flex-col items-center gap-3 pb-2">
-				<div class="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 p-2 ring-1 ring-primary/20">
-					<img
-						src="{base}/alyx-icon.png"
-						alt="Alyx"
-						class="h-10 w-10 object-contain"
-					/>
-				</div>
-				<div class="text-center">
-					<h1 class="text-xl font-semibold tracking-tight">Alyx Admin</h1>
-					<p class="text-sm text-muted-foreground mt-1">Backend-as-a-Service</p>
-				</div>
+	<div class="w-full max-w-[340px]">
+		<div class="mb-10 text-center">
+			<h1 class="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+				Log in to Alyx
+			</h1>
+		</div>
+
+		<form onsubmit={handleLogin} class="space-y-4">
+			<div class="space-y-1.5">
+				<Label for="email" class="text-sm font-normal text-foreground/70">Email Address</Label>
+				<Input
+					id="email"
+					type="email"
+					placeholder="admin@example.com"
+					bind:value={email}
+					required
+					disabled={isLoading}
+					class="h-10 rounded-md border-border/40 bg-transparent px-3 text-[15px] placeholder:text-muted-foreground/50 focus-visible:border-foreground/30 focus-visible:ring-0"
+				/>
 			</div>
-			<div class="pt-4 border-t border-border/50">
-				<Card.Title class="text-lg font-medium">Sign in</Card.Title>
-				<Card.Description class="text-muted-foreground">
-					Enter your credentials to continue
-				</Card.Description>
+
+			<div class="space-y-1.5">
+				<Label for="password" class="text-sm font-normal text-foreground/70">Password</Label>
+				<Input
+					id="password"
+					type="password"
+					placeholder="Enter your password"
+					bind:value={password}
+					required
+					disabled={isLoading}
+					class="h-10 rounded-md border-border/40 bg-transparent px-3 text-[15px] placeholder:text-muted-foreground/50 focus-visible:border-foreground/30 focus-visible:ring-0"
+				/>
 			</div>
-		</Card.Header>
-		<form onsubmit={handleLogin}>
-			<Card.Content class="space-y-4 pb-6">
-				<div class="space-y-2">
-					<Label for="email" class="text-sm font-medium">Email</Label>
-					<Input
-						id="email"
-						type="email"
-						placeholder="admin@example.com"
-						bind:value={email}
-						required
-						disabled={isLoading}
-						class="h-10 bg-muted/50 border-border/50 focus-visible:ring-primary/50"
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="password" class="text-sm font-medium">Password</Label>
-					<Input
-						id="password"
-						type="password"
-						placeholder="Enter your password"
-						bind:value={password}
-						required
-						disabled={isLoading}
-						class="h-10 bg-muted/50 border-border/50 focus-visible:ring-primary/50"
-					/>
-				</div>
-			</Card.Content>
-			<Card.Footer class="pt-0">
-				<Button type="submit" class="w-full h-10 font-medium" disabled={isLoading}>
+
+			<div class="pt-2">
+				<Button 
+					type="submit" 
+					class="h-10 w-full rounded-md bg-foreground font-medium text-background hover:bg-foreground/90" 
+					disabled={isLoading}
+				>
 					{isLoading ? 'Signing in...' : 'Sign in'}
 				</Button>
-			</Card.Footer>
+			</div>
 		</form>
-	</Card.Root>
+	</div>
 {/if}
