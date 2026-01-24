@@ -12,6 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/watzon/alyx/internal/config"
+	"github.com/watzon/alyx/internal/database/migrations"
 )
 
 type DB struct {
@@ -47,6 +48,11 @@ func Open(cfg *config.DatabaseConfig) (*DB, error) {
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	if cfg.ConnMaxLifetime > 0 {
 		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	}
+
+	if err := migrations.Run(context.Background(), sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("running migrations: %w", err)
 	}
 
 	return db, nil

@@ -14,10 +14,8 @@ func NewSQLGenerator(s *Schema) *SQLGenerator {
 }
 
 func (g *SQLGenerator) GenerateAll() []string {
-	estimatedSize := 2 + len(g.schema.Collections)*3
+	estimatedSize := len(g.schema.Collections) * 3
 	statements := make([]string, 0, estimatedSize)
-
-	statements = append(statements, g.GenerateInternalTables()...)
 
 	for _, col := range g.schema.Collections {
 		statements = append(statements, g.GenerateCreateTable(col))
@@ -26,54 +24,6 @@ func (g *SQLGenerator) GenerateAll() []string {
 	}
 
 	return statements
-}
-
-func (g *SQLGenerator) GenerateInternalTables() []string {
-	return []string{
-		`CREATE TABLE IF NOT EXISTS _alyx_migrations (
-	id INTEGER PRIMARY KEY,
-	version TEXT NOT NULL,
-	name TEXT NOT NULL,
-	applied_at TEXT NOT NULL DEFAULT (datetime('now')),
-	checksum TEXT NOT NULL
-)`,
-		`CREATE TABLE IF NOT EXISTS _alyx_changes (
-	id INTEGER PRIMARY KEY,
-	collection TEXT NOT NULL,
-	operation TEXT NOT NULL,
-	doc_id TEXT NOT NULL,
-	changed_fields TEXT,
-	timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-	processed INTEGER NOT NULL DEFAULT 0
-)`,
-		`CREATE INDEX IF NOT EXISTS idx_changes_unprocessed ON _alyx_changes(processed, timestamp)`,
-		`CREATE TABLE IF NOT EXISTS _alyx_users (
-	id TEXT PRIMARY KEY,
-	email TEXT UNIQUE NOT NULL,
-	password_hash TEXT,
-	created_at TEXT NOT NULL DEFAULT (datetime('now')),
-	updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-	verified INTEGER NOT NULL DEFAULT 0,
-	metadata TEXT
-)`,
-		`CREATE TABLE IF NOT EXISTS _alyx_sessions (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL REFERENCES _alyx_users(id) ON DELETE CASCADE,
-	refresh_token_hash TEXT NOT NULL,
-	expires_at TEXT NOT NULL,
-	created_at TEXT NOT NULL DEFAULT (datetime('now')),
-	user_agent TEXT,
-	ip_address TEXT
-)`,
-		`CREATE TABLE IF NOT EXISTS _alyx_oauth_accounts (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL REFERENCES _alyx_users(id) ON DELETE CASCADE,
-	provider TEXT NOT NULL,
-	provider_user_id TEXT NOT NULL,
-	created_at TEXT NOT NULL DEFAULT (datetime('now')),
-	UNIQUE(provider, provider_user_id)
-)`,
-	}
 }
 
 func (g *SQLGenerator) GenerateCreateTable(col *Collection) string {
