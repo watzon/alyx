@@ -61,6 +61,16 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
 
+      - name: Build for testing
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: alyx:test
+          cache-from: type=gha
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -76,8 +86,8 @@ jobs:
       - name: Test image
         if: github.event_name != 'pull_request'
         run: |
-          # Pull the image
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # Use locally built test image
+          echo "Testing locally built image..."
           
           # Create minimal test files
           echo 'version: 1
@@ -98,13 +108,13 @@ jobs:
           database:
             path: /tmp/test.db' > test-alyx.yaml
           
-          # Run container
+          # Run container using locally built image
           docker run -d --name alyx-test \
             -p 8091:8090 \
             -v $(pwd)/test-schema.yaml:/app/schema.yaml:ro \
             -v $(pwd)/test-alyx.yaml:/app/alyx.yaml:ro \
             -e JWT_SECRET=test-secret-min-32-chars-long-here \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            alyx:test
           
           # Wait for container to be healthy (up to 60 seconds)
           echo "Waiting for container to be healthy..."
