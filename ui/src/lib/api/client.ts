@@ -418,12 +418,13 @@ export const admin = {
 };
 
 export const collections = {
-	list: (collection: string, params?: { filter?: string; sort?: string; page?: number; perPage?: number }) => {
+	list: (collection: string, params?: { filter?: string; sort?: string; page?: number; perPage?: number; search?: string }) => {
 		const query = new URLSearchParams();
 		if (params?.filter) query.set('filter', params.filter);
 		if (params?.sort) query.set('sort', params.sort);
 		if (params?.page) query.set('page', String(params.page));
 		if (params?.perPage) query.set('perPage', String(params.perPage));
+		if (params?.search) query.set('search', params.search);
 		const qs = query.toString();
 		return api.get<{ docs: Record<string, unknown>[]; total: number; limit: number; offset: number }>(
 			`/collections/${collection}${qs ? `?${qs}` : ''}`

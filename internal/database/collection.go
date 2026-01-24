@@ -46,6 +46,7 @@ type QueryOptions struct {
 	Limit   int
 	Offset  int
 	Expand  []string
+	Search  string // Full-text search across string/text fields
 }
 
 type QueryResult struct {
@@ -62,6 +63,13 @@ func (c *Collection) Find(ctx context.Context, opts *QueryOptions) (*QueryResult
 
 	for _, f := range opts.Filters {
 		q.Filter(f.Field, f.Op, f.Value)
+	}
+
+	if opts.Search != "" {
+		searchFields := c.getSearchableFields()
+		if len(searchFields) > 0 {
+			q.SearchOr(searchFields, opts.Search)
+		}
 	}
 
 	for _, s := range opts.Sorts {
@@ -327,6 +335,16 @@ func (c *Collection) processRow(row Row) Row {
 	}
 
 	return row
+}
+
+func (c *Collection) getSearchableFields() []string {
+	var fields []string
+	for _, f := range c.schema.OrderedFields() {
+		if f.Type == schema.FieldTypeString || f.Type == schema.FieldTypeText || f.Type == schema.FieldTypeUUID {
+			fields = append(fields, f.Name)
+		}
+	}
+	return fields
 }
 
 func (c *Collection) convertValue(value any, field *schema.Field) any {

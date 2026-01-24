@@ -30,12 +30,14 @@
 	import ChevronRightIcon from 'lucide-svelte/icons/chevron-right';
 	import ChevronsLeftIcon from 'lucide-svelte/icons/chevrons-left';
 	import ChevronsRightIcon from 'lucide-svelte/icons/chevrons-right';
+	import SearchIcon from 'lucide-svelte/icons/search';
 
 	const queryClient = useQueryClient();
 	const collectionName = $derived($page.params.collection);
 
 	let pageIndex = $state(1);
 	let pageSize = $state(50);
+	let search = $state('');
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['schema'],
@@ -55,12 +57,13 @@
 	const editableFields = $derived(collectionFields.filter((f) => !f.primary));
 
 	const docsQuery = createQuery(() => ({
-		queryKey: ['collections', collectionName, 'documents', pageIndex, pageSize],
+		queryKey: ['collections', collectionName, 'documents', pageIndex, pageSize, search],
 		queryFn: async () => {
 			if (!collectionName) throw new Error('Collection name is required');
 			const result = await collections.list(collectionName, {
 				page: pageIndex,
-				perPage: pageSize
+				perPage: pageSize,
+				search: search || undefined
 			});
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
@@ -248,6 +251,22 @@
 				<RefreshCwIcon class="h-3.5 w-3.5 mr-1.5" />
 				Refresh
 			</Button>
+		</div>
+	</div>
+
+	<div class="flex items-center gap-4 mb-4">
+		<div class="relative flex-1 max-w-sm">
+			<SearchIcon class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+			<Input
+				type="search"
+				placeholder="Search documents..."
+				class="pl-9"
+				value={search}
+				oninput={(e) => {
+					search = e.currentTarget.value;
+					pageIndex = 1;
+				}}
+			/>
 		</div>
 	</div>
 

@@ -296,46 +296,81 @@ func parseQueryOptions(r *http.Request) (*database.QueryOptions, error) {
 		Limit:  100,
 		Offset: 0,
 	}
+	query := r.URL.Query()
 
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 0 {
-			return nil, errors.New("invalid limit parameter")
-		}
-		if limit > 1000 {
-			limit = 1000
-		}
-		opts.Limit = limit
+	if err := parsePaginationOptions(query, opts); err != nil {
+		return nil, err
 	}
 
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+	if err := parseFilterOptions(query, opts); err != nil {
+		return nil, err
+	}
+
+	parseSortAndExpandOptions(query, opts)
+
+	opts.Search = query.Get("search")
+
+	return opts, nil
+}
+
+func parsePaginationOptions(query map[string][]string, opts *database.QueryOptions) error {
+	if limitStr := getQueryParam(query, "limit"); limitStr != "" {
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 0 {
+			return errors.New("invalid limit parameter")
+		}
+		opts.Limit = min(limit, 1000)
+	}
+
+	if perPageStr := getQueryParam(query, "perPage"); perPageStr != "" {
+		perPage, err := strconv.Atoi(perPageStr)
+		if err != nil || perPage < 0 {
+			return errors.New("invalid perPage parameter")
+		}
+		opts.Limit = min(perPage, 1000)
+	}
+
+	if offsetStr := getQueryParam(query, "offset"); offsetStr != "" {
 		offset, err := strconv.Atoi(offsetStr)
 		if err != nil || offset < 0 {
-			return nil, errors.New("invalid offset parameter")
+			return errors.New("invalid offset parameter")
 		}
 		opts.Offset = offset
 	}
 
-	for _, filterStr := range r.URL.Query()["filter"] {
+	if pageStr := getQueryParam(query, "page"); pageStr != "" {
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			return errors.New("invalid page parameter")
+		}
+		opts.Offset = (page - 1) * opts.Limit
+	}
+
+	return nil
+}
+
+func parseFilterOptions(query map[string][]string, opts *database.QueryOptions) error {
+	for _, filterStr := range query["filter"] {
 		filter, err := database.ParseFilterString(filterStr)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		opts.Filters = append(opts.Filters, filter)
 	}
+	return nil
+}
 
-	if sortStr := r.URL.Query().Get("sort"); sortStr != "" {
+func parseSortAndExpandOptions(query map[string][]string, opts *database.QueryOptions) {
+	if sortStr := getQueryParam(query, "sort"); sortStr != "" {
 		for _, s := range strings.Split(sortStr, ",") {
 			field, order := database.ParseSortString(strings.TrimSpace(s))
 			opts.Sorts = append(opts.Sorts, &database.Sort{Field: field, Order: order})
 		}
 	}
 
-	if expandStr := r.URL.Query().Get("expand"); expandStr != "" {
+	if expandStr := getQueryParam(query, "expand"); expandStr != "" {
 		opts.Expand = strings.Split(expandStr, ",")
 	}
-
-	return opts, nil
 }
 
 func constraintErrorCode(ce *database.ConstraintError) string {

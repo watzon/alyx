@@ -39,6 +39,11 @@ type Sort struct {
 	Order SortOrder
 }
 
+type SearchCondition struct {
+	Fields []string
+	Value  string
+}
+
 type QueryBuilder struct {
 	table   string
 	selects []string
@@ -47,6 +52,7 @@ type QueryBuilder struct {
 	limit   int
 	offset  int
 	args    []any
+	search  *SearchCondition
 }
 
 func NewQuery(table string) *QueryBuilder {
@@ -68,6 +74,11 @@ func (q *QueryBuilder) Filter(field string, op FilterOp, value any) *QueryBuilde
 
 func (q *QueryBuilder) Where(field string, value any) *QueryBuilder {
 	return q.Filter(field, OpEq, value)
+}
+
+func (q *QueryBuilder) SearchOr(fields []string, value string) *QueryBuilder {
+	q.search = &SearchCondition{Fields: fields, Value: value}
+	return q
 }
 
 func (q *QueryBuilder) Sort(field string, order SortOrder) *QueryBuilder {
@@ -102,15 +113,11 @@ func (q *QueryBuilder) Build() (string, []any) {
 	sb.WriteString(" FROM ")
 	sb.WriteString(q.table)
 
-	if len(q.filters) > 0 {
+	whereClause, whereArgs := q.buildWhereClause()
+	if whereClause != "" {
 		sb.WriteString(" WHERE ")
-		var conditions []string
-		for _, f := range q.filters {
-			cond, args := q.buildFilter(f)
-			conditions = append(conditions, cond)
-			q.args = append(q.args, args...)
-		}
-		sb.WriteString(strings.Join(conditions, " AND "))
+		sb.WriteString(whereClause)
+		q.args = append(q.args, whereArgs...)
 	}
 
 	if len(q.sorts) > 0 {
@@ -131,6 +138,49 @@ func (q *QueryBuilder) Build() (string, []any) {
 	}
 
 	return sb.String(), q.args
+}
+
+func (q *QueryBuilder) buildWhereClause() (string, []any) {
+	condCount := len(q.filters)
+	if q.search != nil && len(q.search.Fields) > 0 {
+		condCount++
+	}
+	conditions := make([]string, 0, condCount)
+	args := make([]any, 0, condCount*2)
+
+	for _, f := range q.filters {
+		cond, filterArgs := q.buildFilter(f)
+		conditions = append(conditions, cond)
+		args = append(args, filterArgs...)
+	}
+
+	if q.search != nil && len(q.search.Fields) > 0 {
+		searchCond, searchArgs := q.buildSearchCondition()
+		if searchCond != "" {
+			conditions = append(conditions, searchCond)
+			args = append(args, searchArgs...)
+		}
+	}
+
+	return strings.Join(conditions, " AND "), args
+}
+
+func (q *QueryBuilder) buildSearchCondition() (string, []any) {
+	if q.search == nil || len(q.search.Fields) == 0 {
+		return "", nil
+	}
+
+	fieldCount := len(q.search.Fields)
+	orClauses := make([]string, 0, fieldCount)
+	args := make([]any, 0, fieldCount)
+	searchValue := "%" + q.search.Value + "%"
+
+	for _, field := range q.search.Fields {
+		orClauses = append(orClauses, fmt.Sprintf("%s LIKE ?", field))
+		args = append(args, searchValue)
+	}
+
+	return "(" + strings.Join(orClauses, " OR ") + ")", args
 }
 
 func (q *QueryBuilder) buildFilter(f *Filter) (string, []any) {
@@ -177,15 +227,11 @@ func (q *QueryBuilder) BuildCount() (string, []any) {
 	sb.WriteString("SELECT COUNT(*) FROM ")
 	sb.WriteString(q.table)
 
-	if len(q.filters) > 0 {
+	whereClause, whereArgs := q.buildWhereClause()
+	if whereClause != "" {
 		sb.WriteString(" WHERE ")
-		var conditions []string
-		for _, f := range q.filters {
-			cond, args := q.buildFilter(f)
-			conditions = append(conditions, cond)
-			q.args = append(q.args, args...)
-		}
-		sb.WriteString(strings.Join(conditions, " AND "))
+		sb.WriteString(whereClause)
+		q.args = append(q.args, whereArgs...)
 	}
 
 	return sb.String(), q.args
