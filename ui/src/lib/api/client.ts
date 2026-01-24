@@ -16,13 +16,18 @@ class ApiClient {
 	private accessToken: string | null = null;
 	private refreshPromise: Promise<boolean> | null = null;
 	private onAuthFailure: (() => void) | null = null;
+	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 	setToken(token: string | null) {
 		this.accessToken = token;
 		if (token) {
 			localStorage.setItem('alyx_access_token', token);
+			// Schedule token refresh 5 minutes before it expires
+			// Default: 1 hour token, refresh at 55 minutes
+			this.scheduleTokenRefresh(55 * 60 * 1000);
 		} else {
 			localStorage.removeItem('alyx_access_token');
+			this.clearRefreshTimer();
 		}
 	}
 
@@ -30,6 +35,9 @@ class ApiClient {
 		if (this.accessToken) return this.accessToken;
 		if (typeof localStorage !== 'undefined') {
 			this.accessToken = localStorage.getItem('alyx_access_token');
+			if (this.accessToken && !this.refreshTimer) {
+				this.scheduleTokenRefresh(55 * 60 * 1000);
+			}
 		}
 		return this.accessToken;
 	}
@@ -57,6 +65,23 @@ class ApiClient {
 	 */
 	onAuthenticationFailure(callback: () => void) {
 		this.onAuthFailure = callback;
+	}
+
+	private scheduleTokenRefresh(delayMs: number) {
+		this.clearRefreshTimer();
+		this.refreshTimer = setTimeout(async () => {
+			const refreshed = await this.refreshAccessToken();
+			if (!refreshed) {
+				this.onAuthFailure?.();
+			}
+		}, delayMs);
+	}
+
+	private clearRefreshTimer() {
+		if (this.refreshTimer) {
+			clearTimeout(this.refreshTimer);
+			this.refreshTimer = null;
+		}
 	}
 
 	/**
