@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  alyx:
+    build: .
+    container_name: alyx
+    ports:
+      - "8090:8090"
+    volumes:
+      # Mount your project files
+      - ./schema.yaml:/app/schema.yaml:ro
+      - ./alyx.yaml:/app/alyx.yaml:ro
+      - ./functions:/app/functions:ro
+      # Persistent data
+      - alyx-data:/app/data
+      # Docker socket for function containers (if using docker runtime)
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Override config via environment variables
+      - ALYX_SERVER_HOST=0.0.0.0
+      - ALYX_DATABASE_PATH=/app/data/alyx.db
+      - JWT_SECRET=${JWT_SECRET:-changeme-generate-a-secure-secret}
+      # Optional: OAuth credentials
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  alyx-data:
+    driver: local

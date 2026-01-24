@@ -108,17 +108,17 @@ functions:
       min_warm: 1
       max_instances: 10
       idle_timeout: 60s
-      image: alyx-runtime-node:latest
+      image: ghcr.io/watzon/alyx-runtime-node:latest
     python:
       min_warm: 1
       max_instances: 10
       idle_timeout: 60s
-      image: alyx-runtime-python:latest
+      image: ghcr.io/watzon/alyx-runtime-python:latest
     go:
       min_warm: 0
       max_instances: 10
       idle_timeout: 60s
-      image: alyx-runtime-go:latest
+      image: ghcr.io/watzon/alyx-runtime-go:latest
 
   # Environment variables passed to all functions
   # env:

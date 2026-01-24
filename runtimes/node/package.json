@@ -1,0 +1,15 @@
+{
+  "name": "alyx-runtime-node",
+  "version": "1.0.0",
+  "description": "Alyx Node.js function runtime",
+  "type": "module",
+  "main": "executor.js",
+  "scripts": {
+    "start": "node executor.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "private": true
+}

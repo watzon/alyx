@@ -53,6 +53,23 @@ The binary will be available at `./build/alyx`.
 go install github.com/watzon/alyx/cmd/alyx@latest
 ```
 
+### Using Docker
+
+Pull the pre-built image:
+
+```bash
+docker pull ghcr.io/watzon/alyx:latest
+```
+
+Or use Docker Compose (recommended):
+
+```bash
+# Clone your project or create docker-compose.yml
+docker-compose up -d
+```
+
+See [Docker Deployment](#docker-deployment) below for details.
+
 ## Usage
 
 ### Quick Start
@@ -126,6 +143,67 @@ make lint
 # Format code
 make fmt
 ```
+
+### Docker Deployment
+
+Alyx provides official Docker images for easy deployment:
+
+**Using Docker Compose** (recommended):
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  alyx:
+    image: ghcr.io/watzon/alyx:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./schema.yaml:/app/schema.yaml:ro
+      - ./alyx.yaml:/app/alyx.yaml:ro
+      - ./functions:/app/functions:ro
+      - alyx-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock  # For function containers
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+    restart: unless-stopped
+
+volumes:
+  alyx-data:
+```
+
+```bash
+# Start the server
+docker-compose up -d
+
+# View logs
+docker-compose logs -f alyx
+
+# Stop the server
+docker-compose down
+```
+
+**Using Docker CLI**:
+
+```bash
+docker run -d \
+  --name alyx \
+  -p 8090:8090 \
+  -v $(pwd)/schema.yaml:/app/schema.yaml:ro \
+  -v $(pwd)/alyx.yaml:/app/alyx.yaml:ro \
+  -v $(pwd)/functions:/app/functions:ro \
+  -v alyx-data:/app/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e JWT_SECRET=your-secret-here \
+  ghcr.io/watzon/alyx:latest
+```
+
+**Important Notes**:
+- Mount `/var/run/docker.sock` to enable function containers
+- Use a volume for `/app/data` to persist the database
+- Set `JWT_SECRET` environment variable in production
+- Mount your project files as read-only (`:ro`)
 
 ### Creating Serverless Functions
 

@@ -123,19 +123,19 @@ func Default() *Config {
 					MinWarm:      DefaultMinWarm,
 					MaxInstances: DefaultMaxInstances,
 					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "alyx-runtime-node:latest",
+					Image:        "ghcr.io/watzon/alyx-runtime-node:latest",
 				},
 				"python": {
 					MinWarm:      DefaultMinWarm,
 					MaxInstances: DefaultMaxInstances,
 					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "alyx-runtime-python:latest",
+					Image:        "ghcr.io/watzon/alyx-runtime-python:latest",
 				},
 				"go": {
 					MinWarm:      0, // Go compiles, so no warm pool needed
 					MaxInstances: DefaultMaxInstances,
 					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "alyx-runtime-go:latest",
+					Image:        "ghcr.io/watzon/alyx-runtime-go:latest",
 				},
 			},
 			Env: make(map[string]string),

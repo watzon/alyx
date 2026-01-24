@@ -1,0 +1,34 @@
+# Build artifacts
+build/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+tmp/
+.air.toml
+
+# Documentation
+*.md
+docs/
+
+# Test data
+testdata/
+
+# Dependencies (will be downloaded in container)
+vendor/
+
+# OS files
+.DS_Store
+Thumbs.db

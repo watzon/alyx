@@ -1628,19 +1628,19 @@ require (
 
 **Goal**: Container-based serverless functions
 
-#### 4.1 Container Management (3 days)
+#### 4.1 Container Management (3 days) ✅
 
-- [ ] Docker/Podman client integration
-- [ ] Container pool manager
-- [ ] Container lifecycle (create, start, stop, remove)
-- [ ] Health checking
+- [x] Docker/Podman client integration
+- [x] Container pool manager
+- [x] Container lifecycle (create, start, stop, remove)
+- [x] Health checking
 
-#### 4.2 Runtime Images (2 days)
+#### 4.2 Runtime Images (2 days) ✅
 
-- [ ] Node.js runtime image + executor
-- [ ] Python runtime image + executor
-- [ ] Function SDK for each language
-- [ ] Build and publish images
+- [x] Node.js runtime image + executor
+- [x] Python runtime image + executor
+- [x] Function SDK for each language
+- [x] Build and publish images (GitHub Actions + GHCR)
 
 #### 4.3 Function Execution (3 days)
 
@@ -1842,6 +1842,73 @@ alyx dev
 - S3-compatible storage backend
 - File upload endpoints
 - Image transformation (resize, crop)
+
+#### Function Dependencies & Custom Runtime Images
+
+Allow functions to declare dependencies that get baked into custom container images (similar to Appwrite, AWS Lambda).
+
+**Function manifest with dependencies**:
+
+```yaml
+# functions/processImage.yaml
+name: processImage
+runtime: python
+dependencies:
+  - pillow==10.0.0
+  - numpy==1.24.0
+  - opencv-python==4.8.0
+```
+
+```javascript
+// functions/sendEmail.js
+export const config = {
+  dependencies: {
+    "nodemailer": "^6.9.0",
+    "handlebars": "^4.7.8"
+  }
+};
+
+export default defineFunction({
+  async handler(input, ctx) {
+    const nodemailer = await import('nodemailer');
+    // Use dependencies...
+  }
+});
+```
+
+**Deployment workflow** (similar to Appwrite):
+
+```bash
+# Deploy a function (builds custom image with dependencies)
+alyx deploy function processImage
+
+# Alyx:
+# 1. Detects function dependencies from manifest/code
+# 2. Builds custom image: FROM alyx-runtime-python + RUN pip install ...
+# 3. Tags image: alyx-function-processImage:v1
+# 4. Caches image for reuse
+# 5. Updates pool to use custom image
+```
+
+**Benefits**:
+- Proper dependency isolation per function
+- Portable across environments (no platform-specific binary issues)
+- Can use native extensions (Pillow, numpy, etc.)
+- Image layers cached for fast rebuilds
+- Production-ready deployment model
+
+**Implementation details**:
+- Parse dependencies from function manifest or code exports
+- Generate Dockerfile for each function: `FROM <base-runtime> + COPY + RUN install`
+- Build images with BuildKit for layer caching
+- Store images locally or push to registry
+- Update pool configuration to use function-specific image
+- Garbage collect unused images
+
+**Dev mode optimization**:
+- Option to use volume-mounted `node_modules/` or `packages/` for faster iteration
+- Rebuild images only on dependency changes
+- Pre-warm pool with custom images
 
 #### Scheduled Functions (Cron)
 
