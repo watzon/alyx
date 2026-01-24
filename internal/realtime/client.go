@@ -23,6 +23,7 @@ const (
 // Client represents a connected WebSocket client.
 type Client struct {
 	ID            string
+	AuthContext   map[string]any
 	conn          *websocket.Conn
 	broker        *Broker
 	subscriptions map[string]*Subscription
@@ -259,7 +260,7 @@ func (c *Client) handleSubscribe(msg *Message) {
 		return
 	}
 
-	sub := NewSubscription(c.ID, &payload)
+	sub := NewSubscription(c.ID, &payload, c.AuthContext)
 	sub.ID = uuid.New().String()
 
 	snapshot, err := c.broker.Subscribe(c, sub)

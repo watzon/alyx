@@ -7,7 +7,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
 
+	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/realtime"
+	"github.com/watzon/alyx/internal/rules"
 )
 
 // RealtimeHandler handles WebSocket connections for real-time subscriptions.
@@ -31,13 +33,18 @@ func (h *RealtimeHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	}
 
 	client := realtime.NewClient(conn, h.broker)
+
+	user := auth.UserFromContext(r.Context())
+	claims := auth.ClaimsFromContext(r.Context())
+	client.AuthContext = rules.BuildAuthContext(user, claims)
+
 	h.broker.RegisterClient(client)
 
 	connectedPayload, _ := json.Marshal(&realtime.ConnectedPayload{
 		ClientID: client.ID,
 	})
 
-	client.Send(&realtime.Message{
+	_ = client.Send(&realtime.Message{
 		Type:    realtime.MessageTypeConnected,
 		Payload: connectedPayload,
 	})

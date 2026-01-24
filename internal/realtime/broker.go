@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 )
 
@@ -15,6 +16,7 @@ import (
 type Broker struct {
 	db     *database.DB
 	schema *schema.Schema
+	rules  *rules.Engine
 
 	clients       map[string]*Client
 	subscriptions map[string]*Subscription
@@ -34,7 +36,7 @@ type BrokerConfig struct {
 }
 
 // NewBroker creates a new subscription broker.
-func NewBroker(db *database.DB, s *schema.Schema, cfg *BrokerConfig) *Broker {
+func NewBroker(db *database.DB, s *schema.Schema, rulesEngine *rules.Engine, cfg *BrokerConfig) *Broker {
 	if cfg == nil {
 		cfg = &BrokerConfig{
 			PollInterval:   50,
@@ -46,6 +48,7 @@ func NewBroker(db *database.DB, s *schema.Schema, cfg *BrokerConfig) *Broker {
 	b := &Broker{
 		db:            db,
 		schema:        s,
+		rules:         rulesEngine,
 		clients:       make(map[string]*Client),
 		subscriptions: make(map[string]*Subscription),
 		index:         NewSubscriptionIndex(),
@@ -188,6 +191,9 @@ func (b *Broker) executeSubscriptionQuery(sub *Subscription, col *schema.Collect
 	pk := col.PrimaryKeyField()
 
 	for _, doc := range result.Docs {
+		if !b.canReadDocument(sub, col.Name, doc) {
+			continue
+		}
 		if pk != nil {
 			if id, ok := doc[pk.Name]; ok {
 				sub.DocIDs[toString(id)] = struct{}{}
@@ -198,7 +204,7 @@ func (b *Broker) executeSubscriptionQuery(sub *Subscription, col *schema.Collect
 
 	return &SubscriptionSnapshot{
 		Docs:  docs,
-		Total: result.Total,
+		Total: int64(len(docs)),
 	}, nil
 }
 
@@ -253,64 +259,87 @@ func (b *Broker) broadcastChange(change *Change) {
 }
 
 func (b *Broker) calculateDelta(sub *Subscription, col *schema.Collection, change *Change) (*Changes, error) {
-	collection := database.NewCollection(b.db, col)
-	pk := col.PrimaryKeyField()
-	if pk == nil {
-		return nil, nil
+	if col.PrimaryKeyField() == nil {
+		return &Changes{}, nil
 	}
-
-	delta := &Changes{}
 
 	switch change.Operation {
 	case OperationInsert:
-		doc, err := collection.FindOne(context.Background(), change.DocID)
-		if err != nil {
-			if err == database.ErrNotFound {
-				return nil, nil
-			}
-			return nil, err
-		}
-
-		if b.matchesFilter(doc, sub.Filter) {
-			delta.Inserts = append(delta.Inserts, doc)
-			sub.DocIDs[change.DocID] = struct{}{}
-		}
-
+		return b.handleInsert(sub, col, change.DocID)
 	case OperationUpdate:
-		_, wasInSet := sub.DocIDs[change.DocID]
-
-		doc, err := collection.FindOne(context.Background(), change.DocID)
-		if err != nil {
-			if err == database.ErrNotFound {
-				if wasInSet {
-					delta.Deletes = append(delta.Deletes, change.DocID)
-					delete(sub.DocIDs, change.DocID)
-				}
-				return delta, nil
-			}
-			return nil, err
-		}
-
-		matchesNow := b.matchesFilter(doc, sub.Filter)
-
-		if wasInSet && matchesNow {
-			delta.Updates = append(delta.Updates, doc)
-		} else if !wasInSet && matchesNow {
-			delta.Inserts = append(delta.Inserts, doc)
-			sub.DocIDs[change.DocID] = struct{}{}
-		} else if wasInSet && !matchesNow {
-			delta.Deletes = append(delta.Deletes, change.DocID)
-			delete(sub.DocIDs, change.DocID)
-		}
-
+		return b.handleUpdate(sub, col, change.DocID)
 	case OperationDelete:
-		if _, wasInSet := sub.DocIDs[change.DocID]; wasInSet {
-			delta.Deletes = append(delta.Deletes, change.DocID)
-			delete(sub.DocIDs, change.DocID)
+		return b.handleDelete(sub, change.DocID), nil
+	default:
+		return &Changes{}, nil
+	}
+}
+
+func (b *Broker) handleInsert(sub *Subscription, col *schema.Collection, docID string) (*Changes, error) {
+	collection := database.NewCollection(b.db, col)
+	doc, err := collection.FindOne(context.Background(), docID)
+	if err != nil {
+		if err == database.ErrNotFound {
+			return &Changes{}, nil
 		}
+		return nil, err
 	}
 
+	delta := &Changes{}
+	if b.matchesFilter(doc, sub.Filter) && b.canReadDocument(sub, col.Name, doc) {
+		delta.Inserts = append(delta.Inserts, doc)
+		sub.DocIDs[docID] = struct{}{}
+	}
 	return delta, nil
+}
+
+func (b *Broker) handleUpdate(sub *Subscription, col *schema.Collection, docID string) (*Changes, error) {
+	_, wasInSet := sub.DocIDs[docID]
+	collection := database.NewCollection(b.db, col)
+
+	doc, err := collection.FindOne(context.Background(), docID)
+	if err != nil {
+		if err == database.ErrNotFound {
+			return b.handleMissingDoc(sub, docID, wasInSet), nil
+		}
+		return nil, err
+	}
+
+	matchesNow := b.matchesFilter(doc, sub.Filter) && b.canReadDocument(sub, col.Name, doc)
+	return b.computeUpdateDelta(sub, docID, doc, wasInSet, matchesNow), nil
+}
+
+func (b *Broker) handleMissingDoc(sub *Subscription, docID string, wasInSet bool) *Changes {
+	delta := &Changes{}
+	if wasInSet {
+		delta.Deletes = append(delta.Deletes, docID)
+		delete(sub.DocIDs, docID)
+	}
+	return delta
+}
+
+func (b *Broker) computeUpdateDelta(sub *Subscription, docID string, doc database.Row, wasInSet, matchesNow bool) *Changes {
+	delta := &Changes{}
+	switch {
+	case wasInSet && matchesNow:
+		delta.Updates = append(delta.Updates, doc)
+	case !wasInSet && matchesNow:
+		delta.Inserts = append(delta.Inserts, doc)
+		sub.DocIDs[docID] = struct{}{}
+	case wasInSet && !matchesNow:
+		delta.Deletes = append(delta.Deletes, docID)
+		delete(sub.DocIDs, docID)
+	}
+	return delta
+}
+
+func (b *Broker) handleDelete(sub *Subscription, docID string) *Changes {
+	delta := &Changes{}
+	if _, wasInSet := sub.DocIDs[docID]; wasInSet {
+		delta.Deletes = append(delta.Deletes, docID)
+		delete(sub.DocIDs, docID)
+	}
+	return delta
 }
 
 func (b *Broker) matchesFilter(doc database.Row, filters map[string]Filter) bool {
@@ -343,6 +372,28 @@ func matchValue(val any, filter Filter) bool {
 		return false
 	}
 	return true
+}
+
+func (b *Broker) canReadDocument(sub *Subscription, collection string, doc database.Row) bool {
+	if b.rules == nil {
+		return true
+	}
+
+	evalCtx := &rules.EvalContext{
+		Auth: sub.AuthContext,
+		Doc:  doc,
+	}
+
+	allowed, err := b.rules.Evaluate(collection, rules.OpRead, evalCtx)
+	if err != nil {
+		log.Debug().Err(err).
+			Str("collection", collection).
+			Str("subscription_id", sub.ID).
+			Msg("Rule evaluation failed, denying access")
+		return false
+	}
+
+	return allowed
 }
 
 func equals(a, b any) bool {

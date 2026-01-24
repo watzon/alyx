@@ -127,11 +127,14 @@ type Subscription struct {
 	CreatedAt    time.Time         `json:"created_at"`
 	LastSyncedAt time.Time         `json:"last_synced_at"`
 
+	// AuthContext stores the authenticated user context for rule evaluation.
+	AuthContext map[string]any `json:"-"`
+
 	DocIDs map[string]struct{} `json:"-"`
 }
 
 // NewSubscription creates a new subscription from a subscribe payload.
-func NewSubscription(clientID string, payload *SubscribePayload) *Subscription {
+func NewSubscription(clientID string, payload *SubscribePayload, authContext map[string]any) *Subscription {
 	limit := payload.Limit
 	if limit <= 0 {
 		limit = 100
@@ -141,15 +144,16 @@ func NewSubscription(clientID string, payload *SubscribePayload) *Subscription {
 	}
 
 	return &Subscription{
-		ClientID:   clientID,
-		Collection: payload.Collection,
-		Filter:     payload.Filter,
-		Sort:       payload.Sort,
-		Limit:      limit,
-		Expand:     payload.Expand,
-		State:      SubscriptionStateActive,
-		CreatedAt:  time.Now(),
-		DocIDs:     make(map[string]struct{}),
+		ClientID:    clientID,
+		Collection:  payload.Collection,
+		Filter:      payload.Filter,
+		Sort:        payload.Sort,
+		Limit:       limit,
+		Expand:      payload.Expand,
+		State:       SubscriptionStateActive,
+		CreatedAt:   time.Now(),
+		AuthContext: authContext,
+		DocIDs:      make(map[string]struct{}),
 	}
 }
 

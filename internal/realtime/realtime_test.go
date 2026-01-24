@@ -130,7 +130,7 @@ func TestNewSubscription(t *testing.T) {
 		Limit: 50,
 	}
 
-	sub := NewSubscription("client1", payload)
+	sub := NewSubscription("client1", payload, nil)
 
 	if sub.Collection != "posts" {
 		t.Errorf("Expected collection posts, got %s", sub.Collection)
@@ -163,7 +163,7 @@ func TestNewSubscriptionLimitCapping(t *testing.T) {
 				Collection: "posts",
 				Limit:      tt.inputLimit,
 			}
-			sub := NewSubscription("client1", payload)
+			sub := NewSubscription("client1", payload, nil)
 			if sub.Limit != tt.expectedLimit {
 				t.Errorf("Expected limit %d, got %d", tt.expectedLimit, sub.Limit)
 			}
@@ -203,7 +203,7 @@ func TestBrokerBasic(t *testing.T) {
 		BufferSize:     100,
 	}
 
-	broker := NewBroker(db, s, cfg)
+	broker := NewBroker(db, s, nil, cfg)
 	if broker == nil {
 		t.Fatal("Failed to create broker")
 	}
@@ -292,7 +292,7 @@ func TestWebSocketHandshake(t *testing.T) {
 		BufferSize:     100,
 	}
 
-	broker := NewBroker(db, s, cfg)
+	broker := NewBroker(db, s, nil, cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	broker.Start(ctx)
