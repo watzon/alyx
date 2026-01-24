@@ -81,9 +81,19 @@ jobs:
           
           # Create minimal test files
           echo 'version: 1
-          collections: {}' > test-schema.yaml
+          collections:
+            test:
+              fields:
+                id:
+                  type: uuid
+                  primary: true
+                  default: auto
+                message:
+                  type: string
+                  nullable: true' > test-schema.yaml
           
           echo 'server:
+            host: 0.0.0.0
             port: 8090
           database:
             path: /tmp/test.db' > test-alyx.yaml
@@ -96,8 +106,23 @@ jobs:
             -e JWT_SECRET=test-secret-min-32-chars-long-here \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           
-          # Wait for startup
-          sleep 5
+          # Wait for container to be healthy (up to 60 seconds)
+          echo "Waiting for container to be healthy..."
+          for i in {1..60}; do
+            if [ "$(docker inspect --format='{{.State.Health.Status}}' alyx-test)" = "healthy" ]; then
+              echo "Container is healthy!"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 1
+          done
+          
+          # Verify it's actually healthy
+          if [ "$(docker inspect --format='{{.State.Health.Status}}' alyx-test)" != "healthy" ]; then
+            echo "Container failed to become healthy"
+            docker logs alyx-test
+            exit 1
+          fi
           
           # Test health endpoint
           curl -f http://localhost:8091/ || exit 1

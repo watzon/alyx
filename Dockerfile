@@ -26,7 +26,8 @@ FROM alpine:latest
 # Install runtime dependencies
 # - ca-certificates for HTTPS
 # - docker CLI for container management (if using docker runtime)
-RUN apk add --no-cache ca-certificates docker-cli
+# - curl for healthcheck
+RUN apk add --no-cache ca-certificates docker-cli curl
 
 # Create non-root user
 RUN addgroup -g 1001 alyx && \
@@ -50,9 +51,7 @@ EXPOSE 8090
 # Volume for data persistence
 VOLUME ["/app/data"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8090/ || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f -s http://localhost:8090/ > /dev/null || exit 1
 
-# Default command
-CMD ["alyx", "serve"]
+CMD ["alyx", "dev"]

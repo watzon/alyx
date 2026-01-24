@@ -49,8 +49,12 @@ func runDev(cmd *cobra.Command, args []string) error {
 		cfg = config.Default()
 	}
 
-	cfg.Server.Port = devPort
-	cfg.Server.Host = devHost
+	if cmd.Flags().Changed("port") {
+		cfg.Server.Port = devPort
+	}
+	if cmd.Flags().Changed("host") {
+		cfg.Server.Host = devHost
+	}
 	cfg.Dev.Enabled = true
 
 	schemaPath := resolveSchemaPath(devSchemaPath)
