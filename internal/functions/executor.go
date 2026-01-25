@@ -67,10 +67,14 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 	const tokenTTL = 5 * time.Minute
 	tokenStore := NewInternalTokenStore(tokenTTL)
 
-	// Create source watcher
-	sourceWatcher, err := NewSourceWatcher(registry)
-	if err != nil {
-		return nil, fmt.Errorf("creating source watcher: %w", err)
+	// Create source watcher (dev mode only)
+	var sourceWatcher *SourceWatcher
+	if cfg.DevMode {
+		var err error
+		sourceWatcher, err = NewSourceWatcher(registry)
+		if err != nil {
+			return nil, fmt.Errorf("creating source watcher: %w", err)
+		}
 	}
 
 	return &Service{
@@ -87,11 +91,15 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 
 // Start starts the function service and watchers.
 func (s *Service) Start(ctx context.Context) error {
-	// Start source watcher for hot reload
-	if err := s.sourceWatcher.Start(); err != nil {
-		return fmt.Errorf("starting source watcher: %w", err)
+	// Start source watcher for hot reload (dev mode only)
+	if s.sourceWatcher != nil {
+		if err := s.sourceWatcher.Start(); err != nil {
+			return fmt.Errorf("starting source watcher: %w", err)
+		}
+		log.Info().Msg("Source watcher started (dev mode)")
+	} else {
+		log.Debug().Msg("Source watcher disabled (production mode)")
 	}
-	log.Info().Msg("Source watcher started")
 
 	return nil
 }
