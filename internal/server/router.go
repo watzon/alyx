@@ -131,13 +131,26 @@ func (r *Router) setupRoutes() {
 		if r.server.FuncService() != nil {
 			funcSvc = r.server.FuncService()
 		}
-		adminHandlers := handlers.NewAdminHandlers(r.server.DeployService(), authHandlers.Service(), r.server.DB(), r.server.Schema(), funcSvc)
+		adminHandlers := handlers.NewAdminHandlers(
+			r.server.DeployService(),
+			authHandlers.Service(),
+			r.server.DB(),
+			r.server.Schema(),
+			funcSvc,
+			r.server.Config(),
+			r.server.SchemaPath(),
+			r.server.ConfigPath(),
+		)
 		r.mux.HandleFunc("GET /api/admin/stats", r.wrap(adminHandlers.Stats))
 		r.mux.HandleFunc("POST /api/admin/deploy/prepare", r.wrap(adminHandlers.DeployPrepare))
 		r.mux.HandleFunc("POST /api/admin/deploy/execute", r.wrap(adminHandlers.DeployExecute))
 		r.mux.HandleFunc("POST /api/admin/deploy/rollback", r.wrap(adminHandlers.DeployRollback))
 		r.mux.HandleFunc("GET /api/admin/deploy/history", r.wrap(adminHandlers.DeployHistory))
 		r.mux.HandleFunc("GET /api/admin/schema", r.wrap(adminHandlers.SchemaGet))
+		r.mux.HandleFunc("GET /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawGet))
+		r.mux.HandleFunc("PUT /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawUpdate))
+		r.mux.HandleFunc("GET /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawGet))
+		r.mux.HandleFunc("PUT /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawUpdate))
 		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
 		r.mux.HandleFunc("GET /api/admin/tokens", r.wrap(adminHandlers.TokenList))
 		r.mux.HandleFunc("DELETE /api/admin/tokens/{name}", r.wrap(adminHandlers.TokenDelete))

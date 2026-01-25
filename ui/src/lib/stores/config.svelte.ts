@@ -25,6 +25,10 @@ class ConfigStore {
 		return this.config?.Docs?.Enabled ?? false;
 	}
 
+	get isDevMode(): boolean {
+		return this.config?.Dev?.Enabled ?? false;
+	}
+
 	get docsUrl(): string {
 		return '/api/docs';
 	}

@@ -23,6 +23,8 @@ type Server struct {
 	cfg           *config.Config
 	db            *database.DB
 	schema        *schema.Schema
+	schemaPath    string
+	configPath    string
 	rules         *rules.Engine
 	broker        *realtime.Broker
 	funcService   *functions.Service
@@ -35,12 +37,32 @@ type Server struct {
 
 const defaultRequestLogCapacity = 1000
 
-func New(cfg *config.Config, db *database.DB, s *schema.Schema) *Server {
+type Option func(*Server)
+
+func WithSchemaPath(path string) Option {
+	return func(s *Server) {
+		s.schemaPath = path
+	}
+}
+
+func WithConfigPath(path string) Option {
+	return func(s *Server) {
+		s.configPath = path
+	}
+}
+
+func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) *Server {
 	srv := &Server{
 		cfg:         cfg,
 		db:          db,
 		schema:      s,
+		schemaPath:  "schema.yaml",
+		configPath:  "",
 		requestLogs: requestlog.NewStore(defaultRequestLogCapacity),
+	}
+
+	for _, opt := range opts {
+		opt(srv)
 	}
 
 	rulesEngine, err := rules.NewEngine()
@@ -160,6 +182,14 @@ func (s *Server) Rules() *rules.Engine {
 
 func (s *Server) FuncService() *functions.Service {
 	return s.funcService
+}
+
+func (s *Server) SchemaPath() string {
+	return s.schemaPath
+}
+
+func (s *Server) ConfigPath() string {
+	return s.configPath
 }
 
 func (s *Server) GetCollection(name string) (*database.Collection, error) {

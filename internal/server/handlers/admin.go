@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
 	"github.com/watzon/alyx/internal/auth"
+	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/deploy"
 	"github.com/watzon/alyx/internal/functions"
@@ -23,17 +25,23 @@ type AdminHandlers struct {
 	db            *database.DB
 	schema        *schema.Schema
 	funcService   *functions.Service
+	cfg           *config.Config
+	schemaPath    string
+	configPath    string
 	startTime     time.Time
 }
 
 // NewAdminHandlers creates new admin handlers.
-func NewAdminHandlers(deployService *deploy.Service, authService *auth.Service, db *database.DB, sch *schema.Schema, funcService *functions.Service) *AdminHandlers {
+func NewAdminHandlers(deployService *deploy.Service, authService *auth.Service, db *database.DB, sch *schema.Schema, funcService *functions.Service, cfg *config.Config, schemaPath, configPath string) *AdminHandlers {
 	return &AdminHandlers{
 		deployService: deployService,
 		authService:   authService,
 		db:            db,
 		schema:        sch,
 		funcService:   funcService,
+		cfg:           cfg,
+		schemaPath:    schemaPath,
+		configPath:    configPath,
 		startTime:     time.Now(),
 	}
 }
@@ -412,6 +420,33 @@ func serializeField(f *schema.Field) map[string]any {
 	if f.OnDelete != "" {
 		field["onDelete"] = string(f.OnDelete)
 	}
+	if f.Validate != nil {
+		validate := map[string]any{}
+		if f.Validate.MinLength != nil {
+			validate["minLength"] = *f.Validate.MinLength
+		}
+		if f.Validate.MaxLength != nil {
+			validate["maxLength"] = *f.Validate.MaxLength
+		}
+		if f.Validate.Min != nil {
+			validate["min"] = *f.Validate.Min
+		}
+		if f.Validate.Max != nil {
+			validate["max"] = *f.Validate.Max
+		}
+		if f.Validate.Format != "" {
+			validate["format"] = f.Validate.Format
+		}
+		if f.Validate.Pattern != "" {
+			validate["pattern"] = f.Validate.Pattern
+		}
+		if len(f.Validate.Enum) > 0 {
+			validate["enum"] = f.Validate.Enum
+		}
+		if len(validate) > 0 {
+			field["validate"] = validate
+		}
+	}
 	if f.RichText != nil {
 		richtext := map[string]any{}
 		if f.RichText.Preset != "" {
@@ -695,5 +730,152 @@ func (h *AdminHandlers) UserSetPassword(w http.ResponseWriter, r *http.Request) 
 	JSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"id":      id,
+	})
+}
+
+func (h *AdminHandlers) isDevMode() bool {
+	return h.cfg != nil && h.cfg.Dev.Enabled
+}
+
+func (h *AdminHandlers) SchemaRawGet(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if h.schemaPath == "" {
+		Error(w, http.StatusNotFound, "SCHEMA_NOT_FOUND", "Schema file path not configured")
+		return
+	}
+
+	content, err := os.ReadFile(h.schemaPath)
+	if err != nil {
+		log.Error().Err(err).Str("path", h.schemaPath).Msg("Failed to read schema file")
+		InternalError(w, "Failed to read schema file")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"content": string(content),
+		"path":    h.schemaPath,
+	})
+}
+
+func (h *AdminHandlers) SchemaRawUpdate(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Schema editing is only available in development mode")
+		return
+	}
+
+	if h.schemaPath == "" {
+		Error(w, http.StatusNotFound, "SCHEMA_NOT_FOUND", "Schema file path not configured")
+		return
+	}
+
+	var input struct {
+		Content string `json:"content"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&input); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	if input.Content == "" {
+		BadRequest(w, "Content is required")
+		return
+	}
+
+	if _, parseErr := schema.Parse([]byte(input.Content)); parseErr != nil {
+		Error(w, http.StatusBadRequest, "INVALID_SCHEMA", parseErr.Error())
+		return
+	}
+
+	if err := os.WriteFile(h.schemaPath, []byte(input.Content), 0o600); err != nil {
+		log.Error().Err(err).Str("path", h.schemaPath).Msg("Failed to write schema file")
+		InternalError(w, "Failed to write schema file")
+		return
+	}
+
+	log.Info().Str("path", h.schemaPath).Msg("Schema file updated via admin API")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Schema updated successfully. Restart the server or wait for hot-reload to apply changes.",
+	})
+}
+
+func (h *AdminHandlers) ConfigRawGet(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if h.configPath == "" {
+		Error(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config file path not configured")
+		return
+	}
+
+	content, err := os.ReadFile(h.configPath)
+	if err != nil {
+		log.Error().Err(err).Str("path", h.configPath).Msg("Failed to read config file")
+		InternalError(w, "Failed to read config file")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"content": string(content),
+		"path":    h.configPath,
+	})
+}
+
+func (h *AdminHandlers) ConfigRawUpdate(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Config editing is only available in development mode")
+		return
+	}
+
+	if h.configPath == "" {
+		Error(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "Config file path not configured")
+		return
+	}
+
+	var input struct {
+		Content string `json:"content"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&input); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	if input.Content == "" {
+		BadRequest(w, "Content is required")
+		return
+	}
+
+	if err := os.WriteFile(h.configPath, []byte(input.Content), 0o600); err != nil {
+		log.Error().Err(err).Str("path", h.configPath).Msg("Failed to write config file")
+		InternalError(w, "Failed to write config file")
+		return
+	}
+
+	log.Info().Str("path", h.configPath).Msg("Config file updated via admin API")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Config updated successfully. Restart the server to apply changes.",
 	})
 }

@@ -1,16 +1,52 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
-	import { admin, type Schema } from '$lib/api/client';
+	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { admin, type Schema, type Collection } from '$lib/api/client';
 	import { configStore } from '$lib/stores/config.svelte';
 	import * as Card from '$ui/card';
 	import * as Tabs from '$ui/tabs';
 	import * as Tooltip from '$ui/tooltip';
 	import { Skeleton } from '$ui/skeleton';
 	import { Badge } from '$ui/badge';
+	import { Button } from '$ui/button';
+	import { YamlEditor } from '$lib/components/yaml-editor';
+	import { SchemaEditor, toEditableSchema, toYamlString, type EditableSchema } from '$lib/components/schema-editor';
+	import { toast } from 'svelte-sonner';
 	import KeyIcon from 'lucide-svelte/icons/key';
 	import LinkIcon from 'lucide-svelte/icons/link';
 	import HashIcon from 'lucide-svelte/icons/hash';
 	import BookOpenIcon from 'lucide-svelte/icons/book-open';
+	import PencilIcon from 'lucide-svelte/icons/pencil';
+	import EyeIcon from 'lucide-svelte/icons/eye';
+	import SaveIcon from 'lucide-svelte/icons/save';
+	import XIcon from 'lucide-svelte/icons/x';
+	import { browser } from '$app/environment';
+
+	const queryClient = useQueryClient();
+
+	let isEditMode = $state(false);
+	let isVisualEditMode = $state(false);
+	let editedContent = $state('');
+	let editableSchema = $state<EditableSchema | null>(null);
+	let saveError = $state<string | null>(null);
+	let activeTab = $state<string>('');
+	let initialTabFromHash = browser ? window.location.hash.slice(1) : '';
+
+	function sortCollections(collections: Collection[] | undefined): Collection[] {
+		if (!collections) return [];
+		return [...collections].sort((a, b) => a.name.localeCompare(b.name));
+	}
+
+	function updateHashFromTab(tab: string) {
+		if (browser && tab) {
+			window.history.replaceState(null, '', `#${tab}`);
+		}
+	}
+
+	$effect(() => {
+		if (activeTab) {
+			updateHashFromTab(activeTab);
+		}
+	});
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['admin', 'schema'],
@@ -20,6 +56,82 @@
 			return result.data!;
 		}
 	}));
+
+	const schemaRawQuery = createQuery(() => ({
+		queryKey: ['admin', 'schema', 'raw'],
+		queryFn: async () => {
+			const result = await admin.schemaRaw.get();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		enabled: configStore.isDevMode
+	}));
+
+	const sortedCollections = $derived(sortCollections(schemaQuery.data?.collections));
+
+	$effect(() => {
+		if (sortedCollections.length > 0 && !activeTab) {
+			const hashCollection = initialTabFromHash;
+			const collectionExists = sortedCollections.some((c) => c.name === hashCollection);
+			activeTab = collectionExists ? hashCollection : sortedCollections[0].name;
+		}
+	});
+
+	const saveMutation = createMutation(() => ({
+		mutationFn: async (content: string) => {
+			const result = await admin.schemaRaw.update(content);
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		onSuccess: () => {
+			toast.success('Schema saved successfully. Changes will be applied on server restart or hot-reload.');
+			isEditMode = false;
+			saveError = null;
+			queryClient.invalidateQueries({ queryKey: ['admin', 'schema'] });
+			queryClient.invalidateQueries({ queryKey: ['admin', 'schema', 'raw'] });
+		},
+		onError: (error: Error) => {
+			saveError = error.message;
+			toast.error('Failed to save schema: ' + error.message);
+		}
+	}));
+
+	function enterEditMode() {
+		if (schemaRawQuery.data) {
+			editedContent = schemaRawQuery.data.content;
+			saveError = null;
+			isEditMode = true;
+		}
+	}
+
+	function enterVisualEditMode() {
+		if (schemaQuery.data) {
+			editableSchema = toEditableSchema(schemaQuery.data);
+			isVisualEditMode = true;
+			isEditMode = false;
+		}
+	}
+
+	function cancelEdit() {
+		isVisualEditMode = false;
+		editableSchema = null;
+		isEditMode = false;
+		saveError = null;
+		if (schemaRawQuery.data) {
+			editedContent = schemaRawQuery.data.content;
+		}
+	}
+
+	function saveSchema() {
+		saveMutation.mutate(editedContent);
+	}
+
+	function saveVisualSchema() {
+		if (editableSchema) {
+			const yamlContent = toYamlString(editableSchema);
+			saveMutation.mutate(yamlContent);
+		}
+	}
 
 	function getFieldTypeColor(type: string): string {
 		switch (type) {
@@ -44,12 +156,83 @@
 </script>
 
 <div class="max-w-screen-2xl mx-auto space-y-6">
-	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Schema</h1>
-		<p class="text-sm text-muted-foreground">View your database schema definitions</p>
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-2xl font-semibold tracking-tight">Schema</h1>
+			<p class="text-sm text-muted-foreground">
+				{#if isEditMode}
+					Editing schema.yaml
+				{:else if isVisualEditMode}
+					Visual schema editor
+				{:else}
+					View your database schema definitions
+				{/if}
+			</p>
+		</div>
+		{#if configStore.isDevMode}
+			<div class="flex items-center gap-2">
+				{#if isEditMode || isVisualEditMode}
+					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saveMutation.isPending}>
+						<XIcon class="h-4 w-4 mr-2" />
+						Cancel
+					</Button>
+					<Button size="sm" onclick={isEditMode ? saveSchema : saveVisualSchema} disabled={saveMutation.isPending}>
+						<SaveIcon class="h-4 w-4 mr-2" />
+						{saveMutation.isPending ? 'Saving...' : 'Save'}
+					</Button>
+				{:else}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={enterEditMode}
+						disabled={schemaRawQuery.isPending}
+					>
+						<PencilIcon class="h-4 w-4 mr-2" />
+						Edit Schema
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={enterVisualEditMode}
+						disabled={schemaRawQuery.isPending}
+					>
+						<PencilIcon class="h-4 w-4 mr-2" />
+						Visual Edit
+					</Button>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
-	{#if schemaQuery.isPending}
+	{#if isEditMode}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="flex items-center gap-2">
+					<PencilIcon class="h-5 w-5" />
+					Edit Schema
+				</Card.Title>
+				<Card.Description>
+					{#if schemaRawQuery.data?.path}
+						Editing: <code class="font-mono text-xs bg-muted px-1 py-0.5 rounded">{schemaRawQuery.data.path}</code>
+					{/if}
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<YamlEditor
+					bind:value={editedContent}
+					error={saveError}
+					onchange={() => { saveError = null; }}
+				/>
+			</Card.Content>
+		</Card.Root>
+	{:else if isVisualEditMode && editableSchema}
+		<SchemaEditor
+			schema={editableSchema}
+			onchange={(s) => { editableSchema = s; }}
+			initialCollection={activeTab}
+			disabled={saveMutation.isPending}
+		/>
+	{:else if schemaQuery.isPending}
 		<Card.Root>
 			<Card.Content class="py-6">
 				<Skeleton class="h-48 w-full" />
@@ -62,14 +245,14 @@
 			</Card.Content>
 		</Card.Root>
 	{:else if schemaQuery.data}
-		<Tabs.Root value={schemaQuery.data.collections?.[0]?.name}>
+		<Tabs.Root bind:value={activeTab}>
 			<Tabs.List class="w-full justify-start overflow-x-auto">
-				{#each schemaQuery.data.collections ?? [] as collection}
+				{#each sortedCollections as collection}
 					<Tabs.Trigger value={collection.name}>{collection.name}</Tabs.Trigger>
 				{/each}
 			</Tabs.List>
 
-			{#each schemaQuery.data.collections ?? [] as collection}
+			{#each sortedCollections as collection}
 				{@const docsUrl = configStore.getCollectionDocsUrl(collection.name)}
 				<Tabs.Content value={collection.name} class="space-y-4">
 					<Card.Root>

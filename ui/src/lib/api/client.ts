@@ -201,6 +201,10 @@ class ApiClient {
 		return this.request<T>('PATCH', path, body);
 	}
 
+	put<T>(path: string, body?: unknown) {
+		return this.request<T>('PUT', path, body);
+	}
+
 	delete<T>(path: string) {
 		return this.request<T>('DELETE', path);
 	}
@@ -327,6 +331,14 @@ export interface ServerConfig {
 	Functions?: {
 		Enabled: boolean;
 	};
+	Dev?: {
+		Enabled: boolean;
+		Watch: boolean;
+		AutoMigrate: boolean;
+		AutoGenerate: boolean;
+		GenerateLanguages: string[];
+		GenerateOutput: string;
+	};
 }
 
 export interface RequestLogEntry {
@@ -378,10 +390,32 @@ export const auth = {
 	providers: () => api.get<{ providers: string[] }>('/auth/providers')
 };
 
+export interface SchemaRaw {
+	content: string;
+	path: string;
+}
+
+export interface ConfigRaw {
+	content: string;
+	path: string;
+}
+
 export const admin = {
 	stats: () => api.get<Stats>('/admin/stats'),
 
 	schema: () => api.get<Schema>('/admin/schema'),
+
+	schemaRaw: {
+		get: () => api.get<SchemaRaw>('/admin/schema/raw'),
+		update: (content: string) =>
+			api.put<{ success: boolean; message?: string }>('/admin/schema/raw', { content })
+	},
+
+	configRaw: {
+		get: () => api.get<ConfigRaw>('/admin/config/raw'),
+		update: (content: string) =>
+			api.put<{ success: boolean; message?: string }>('/admin/config/raw', { content })
+	},
 
 	users: {
 		list: (params?: {

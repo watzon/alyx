@@ -93,7 +93,11 @@ func runDev(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	srv := server.New(cfg, db, s)
+	configPath, _ := config.ConfigFilePath("")
+	srv := server.New(cfg, db, s,
+		server.WithSchemaPath(schemaPath),
+		server.WithConfigPath(configPath),
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
