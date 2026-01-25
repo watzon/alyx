@@ -172,6 +172,9 @@ func (r *Registry) findEntryFile(dirPath string) (string, Runtime) {
 		{"index.py", RuntimePython},
 		{"main.go", RuntimeGo},
 		{"index.go", RuntimeGo},
+		{"plugin.wasm", RuntimeWasm},
+		{"index.wasm", RuntimeWasm},
+		{"function.wasm", RuntimeWasm},
 	}
 
 	for _, c := range candidates {

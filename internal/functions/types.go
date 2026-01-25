@@ -16,6 +16,8 @@ const (
 	RuntimePython Runtime = "python"
 	// RuntimeGo is the Go runtime.
 	RuntimeGo Runtime = "go"
+	// RuntimeWasm is the WebAssembly runtime.
+	RuntimeWasm Runtime = "wasm"
 )
 
 // FunctionRequest represents a function invocation request.
