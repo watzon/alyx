@@ -539,3 +539,166 @@ This completes the WASM removal migration! The package now:
 | Task 6: Watcher Simplification | ✅ Complete | -455 lines |
 | **Net Change** | **✅ Complete** | **-1103 lines (net reduction)** |
 
+
+## Task 7b: Create Node Function Example (2026-01-25)
+
+### Files Created
+
+1. **`examples/functions-demo/functions/hello-node/index.js`** (~90 lines):
+   - Shebang: `#!/usr/bin/env node` for direct execution
+   - Uses Node.js stdlib only (no npm dependencies)
+   - `readline` module for stdin reading
+   - JSON stdin/stdout protocol implementation
+
+2. **`examples/functions-demo/functions/hello-node/manifest.yaml`**:
+   - `runtime: node`
+   - `name: hello-node`
+   - Simple description
+
+### Implementation Details
+
+#### Stdin Reading Strategy
+```javascript
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: false
+    });
+    rl.on('line', (line) => { data += line; });
+    rl.on('close', () => { resolve(data); });
+    rl.on('error', (err) => { reject(err); });
+  });
+}
+```
+
+**Why readline over chunks**:
+- Simpler API for line-based input
+- Handles newline edge cases automatically
+- `terminal: false` disables TTY features (important for piped input)
+- Accumulates all lines before parsing (single JSON object expected)
+
+#### Error Handling
+- Try/catch wraps entire main function
+- Invalid JSON → error response with stack trace
+- Missing required fields → validation error
+- All errors exit with code 1
+- Error response format: `{request_id: "unknown", success: false, error: {message, stack}}`
+
+#### Response Format
+```json
+{
+  "request_id": "test-123",
+  "success": true,
+  "output": {
+    "message": "Hello, World! (from Node.js)",
+    "timestamp": "2026-01-25T21:45:31.867Z",
+    "runtime": "node",
+    "version": "v22.13.1"
+  }
+}
+```
+
+**Extra fields added**:
+- `timestamp`: ISO 8601 timestamp via `new Date().toISOString()`
+- `runtime`: Hardcoded `"node"` for debugging
+- `version`: `process.version` (e.g., `"v22.13.1"`)
+
+### Verification Tests
+
+**Test 1: Valid input with name**
+```bash
+echo '{"request_id":"test-123","function":"hello-node","input":{"name":"World"},...}' | node index.js
+# ✅ Output: {"request_id":"test-123","success":true,"output":{"message":"Hello, World! (from Node.js)",...}}
+```
+
+**Test 2: Different name**
+```bash
+echo '{"request_id":"test-456","function":"hello-node","input":{"name":"Alice"}}' | node index.js
+# ✅ Output: {"request_id":"test-456","success":true,"output":{"message":"Hello, Alice! (from Node.js)",...}}
+```
+
+**Test 3: Invalid JSON**
+```bash
+echo 'invalid json' | node index.js
+# ✅ Output: {"request_id":"unknown","success":false,"error":{"message":"Unexpected token 'i'..."}}
+# ✅ Exit code: 1
+```
+
+### Design Decisions
+
+1. **No external dependencies**: Pure Node.js stdlib (readline, process)
+   - Simplifies deployment (no `npm install` needed)
+   - Faster startup (no node_modules to load)
+   - Matches Go/Python examples (minimal dependencies)
+
+2. **Shebang included**: `#!/usr/bin/env node`
+   - Allows direct execution: `./index.js < input.json`
+   - Not required for `node index.js` invocation
+   - Matches Unix conventions
+
+3. **Async/await pattern**: Modern JavaScript idiom
+   - Cleaner than callback hell
+   - Easier to extend with async operations (HTTP, DB, etc.)
+   - Matches expected Node.js style
+
+4. **Exit codes**: 0 for success, 1 for errors
+   - Standard Unix convention
+   - SubprocessRuntime checks exit codes
+   - Non-zero exit → error response
+
+5. **Stdout only for JSON**: No console.log debugging
+   - Stderr available for logs (not implemented yet)
+   - Keeps stdout clean for protocol
+   - Matches Go/Python examples
+
+### Edge Cases Handled
+
+- **Empty input.name**: Defaults to `"World"`
+- **Missing input object**: Validation error
+- **Missing request_id**: Validation error
+- **Invalid JSON**: Parse error with stack trace
+- **Multi-line JSON**: readline accumulates all lines before parsing
+
+### Node.js Specifics
+
+**Entry file detection** (from Task 5):
+- Priority: `index.js` > `index.mjs` > `index.cjs` > `index.ts`
+- Extensions: `.js`, `.mjs`, `.cjs` (Node), `.ts` (Node with TypeScript)
+
+**Runtime command** (from Task 2):
+- Command: `node`
+- Args: `[]` (no default args)
+- Extensions: `[".js", ".mjs"]`
+
+**Execution**:
+```bash
+node /path/to/function/index.js < request.json
+```
+
+### Comparison with Other Runtimes
+
+| Feature | Node | Deno | Python |
+|---------|------|------|--------|
+| Stdin reading | readline module | Deno.stdin.readable | sys.stdin.read() |
+| JSON parsing | JSON.parse() | JSON.parse() | json.loads() |
+| Async support | async/await | async/await | asyncio (optional) |
+| Dependencies | npm (optional) | URL imports | pip (optional) |
+| Entry files | index.js, index.mjs | mod.ts, main.ts | index.py |
+
+### Next Steps
+
+This completes Task 7b. Task 7c (Python example) will follow the same pattern with Python-specific idioms.
+
+### Acceptance Criteria
+
+- ✅ Directory created: `examples/functions-demo/functions/hello-node/`
+- ✅ File created: `index.js` with JSON stdin/stdout protocol
+- ✅ File created: `manifest.yaml` with `runtime: node`
+- ✅ Functionality: Reads JSON from stdin, writes JSON to stdout
+- ✅ Verification: `node index.js < input.json` works standalone
+- ✅ Error handling: Invalid JSON returns error response
+- ✅ Exit codes: 0 for success, 1 for errors
+

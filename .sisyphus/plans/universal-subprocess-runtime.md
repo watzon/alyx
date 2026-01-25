@@ -333,7 +333,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 7a. Create Deno Function Example
+- [x] 7a. Create Deno Function Example
 
   **What to do**:
   - Create `examples/functions-demo/functions/hello-deno/`
@@ -361,7 +361,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 7b. Create Node Function Example
+- [x] 7b. Create Node Function Example
 
   **What to do**:
   - Create `examples/functions-demo/functions/hello-node/`
@@ -389,7 +389,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 7c. Create Python Function Example
+- [x] 7c. Create Python Function Example
 
   **What to do**:
   - Create `examples/functions-demo/functions/hello-python/`

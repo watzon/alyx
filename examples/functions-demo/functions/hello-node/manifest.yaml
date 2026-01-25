@@ -1,0 +1,3 @@
+name: hello-node
+runtime: node
+description: Simple Node.js function demonstrating JSON stdin/stdout protocol
