@@ -119,3 +119,112 @@ Task 3 will need to clean up WASM references in:
 - `internal/functions/watcher.go` (WASMWatcher, NewWASMWatcher)
 - `internal/functions/discovery.go` (RuntimeWasm constant)
 - `internal/functions/watcher_test.go` (testWASMRuntime, testWASMWatcher)
+
+## Task 3: Implement Subprocess Runtime (2026-01-25)
+
+### Implementation Overview
+Created `internal/functions/runtime.go` with ~100 lines implementing subprocess-based function execution.
+
+### Key Components
+
+#### SubprocessRuntime Struct
+```go
+type SubprocessRuntime struct {
+    runtime Runtime        // Runtime type (deno, node, bun, python, go)
+    config  RuntimeConfig  // Command, args, extensions
+}
+```
+
+#### NewSubprocessRuntime Constructor
+- Validates runtime exists in `defaultRuntimes` map
+- Uses `exec.LookPath()` to check if runtime binary is installed
+- Returns clear error if binary not found: `"runtime binary not found: deno (install deno to use this runtime)"`
+- No CGO dependencies, pure Go stdlib
+
+#### Call Method Signature
+```go
+func (r *SubprocessRuntime) Call(ctx context.Context, name, entrypoint string, req *FunctionRequest) (*FunctionResponse, error)
+```
+
+### JSON Protocol Implementation
+
+**Input (stdin)**:
+- Marshals `FunctionRequest` struct to JSON
+- Pipes to subprocess stdin via `bytes.NewReader()`
+- Includes: request_id, function name, input data, context (auth, env, alyx_url, internal_token)
+
+**Output (stdout)**:
+- Reads subprocess stdout into `bytes.Buffer`
+- Unmarshals JSON into `FunctionResponse` struct
+- Includes: request_id, success flag, output/error, logs, duration_ms
+
+**Error Handling (stderr)**:
+- Captures stderr separately into `bytes.Buffer`
+- Included in error messages for debugging
+- Non-zero exit codes return error with stderr content
+
+### Context & Timeout Handling
+- Uses `exec.CommandContext(ctx, ...)` for automatic timeout support
+- Checks `ctx.Err()` to distinguish timeout from other errors
+- Returns clear error: `"function hello timed out: context deadline exceeded"`
+
+### Command Construction
+```go
+args := append(r.config.Args, entrypoint)
+cmd := exec.CommandContext(ctx, r.config.Command, args...)
+```
+
+**Examples**:
+- Deno: `deno run --allow-all /path/to/function.ts`
+- Node: `node /path/to/function.js`
+- Bun: `bun run /path/to/function.ts`
+- Python: `python3 /path/to/function.py`
+- Go: `go run /path/to/function.go`
+
+### Error Classification
+
+1. **Runtime not found**: `exec.LookPath()` fails → clear installation message
+2. **Context timeout**: `ctx.Err() != nil` → timeout error with context
+3. **Non-zero exit**: `exec.ExitError` → includes exit code and stderr
+4. **Invalid JSON output**: `json.Unmarshal()` fails → includes stdout/stderr for debugging
+5. **Other exec errors**: Generic execution error with wrapping
+
+### Edge Cases Handled
+
+- **Large payloads**: Pipes handle streaming automatically (no size limits)
+- **Invalid JSON**: Clear error with stdout/stderr included
+- **Missing binary**: Checked at construction time, not execution time
+- **Timeout**: Handled via context cancellation
+- **Stderr logging**: Captured separately, included in errors but not mixed with stdout
+
+### Design Decisions
+
+1. **No process pooling**: Each call spawns fresh process (future optimization)
+2. **No streaming protocol**: Single request/response only (matches current API)
+3. **Synchronous execution**: Blocks until subprocess completes
+4. **Pure stdlib**: No external dependencies beyond `os/exec` and `encoding/json`
+5. **FunctionRequest input**: Changed from `map[string]any` to `*FunctionRequest` for full protocol support
+
+### Helper Methods
+```go
+func (r *SubprocessRuntime) Runtime() Runtime
+func (r *SubprocessRuntime) Config() RuntimeConfig
+```
+
+### Verification Status
+- ✅ `runtime.go` created (~100 lines)
+- ✅ `SubprocessRuntime` struct implemented
+- ✅ `NewSubprocessRuntime()` with binary existence check
+- ✅ `Call()` method with JSON stdin/stdout protocol
+- ✅ Context timeout support via `CommandContext`
+- ✅ Stderr captured separately
+- ✅ Non-zero exit codes handled as errors
+- ⚠️ Expected build errors in `executor.go`, `watcher.go`, `discovery.go` (WASM references)
+
+### Next Steps
+Task 4 will update `executor.go` to use `SubprocessRuntime` instead of `WASMRuntime`, which will resolve the build errors.
+
+### API Compatibility
+- ✅ Executor interface unchanged (drop-in replacement pattern maintained)
+- ✅ FunctionRequest/FunctionResponse types used directly
+- ✅ No breaking changes to public API

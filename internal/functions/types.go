@@ -16,9 +16,46 @@ const (
 	RuntimePython Runtime = "python"
 	// RuntimeGo is the Go runtime.
 	RuntimeGo Runtime = "go"
-	// RuntimeWasm is the WebAssembly runtime.
-	RuntimeWasm Runtime = "wasm"
+	// RuntimeDeno is the Deno runtime.
+	RuntimeDeno Runtime = "deno"
+	// RuntimeBun is the Bun runtime.
+	RuntimeBun Runtime = "bun"
 )
+
+// RuntimeConfig defines the execution configuration for a runtime.
+type RuntimeConfig struct {
+	Command    string
+	Args       []string
+	Extensions []string
+}
+
+var defaultRuntimes = map[Runtime]RuntimeConfig{
+	RuntimeDeno: {
+		Command:    "deno",
+		Args:       []string{"run", "--allow-all"},
+		Extensions: []string{".ts", ".tsx"},
+	},
+	RuntimeNode: {
+		Command:    "node",
+		Args:       []string{},
+		Extensions: []string{".js", ".mjs"},
+	},
+	RuntimeBun: {
+		Command:    "bun",
+		Args:       []string{"run"},
+		Extensions: []string{".ts", ".tsx", ".js"},
+	},
+	RuntimePython: {
+		Command:    "python3",
+		Args:       []string{},
+		Extensions: []string{".py"},
+	},
+	RuntimeGo: {
+		Command:    "go",
+		Args:       []string{"run"},
+		Extensions: []string{".go"},
+	},
+}
 
 // FunctionRequest represents a function invocation request.
 type FunctionRequest struct {

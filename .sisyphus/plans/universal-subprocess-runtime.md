@@ -200,7 +200,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 3. Implement Subprocess Runtime
+- [x] 3. Implement Subprocess Runtime
 
   **What to do**:
   - Create `internal/functions/runtime.go`
