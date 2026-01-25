@@ -137,14 +137,27 @@ export async function executeFunction(functionDef, request) {
   const logs = [];
   const startTime = Date.now();
 
+  const alyxUrl = request.context?.alyx_url;
+  const internalToken = request.context?.internal_token;
+
   const context = {
     auth: request.context?.auth || null,
     env: request.context?.env || {},
-    db: createDbClient({
-      alyxUrl: request.context?.alyx_url,
-      internalToken: request.context?.internal_token,
-    }),
+    db: createDbClient({ alyxUrl, internalToken }),
     log: createLogger(logs),
+    alyx: {
+      url: alyxUrl,
+      token: internalToken,
+      async fetch(path, options = {}) {
+        const url = path.startsWith("http") ? path : `${alyxUrl}${path}`;
+        const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${internalToken}`,
+          ...options.headers,
+        };
+        return fetch(url, { ...options, headers });
+      },
+    },
   };
 
   try {
