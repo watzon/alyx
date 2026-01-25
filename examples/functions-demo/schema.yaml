@@ -1,0 +1,10 @@
+collections:
+  - name: users
+    fields:
+      - name: email
+        type: string
+        required: true
+        unique: true
+      - name: name
+        type: string
+        required: true

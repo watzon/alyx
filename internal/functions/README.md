@@ -1,29 +1,70 @@
 # Functions Package
 
-This package provides serverless function execution for Alyx.
+This package provides serverless function execution for Alyx using a subprocess-based runtime.
 
-## Architecture Migration
+## Architecture
 
-**Container-based execution has been removed in favor of WASM.**
+**Subprocess-based execution** - Functions run as subprocesses communicating via JSON stdin/stdout protocol.
 
-The previous Docker/Podman container-based execution system has been replaced with WebAssembly (WASM) for improved performance, security, and portability.
+### Supported Runtimes
 
-### Removed Components
+- **Deno** - TypeScript/JavaScript with Deno runtime
+- **Node.js** - JavaScript/TypeScript with Node runtime  
+- **Bun** - TypeScript/JavaScript with Bun runtime
+- **Python** - Python 3 functions
+- **Go** - Go functions via `go run`
 
-- `container.go` - Docker container management
-- `pool.go` - Container pool management  
-- `executor.go` - Container-based executor implementation
-- Container-specific types: `Container`, `ContainerState`, `PoolConfig`, `ContainerManager`
+### JSON Protocol
 
-### Retained Components
+Functions communicate via JSON over stdin/stdout:
 
+**Input (stdin)**:
+```json
+{
+  "request_id": "req_123",
+  "function": "hello",
+  "input": {"name": "World"},
+  "context": {
+    "auth": {"id": "user_123", "email": "user@example.com"},
+    "env": {"API_KEY": "secret"},
+    "alyx_url": "http://localhost:8090",
+    "internal_token": "token_xyz"
+  }
+}
+```
+
+**Output (stdout)**:
+```json
+{
+  "request_id": "req_123",
+  "success": true,
+  "output": {"message": "Hello, World!"}
+}
+```
+
+### Components
+
+- `runtime.go` - Subprocess runtime implementation
+- `executor.go` - Function service and execution orchestration
 - `manifest.go` - Function manifest parsing (YAML)
 - `discovery.go` - Function discovery and registration
-- `types.go` - Core types (FunctionRequest, FunctionResponse, Executor interface)
+- `watcher.go` - Source file watching for hot reload
+- `types.go` - Core types (FunctionRequest, FunctionResponse, Runtime)
 - `token.go` - Internal API token management
 
-### Migration Path
+### Example Functions
 
-The `Executor` interface remains unchanged, allowing the WASM executor to be a drop-in replacement for the container-based implementation.
+See `examples/functions-demo/functions/` for working examples:
+- `hello-deno/` - Deno TypeScript example
+- `hello-node/` - Node.js JavaScript example
+- `hello-python/` - Python 3 example
 
-Functions will be compiled to WASM modules and executed in a sandboxed WASM runtime instead of Docker containers.
+## Migration from WASM
+
+This package previously used WebAssembly (WASM) via Extism for function execution. The subprocess approach provides:
+- **Simpler deployment** - No WASM compilation required
+- **Better compatibility** - Native runtime support for each language
+- **Easier debugging** - Standard stdin/stdout, familiar tooling
+- **No CGO** - Pure Go implementation using `os/exec`
+
+The `Executor` interface remains unchanged, making the subprocess runtime a drop-in replacement.

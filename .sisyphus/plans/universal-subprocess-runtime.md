@@ -448,7 +448,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 9. Cleanup Old WASM Examples and References
+- [x] 9. Cleanup Old WASM Examples and References
 
   **What to do**:
   - Delete `examples/wasm-demo/` directory

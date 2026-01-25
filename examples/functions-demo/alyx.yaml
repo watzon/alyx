@@ -1,0 +1,10 @@
+server:
+  host: localhost
+  port: 8090
+
+database:
+  path: ./data/alyx.db
+
+functions:
+  enabled: true
+  dir: ./functions
