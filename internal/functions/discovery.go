@@ -166,6 +166,9 @@ func (r *Registry) findEntryFile(dirPath string) (string, Runtime) {
 		{"index.js", RuntimeNode},
 		{"index.mjs", RuntimeNode},
 		{"index.cjs", RuntimeNode},
+		{"index.ts", RuntimeNode},
+		{"index.mts", RuntimeNode},
+		{"index.cts", RuntimeNode},
 		{"index.py", RuntimePython},
 		{"main.go", RuntimeGo},
 		{"index.go", RuntimeGo},
@@ -263,7 +266,7 @@ func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error
 // detectRuntime detects the runtime from file extension.
 func detectRuntime(ext string) Runtime {
 	switch ext {
-	case ".js", ".mjs", ".cjs":
+	case ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts":
 		return RuntimeNode
 	case ".py":
 		return RuntimePython
