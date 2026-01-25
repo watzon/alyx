@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -466,5 +467,209 @@ dependencies:
 
 	if len(manifest.Schedules) != 0 {
 		t.Errorf("expected 0 schedules, got %d", len(manifest.Schedules))
+	}
+}
+
+func TestManifest_BuildConfig_Valid(t *testing.T) {
+	manifest := &Manifest{
+		Name:    "wasm-function",
+		Runtime: "wasm",
+		Build: &BuildConfig{
+			Command: "extism-js",
+			Args:    []string{"src/index.js", "-o", "plugin.wasm"},
+			Watch:   []string{"src/**/*.js"},
+			Output:  "plugin.wasm",
+		},
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Errorf("expected valid manifest, got error: %v", err)
+	}
+}
+
+func TestManifest_BuildConfig_MissingCommand(t *testing.T) {
+	manifest := &Manifest{
+		Name:    "wasm-function",
+		Runtime: "wasm",
+		Build: &BuildConfig{
+			Output: "plugin.wasm",
+		},
+	}
+
+	err := manifest.Validate()
+	if err == nil {
+		t.Error("expected error for missing command, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "command is required") {
+		t.Errorf("expected 'command is required' error, got: %v", err)
+	}
+}
+
+func TestManifest_BuildConfig_MissingOutput(t *testing.T) {
+	manifest := &Manifest{
+		Name:    "wasm-function",
+		Runtime: "wasm",
+		Build: &BuildConfig{
+			Command: "extism-js",
+		},
+	}
+
+	err := manifest.Validate()
+	if err == nil {
+		t.Error("expected error for missing output, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "output is required") {
+		t.Errorf("expected 'output is required' error, got: %v", err)
+	}
+}
+
+func TestManifest_Runtime_Wasm(t *testing.T) {
+	manifest := &Manifest{
+		Name:    "wasm-function",
+		Runtime: "wasm",
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Errorf("expected wasm runtime to be valid, got error: %v", err)
+	}
+}
+
+func TestBuildConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *BuildConfig
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			name: "valid full config",
+			config: &BuildConfig{
+				Command: "extism-js",
+				Args:    []string{"src/index.js", "-o", "plugin.wasm"},
+				Watch:   []string{"src/**/*.js", "src/**/*.ts"},
+				Output:  "plugin.wasm",
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid minimal config",
+			config: &BuildConfig{
+				Command: "extism-js",
+				Output:  "plugin.wasm",
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid with empty watch",
+			config: &BuildConfig{
+				Command: "extism-js",
+				Args:    []string{"src/index.js"},
+				Watch:   []string{},
+				Output:  "plugin.wasm",
+			},
+			expectErr: false,
+		},
+		{
+			name: "missing command",
+			config: &BuildConfig{
+				Output: "plugin.wasm",
+			},
+			expectErr: true,
+			errMsg:    "command is required",
+		},
+		{
+			name: "missing output",
+			config: &BuildConfig{
+				Command: "extism-js",
+			},
+			expectErr: true,
+			errMsg:    "output is required",
+		},
+		{
+			name: "empty command",
+			config: &BuildConfig{
+				Command: "",
+				Output:  "plugin.wasm",
+			},
+			expectErr: true,
+			errMsg:    "command is required",
+		},
+		{
+			name: "empty output",
+			config: &BuildConfig{
+				Command: "extism-js",
+				Output:  "",
+			},
+			expectErr: true,
+			errMsg:    "output is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.expectErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if tt.expectErr && err != nil && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("expected error containing '%s', got: %v", tt.errMsg, err)
+			}
+		})
+	}
+}
+
+func TestManifest_YAML_WithBuildConfig(t *testing.T) {
+	yamlContent := `
+name: my-wasm-function
+runtime: wasm
+build:
+  command: extism-js
+  args: ["src/index.js", "-i", "src/index.d.ts", "-o", "plugin.wasm"]
+  watch: ["src/**/*.js", "src/**/*.ts"]
+  output: plugin.wasm
+hooks:
+  - type: database
+    source: users
+    action: insert
+`
+
+	var manifest Manifest
+	if err := yaml.Unmarshal([]byte(yamlContent), &manifest); err != nil {
+		t.Fatalf("failed to parse YAML: %v", err)
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("validation failed: %v", err)
+	}
+
+	if manifest.Name != "my-wasm-function" {
+		t.Errorf("expected name 'my-wasm-function', got %s", manifest.Name)
+	}
+
+	if manifest.Runtime != "wasm" {
+		t.Errorf("expected runtime 'wasm', got %s", manifest.Runtime)
+	}
+
+	if manifest.Build == nil {
+		t.Fatal("expected build config, got nil")
+	}
+
+	if manifest.Build.Command != "extism-js" {
+		t.Errorf("expected command 'extism-js', got %s", manifest.Build.Command)
+	}
+
+	if manifest.Build.Output != "plugin.wasm" {
+		t.Errorf("expected output 'plugin.wasm', got %s", manifest.Build.Output)
+	}
+
+	if len(manifest.Build.Args) != 5 {
+		t.Errorf("expected 5 args, got %d", len(manifest.Build.Args))
+	}
+
+	if len(manifest.Build.Watch) != 2 {
+		t.Errorf("expected 2 watch patterns, got %d", len(manifest.Build.Watch))
 	}
 }

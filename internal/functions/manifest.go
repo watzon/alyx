@@ -19,6 +19,15 @@ type Manifest struct {
 	Routes       []RouteConfig     `yaml:"routes"`
 	Hooks        []HookConfig      `yaml:"hooks"`
 	Schedules    []ScheduleConfig  `yaml:"schedules"`
+	Build        *BuildConfig      `yaml:"build"`
+}
+
+// BuildConfig represents build configuration for WASM functions.
+type BuildConfig struct {
+	Command string   `yaml:"command"` // e.g., "extism-js"
+	Args    []string `yaml:"args"`    // e.g., ["src/index.js", "-o", "plugin.wasm"]
+	Watch   []string `yaml:"watch"`   // e.g., ["src/**/*.js"]
+	Output  string   `yaml:"output"`  // e.g., "plugin.wasm"
 }
 
 // RouteConfig represents an HTTP route configuration.
@@ -92,6 +101,12 @@ func (m *Manifest) Validate() error {
 	for i, schedule := range m.Schedules {
 		if err := schedule.Validate(); err != nil {
 			return fmt.Errorf("manifest: schedules[%d]: %w", i, err)
+		}
+	}
+
+	if m.Build != nil {
+		if err := m.Build.Validate(); err != nil {
+			return fmt.Errorf("manifest: build: %w", err)
 		}
 	}
 
@@ -268,10 +283,24 @@ func validateRuntime(runtime string) error {
 		"node":   true,
 		"python": true,
 		"go":     true,
+		"wasm":   true,
 	}
 
 	if !validRuntimes[runtime] {
-		return fmt.Errorf("invalid runtime: %s (must be node, python, or go)", runtime)
+		return fmt.Errorf("invalid runtime: %s (must be node, python, go, or wasm)", runtime)
+	}
+
+	return nil
+}
+
+// Validate validates the build configuration.
+func (b *BuildConfig) Validate() error {
+	if b.Command == "" {
+		return errors.New("command is required")
+	}
+
+	if b.Output == "" {
+		return errors.New("output is required")
 	}
 
 	return nil
