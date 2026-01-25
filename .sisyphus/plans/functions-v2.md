@@ -350,7 +350,7 @@ Phase 4: SDK & Integration
 
 ### Phase 2: Triggers
 
-- [ ] 4. Implement hook registry
+- [x] 4. Implement hook registry
 
   **What to do**:
   - Create `internal/hooks/registry.go` with Registry struct

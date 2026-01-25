@@ -140,3 +140,52 @@ All migrations execute successfully and tests pass.
 
 ### Pre-existing Issues Fixed
 - internal/executions/types.go: Fixed misspelling "cancelled" → "canceled" (misspell linter)
+
+## 2026-01-25 Task 4: Hook Registry Implementation
+
+### Registry Architecture
+- **In-memory cache + SQLite persistence**: Registry loads all hooks into memory on startup for fast lookups
+- **Cache invalidation**: Cache is cleared and reloaded when hooks are modified
+- **Thread-safe**: Uses sync.RWMutex for concurrent access to cache
+
+### Hook Matching Algorithm
+- **Event type**: Exact match required (no wildcards)
+- **Event source**: Exact match OR wildcard `*` matches any source
+- **Event action**: Exact match OR wildcard `*` matches any action
+- **Enabled filter**: Only enabled hooks are returned by FindByEvent
+- **Implementation**: Simple iteration through cache with conditional matching
+
+### Priority Sorting Strategy
+- **Primary sort**: Priority (descending) - higher values execute first
+- **Secondary sort**: CreatedAt (ascending) - earlier created hooks execute first when priority is equal
+- **Algorithm**: Bubble sort (sufficient for small hook lists)
+- **Applied to**: FindByEvent, FindByFunction, List methods
+
+### Store Database Operations
+- **JSON serialization**: HookConfig stored as JSON TEXT in database
+- **Timestamp format**: RFC3339 for created_at and updated_at
+- **Boolean storage**: INTEGER (0/1) for enabled field
+- **Mode storage**: TEXT for HookMode enum
+- **Query patterns**: Wildcard matching done in SQL with OR conditions
+
+### Test Coverage
+- **Register/Unregister**: Verify cache and database consistency
+- **Exact matching**: Event type, source, action all exact
+- **Wildcard matching**: Source wildcard, action wildcard, both wildcards
+- **Type mismatch**: Different event type returns no matches
+- **Disabled hooks**: Disabled hooks excluded from FindByEvent
+- **Priority sorting**: Hooks returned in correct priority order
+- **FindByFunction**: Returns all hooks for a function
+- **Reload**: Cache invalidation and reload from database
+
+### Key Patterns Followed
+- **Registry pattern**: From internal/functions/discovery.go (Get, List, map-based cache)
+- **In-memory cache**: From internal/functions/token.go (sync.RWMutex, invalidate method)
+- **DB operations**: From internal/events/store.go (JSON marshaling, timestamp handling, scanRows pattern)
+- **Test helpers**: testDB helper with t.TempDir() and t.Cleanup()
+- **Table-driven tests**: Comprehensive test cases with subtests
+
+### Notes
+- Pre-existing race condition in internal/events/bus_test.go (TestEventBus_StartStop) - not related to hooks implementation
+- All hooks tests pass with race detection
+- Build successful: `go build ./internal/hooks/...`
