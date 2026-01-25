@@ -53,13 +53,13 @@ func (r *SubprocessRuntime) Call(ctx context.Context, name, entrypoint string, r
 	var cmd *exec.Cmd
 
 	if r.runtime == RuntimeBinary {
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
 			return nil, fmt.Errorf("binary not found: %s", absPath)
 		}
 
-		info, err := os.Stat(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("checking binary: %w", err)
+		info, statErr := os.Stat(absPath)
+		if statErr != nil {
+			return nil, fmt.Errorf("checking binary: %w", statErr)
 		}
 		if info.Mode()&0111 == 0 {
 			return nil, fmt.Errorf("file is not executable: %s", absPath)
