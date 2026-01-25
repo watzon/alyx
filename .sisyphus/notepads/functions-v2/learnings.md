@@ -302,3 +302,144 @@ All migrations execute successfully and tests pass.
 - Implement more robust field comparison (JSON diff, reflect.DeepEqual)
 - Add metrics/observability for hook execution times
 - Consider batching async events for performance
+
+## 2026-01-25 Task 7: Webhook Handler
+
+### Implementation Summary
+- Created `internal/webhooks/handler.go` with HTTP handler for webhook endpoints
+- Created `internal/webhooks/store.go` for database CRUD operations
+- Created `internal/webhooks/verification.go` with HMAC-SHA256/SHA1 verification
+- Comprehensive test coverage: 24 tests passing
+
+### HMAC Verification Approach
+- **Constant-time comparison**: Used `hmac.Equal()` to prevent timing attacks
+- **Dual algorithm support**: HMAC-SHA256 (modern) and HMAC-SHA1 (legacy compatibility)
+- **Flexible signature formats**: Supports both "sha256=<hex>" and raw hex
+- **Skip invalid mode**: `skip_invalid: true` passes verification result to function instead of rejecting
+
+### Route Registration Strategy
+- Handler implements `http.Handler` interface for direct mux registration
+- `RegisterRoutes()` method dynamically registers all enabled endpoints
+- Pattern format: `{METHOD} {PATH}` (e.g., "POST /webhooks/stripe")
+- Multiple methods per endpoint supported
+
+### Event Payload Schema
+```go
+{
+  "method": "POST",
+  "path": "/webhooks/stripe",
+  "headers": map[string]string,
+  "body": "raw body string",
+  "query": map[string]string,
+  "verified": true,
+  "webhook_id": "endpoint-uuid",
+  "verification_error": "optional error message"
+}
+```
+
+### Key Design Decisions
+1. **Raw body passthrough**: No JSON parsing - function receives raw string
+2. **Direct response**: Function output returned as-is (no transformation)
+3. **Flexible response format**: Supports `{status, headers, body}` map or plain JSON
+4. **Header extraction**: Case-insensitive signature header lookup
+5. **Error handling**: All JSON encoding errors logged but don't crash handler
+
+### Lint Compliance
+- Fixed `errcheck` violations: All `json.Encode()` and `w.Write()` calls checked
+- Fixed `errorlint` violations: Used `errors.Is()` for `sql.ErrNoRows`
+- Fixed `goconst` violations: Extracted test secrets to constants
+- Fixed `gosec` G505: Added `#nosec` comments for SHA1 (required for webhook compatibility)
+- Fixed variable shadowing in store.go
+
+### Test Coverage
+- **Unit tests**: HMAC verification (8 tests), signature extraction (4 tests), constant-time comparison
+- **Integration tests**: Handler HTTP tests (5 tests), store CRUD (4 tests), response formatting (5 tests)
+- **Edge cases**: Invalid signatures, method restrictions, missing endpoints, skip_invalid mode
+
+### Gotchas
+- SHA1 is flagged by gosec but required for GitHub webhooks - use `#nosec` directive
+- Must use `errors.Is()` for wrapped errors (not `==`)
+- Variable shadowing in unmarshal loops - use different variable names
+- JSON encoder errors must be checked (errcheck)
+
+## [2026-01-25 00:52] Task 8: Scheduler Implementation
+
+### Architecture Decisions
+- **Poll-based approach**: Scheduler polls database every 1 second (configurable) for due schedules
+- **Event-driven execution**: Publishes events to event bus when schedules are due (not direct function invocation)
+- **Concurrency control**: In-memory tracking of running executions with `skip_if_running` and `max_overlap` support
+- **Timezone support**: Uses `time.LoadLocation` for timezone-aware scheduling across DST transitions
+
+### Cron Parsing (robfig/cron)
+- **Library**: `github.com/robfig/cron/v3` for standard cron expression parsing
+- **Parser options**: Minute | Hour | Dom | Month | Dow | Descriptor (5-field cron)
+- **Timezone handling**: Convert `after` time to target timezone before calling `schedule.Next()`
+- **DST transitions**: robfig/cron handles DST gracefully (2:00 AM doesn't exist during spring forward)
+
+### Schedule Types
+1. **Cron**: Standard cron expressions (e.g., `"0 * * * *"` for hourly)
+2. **Interval**: Duration strings (e.g., `"5m"`, `"1h"`, `"30s"`) - minimum 1 second
+3. **One-time**: RFC3339 timestamps (e.g., `"2026-01-25T15:00:00Z"`)
+
+### Next Run Calculation
+- **Cron**: Parse expression, convert to timezone, call `schedule.Next(afterInTZ)`
+- **Interval**: Add duration to `after` time in target timezone
+- **One-time**: Parse timestamp, return error if `LastRun` is set (already executed)
+
+### One-Time Schedule Handling
+- **Critical bug fix**: Must set `schedule.LastRun = &now` BEFORE calling `CalculateNextRun`
+- **Reason**: `CalculateNextRun` checks if `LastRun != nil` to determine if one-time schedule already executed
+- **Flow**: Publish event → Set `LastRun` → Calculate next run → If error and one-time, disable schedule
+
+### Database Patterns
+- **Timestamp storage**: RFC3339 strings in TEXT columns (consistent with events/hooks)
+- **Nullable times**: `sql.NullString` for `next_run` and `last_run` (can be NULL)
+- **JSON config**: `ScheduleConfig` serialized to TEXT column
+- **Query pattern**: `WHERE enabled = 1 AND next_run IS NOT NULL AND next_run <= ?`
+
+### Concurrency Control
+- **Running map**: `map[string]int` tracks count of running executions per schedule ID
+- **Mutex protection**: `sync.RWMutex` guards concurrent access to running map
+- **Skip if running**: If `SkipIfRunning=true` and `runningCount > 0`, skip execution
+- **Max overlap**: If `MaxOverlap > 0` and `runningCount >= MaxOverlap`, skip execution
+- **Cleanup**: Defer `decrementRunning` to ensure count is decremented even on panic
+
+### Background Worker Pattern
+- **Context management**: Use `context.WithCancel()` for graceful shutdown (pattern from pool.go)
+- **Goroutine tracking**: `sync.WaitGroup` to wait for background loop to finish
+- **Ticker-based polling**: `time.NewTicker(interval)` for periodic schedule checks
+- **Error handling**: Log errors but don't crash the loop
+
+### Event Publishing
+- **Event type**: `EventTypeSchedule` (defined in events/types.go)
+- **Event source**: `"scheduler"`
+- **Event action**: `"execute"`
+- **Payload**: `schedule_id`, `schedule_name`, `function_id`, `input` (from ScheduleConfig)
+- **Metadata**: `schedule_id`, `function_id`, `schedule_type` in `Extra` map
+
+### Testing Patterns
+- **testDB helper**: Creates temp database with migrations (pattern from other tests)
+- **Table-driven tests**: Comprehensive test cases for cron parsing, interval parsing, timezone handling
+- **Integration tests**: Full scheduler flow with event bus subscription and verification
+- **Concurrency tests**: Verify `skip_if_running` and `max_overlap` logic
+- **One-time schedule test**: Verify schedule is disabled after first execution
+
+### Lint Fixes
+- **Stuttering**: Renamed `SchedulerConfig` to `Config` (revive linter)
+- **Error comparison**: Use `errors.Is(err, sql.ErrNoRows)` instead of `==` (errorlint)
+- **Shadow variables**: Renamed shadowed variables (`unmarshalErr`, `parseErr`, `updateErr`)
+- **Import order**: Added `errors` import for `errors.Is`
+
+### Key Learnings
+1. **Timezone-aware scheduling**: Always convert times to target timezone before calculations
+2. **One-time schedule gotcha**: Must set `LastRun` before calculating next run to detect already-executed schedules
+3. **Concurrency tracking**: In-memory map is sufficient for single-instance deployments (distributed would need Redis)
+4. **Event-driven design**: Scheduler publishes events, doesn't invoke functions directly (separation of concerns)
+5. **Poll interval tradeoff**: 1 second is good balance between responsiveness and database load
+
+### Future Improvements
+- Distributed locking for multi-instance deployments (Redis-based)
+- Schedule history/audit log (track all executions)
+- Retry logic for failed schedules (currently relies on event bus retry)
+- Schedule pausing/resuming (currently only enable/disable)
+- Cron expression validation on create (currently fails at runtime)

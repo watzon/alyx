@@ -487,7 +487,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 7. Implement webhook handler
+- [x] 7. Implement webhook handler
 
   **What to do**:
   - Create `internal/webhooks/handler.go` with WebhookHandler
@@ -542,7 +542,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 8. Implement scheduler
+- [x] 8. Implement scheduler
 
   **What to do**:
   - Create `internal/scheduler/scheduler.go` with Scheduler struct
