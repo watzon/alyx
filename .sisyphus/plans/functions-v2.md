@@ -389,7 +389,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 5. Implement database event hooks
+- [x] 5. Implement database event hooks
 
   **What to do**:
   - Create `internal/hooks/database.go` with DatabaseHookTrigger
@@ -440,7 +440,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 6. Implement auth event hooks
+- [x] 6. Implement auth event hooks
 
   **What to do**:
   - Create `internal/hooks/auth.go` with AuthHookTrigger

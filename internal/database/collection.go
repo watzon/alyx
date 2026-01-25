@@ -19,17 +19,30 @@ var (
 )
 
 type Collection struct {
-	db     *DB
-	schema *schema.Collection
-	name   string
+	db          *DB
+	schema      *schema.Collection
+	name        string
+	hookTrigger HookTrigger // Optional hook trigger for database events
+}
+
+// HookTrigger defines the interface for triggering database hooks.
+type HookTrigger interface {
+	OnInsert(ctx context.Context, collection string, document map[string]any) error
+	OnUpdate(ctx context.Context, collection string, document, previousDocument map[string]any) error
+	OnDelete(ctx context.Context, collection string, document map[string]any) error
 }
 
 func NewCollection(db *DB, s *schema.Collection) *Collection {
 	return &Collection{
-		db:     db,
-		schema: s,
-		name:   s.Name,
+		db:          db,
+		schema:      s,
+		name:        s.Name,
+		hookTrigger: nil,
 	}
+}
+
+func (c *Collection) SetHookTrigger(trigger HookTrigger) {
+	c.hookTrigger = trigger
 }
 
 func (c *Collection) Name() string {
@@ -168,7 +181,18 @@ func (c *Collection) Create(ctx context.Context, data Row) (Row, error) {
 		return nil, fmt.Errorf("inserting document: %w", err)
 	}
 
-	return c.FindOne(ctx, fmt.Sprint(processedData[pk.Name]))
+	doc, err := c.FindOne(ctx, fmt.Sprint(processedData[pk.Name]))
+	if err != nil {
+		return nil, err
+	}
+
+	if c.hookTrigger != nil {
+		if hookErr := c.hookTrigger.OnInsert(ctx, c.name, doc); hookErr != nil {
+			return nil, fmt.Errorf("hook trigger failed: %w", hookErr)
+		}
+	}
+
+	return doc, nil
 }
 
 func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, error) {
@@ -222,13 +246,29 @@ func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, erro
 		return nil, ErrNotFound
 	}
 
-	return c.FindOne(ctx, id)
+	doc, err := c.FindOne(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.hookTrigger != nil {
+		if hookErr := c.hookTrigger.OnUpdate(ctx, c.name, doc, existing); hookErr != nil {
+			return nil, fmt.Errorf("hook trigger failed: %w", hookErr)
+		}
+	}
+
+	return doc, nil
 }
 
 func (c *Collection) Delete(ctx context.Context, id string) error {
 	pk := c.schema.PrimaryKeyField()
 	if pk == nil {
 		return errors.New("collection has no primary key")
+	}
+
+	existing, err := c.FindOne(ctx, id)
+	if err != nil {
+		return err
 	}
 
 	deleteSQL, args := NewDelete(c.name).Where(pk.Name, id).Build()
@@ -239,6 +279,12 @@ func (c *Collection) Delete(ctx context.Context, id string) error {
 
 	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
 		return ErrNotFound
+	}
+
+	if c.hookTrigger != nil {
+		if hookErr := c.hookTrigger.OnDelete(ctx, c.name, existing); hookErr != nil {
+			return fmt.Errorf("hook trigger failed: %w", hookErr)
+		}
 	}
 
 	return nil

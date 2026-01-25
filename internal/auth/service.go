@@ -27,10 +27,20 @@ var (
 
 // Service provides authentication operations.
 type Service struct {
-	db    *database.DB
-	jwt   *JWTService
-	cfg   *config.AuthConfig
-	oauth *OAuthManager
+	db          *database.DB
+	jwt         *JWTService
+	cfg         *config.AuthConfig
+	oauth       *OAuthManager
+	hookTrigger HookTrigger
+}
+
+// HookTrigger defines the interface for auth event hooks.
+type HookTrigger interface {
+	OnSignup(ctx context.Context, user *User, metadata map[string]any) error
+	OnLogin(ctx context.Context, user *User, metadata map[string]any) error
+	OnLogout(ctx context.Context, user *User, metadata map[string]any) error
+	OnPasswordReset(ctx context.Context, user *User, metadata map[string]any) error
+	OnEmailVerify(ctx context.Context, user *User, metadata map[string]any) error
 }
 
 // NewService creates a new auth service.
@@ -41,6 +51,11 @@ func NewService(db *database.DB, cfg *config.AuthConfig) *Service {
 		cfg:   cfg,
 		oauth: NewOAuthManager(cfg.OAuth),
 	}
+}
+
+// SetHookTrigger sets the hook trigger for auth events.
+func (s *Service) SetHookTrigger(trigger HookTrigger) {
+	s.hookTrigger = trigger
 }
 
 // OAuth returns the OAuth manager.
@@ -100,6 +115,12 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, *To
 
 	log.Info().Str("user_id", user.ID).Str("email", user.Email).Msg("User registered")
 
+	if s.hookTrigger != nil {
+		if err := s.hookTrigger.OnSignup(ctx, user, nil); err != nil {
+			log.Error().Err(err).Str("user_id", user.ID).Msg("Signup hook failed")
+		}
+	}
+
 	tokens, err := s.createSession(ctx, user, "", "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating session: %w", err)
@@ -133,6 +154,16 @@ func (s *Service) Login(ctx context.Context, input LoginInput, userAgent, ipAddr
 	}
 
 	log.Info().Str("user_id", user.ID).Str("email", user.Email).Msg("User logged in")
+
+	if s.hookTrigger != nil {
+		metadata := map[string]any{
+			"ip":         ipAddress,
+			"user_agent": userAgent,
+		}
+		if err := s.hookTrigger.OnLogin(ctx, user, metadata); err != nil {
+			log.Error().Err(err).Str("user_id", user.ID).Msg("Login hook failed")
+		}
+	}
 
 	tokens, err := s.createSession(ctx, user, userAgent, ipAddress)
 	if err != nil {
@@ -190,6 +221,19 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 			return nil
 		}
 		return err
+	}
+
+	if s.hookTrigger != nil {
+		user, getUserErr := s.GetUserByID(ctx, session.UserID)
+		if getUserErr == nil {
+			metadata := map[string]any{
+				"ip":         session.IPAddress,
+				"user_agent": session.UserAgent,
+			}
+			if hookErr := s.hookTrigger.OnLogout(ctx, user, metadata); hookErr != nil {
+				log.Error().Err(hookErr).Str("user_id", user.ID).Msg("Logout hook failed")
+			}
+		}
 	}
 
 	return s.deleteSession(ctx, session.ID)
@@ -783,5 +827,15 @@ func (s *Service) SetPassword(ctx context.Context, userID, newPassword string) e
 	}
 
 	log.Info().Str("user_id", userID).Msg("Password reset by admin")
+
+	if s.hookTrigger != nil {
+		user, getUserErr := s.GetUserByID(ctx, userID)
+		if getUserErr == nil {
+			if hookErr := s.hookTrigger.OnPasswordReset(ctx, user, nil); hookErr != nil {
+				log.Error().Err(hookErr).Str("user_id", userID).Msg("Password reset hook failed")
+			}
+		}
+	}
+
 	return nil
 }

@@ -189,3 +189,116 @@ All migrations execute successfully and tests pass.
 - Pre-existing race condition in internal/events/bus_test.go (TestEventBus_StartStop) - not related to hooks implementation
 - All hooks tests pass with race detection
 - Build successful: `go build ./internal/hooks/...`
+
+## 2026-01-25 Task 6: Auth Event Hooks
+
+### Integration Approach
+- **Interface-based dependency injection**: Auth service accepts optional `HookTrigger` interface via `SetHookTrigger()` method
+- **Nil-safe hook calls**: All hook trigger calls check `if s.hookTrigger != nil` before execution
+- **Non-blocking hook failures**: Hook errors are logged but don't prevent auth operations from completing
+- **Metadata extraction**: IP address and user agent extracted from HTTP context and passed to hooks
+
+### Hook Trigger Implementation
+- **AuthHookTrigger struct**: Holds references to Registry and EventBus
+- **Event payload schema**: Consistent structure with user data (id, email, verified, role, created_at), action, and metadata
+- **Sync vs Async modes**: Sync hooks logged but not yet executed (placeholder for future function runtime), async hooks publish events to bus
+- **Event metadata**: Stored in EventMetadata.Extra map (hook_id, function_id, user_id, action)
+
+### Auth Service Integration Points
+1. **Register (OnSignup)**: Called after user creation, before session creation - metadata is nil
+2. **Login (OnLogin)**: Called after password verification, before session creation - includes IP and user agent
+3. **Logout (OnLogout)**: Called after session lookup, before session deletion - includes session IP and user agent
+4. **SetPassword (OnPasswordReset)**: Called after password update - metadata is nil
+
+### Test Patterns
+- **testAuthSetup helper**: Creates DB, auth service, registry, event bus, and trigger in one call
+- **Event verification**: Tests publish events and verify they appear in pending queue with correct payload
+- **Sync hook behavior**: Sync hooks don't publish events (placeholder for future function execution)
+- **Integration testing**: Full auth flow with real database, registry, and event bus
+
+### Configuration Gotchas
+- **JWT config fields**: Use `AccessTTL` and `RefreshTTL`, not `AccessTokenDuration` and `RefreshTokenDuration`
+- **Database config**: Must include WALMode, ForeignKeys, BusyTimeout, MaxOpenConns, MaxIdleConns, ConnMaxLifetime, CacheSize
+- **JWT secret length**: Must be at least 32 characters for validation to pass
+
+### Notes
+- Email verification hooks (OnEmailVerify) not yet integrated - no email verification flow exists in auth service
+- Sync hook execution is a placeholder - actual function runtime integration will come later
+- All 5 auth hook tests pass successfully
+- Pre-existing race condition in events package (TestEventBus_StartStop) is unrelated to auth hooks
+
+## [2026-01-25 00:40] Task 5: Database Event Hooks
+
+### Integration Approach
+- **Interface-based design**: Created `HookTrigger` interface in `collection.go` to avoid circular dependencies
+- **Optional injection**: Collection has optional `hookTrigger` field, set via `SetHookTrigger()` method
+- **Post-operation hooks**: Hooks execute AFTER successful database operations (INSERT/UPDATE/DELETE)
+- **Document retrieval**: For UPDATE/DELETE, fetch existing document before operation to pass to hooks
+
+### Sync vs Async Hook Execution
+- **Async hooks**: Publish events to event bus for background processing
+- **Sync hooks**: Execute inline with timeout (default 5s, configurable via `HookConfig.Timeout`)
+- **Failure handling**: 
+  - `on_failure: "reject"` → Return error to client, rollback transaction
+  - `on_failure: "continue"` → Log error, proceed with operation
+- **Function runtime**: Placeholder implementation (TODO: integrate with function runtime)
+
+### Cycle Detection
+- **Tracking map**: `executing map[string]bool` tracks currently executing function IDs
+- **Mutex protection**: RWMutex guards concurrent access to executing map
+- **Cleanup**: Defer cleanup ensures function ID removed even on panic
+- **Skip on cycle**: Log warning and skip hook execution if cycle detected
+
+### Changed Fields Calculation
+- **Field comparison**: Compare current vs previous document field-by-field
+- **Added fields**: Detect fields in current but not in previous
+- **Removed fields**: Detect fields in previous but not in current
+- **Simple equality**: Used `fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)` for simplicity
+  - Note: For production, consider `reflect.DeepEqual` or JSON comparison
+
+### Event Payload Schema
+```go
+// INSERT
+{
+  "document": {...},
+  "action": "insert",
+  "collection": "collection_name"
+}
+
+// UPDATE
+{
+  "document": {...},
+  "previous_document": {...},
+  "action": "update",
+  "collection": "collection_name",
+  "changed_fields": ["field1", "field2"]
+}
+
+// DELETE
+{
+  "document": {...},
+  "action": "delete",
+  "collection": "collection_name"
+}
+```
+
+### Testing Strategy
+- **Integration tests**: Real database operations with schema migration
+- **Event bus verification**: Subscribe to events and verify payload structure
+- **Cycle detection test**: Manually set executing flag to simulate cycle
+- **Wildcard matching test**: Verify `*` source/action patterns work
+- **Type assertion handling**: Handle `[]interface{}` vs `[]string` deserialization
+
+### Key Learnings
+1. **Schema parsing**: Use `schema.Parse()` with YAML string for test schemas
+2. **SQL generation**: Use `schema.NewSQLGenerator(s).GenerateAll()` for migrations
+3. **Test helpers**: Rename test helpers to avoid conflicts (e.g., `testDBHooks`, `testSchemaHooks`)
+4. **Unused variables**: LSP catches unused return values in test setup functions
+5. **Pre-existing issues**: Event bus has data race in `TestEventBus_StartStop` (not our code)
+
+### Future Improvements
+- Integrate with actual function runtime for sync hook execution
+- Add transaction support for sync hooks (rollback on reject)
+- Implement more robust field comparison (JSON diff, reflect.DeepEqual)
+- Add metrics/observability for hook execution times
+- Consider batching async events for performance
