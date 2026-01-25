@@ -13,9 +13,10 @@ import (
 )
 
 type Router struct {
-	server      *Server
-	mux         *http.ServeMux
-	middlewares []Middleware
+	server       *Server
+	mux          *http.ServeMux
+	middlewares  []Middleware
+	mainHandlers *handlers.Handlers
 }
 
 type Middleware func(http.Handler) http.Handler
@@ -48,8 +49,15 @@ func (r *Router) Use(mw Middleware) {
 	r.middlewares = append(r.middlewares, mw)
 }
 
+func (r *Router) SetHookTrigger(trigger *DatabaseHookTrigger) {
+	if r.mainHandlers != nil {
+		r.mainHandlers.SetHookTrigger(trigger)
+	}
+}
+
 func (r *Router) setupRoutes() {
 	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config(), r.server.Rules())
+	r.mainHandlers = h
 
 	if r.server.cfg.AdminUI.Enabled {
 		uiHandler := adminui.New(&r.server.cfg.AdminUI)

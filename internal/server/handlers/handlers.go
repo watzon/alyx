@@ -19,10 +19,11 @@ import (
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
 type Handlers struct {
-	db     *database.DB
-	schema *schema.Schema
-	cfg    *config.Config
-	rules  *rules.Engine
+	db          *database.DB
+	schema      *schema.Schema
+	cfg         *config.Config
+	rules       *rules.Engine
+	hookTrigger database.HookTrigger
 }
 
 func New(db *database.DB, s *schema.Schema, cfg *config.Config, rulesEngine *rules.Engine) *Handlers {
@@ -32,6 +33,10 @@ func New(db *database.DB, s *schema.Schema, cfg *config.Config, rulesEngine *rul
 		cfg:    cfg,
 		rules:  rulesEngine,
 	}
+}
+
+func (h *Handlers) SetHookTrigger(trigger database.HookTrigger) {
+	h.hookTrigger = trigger
 }
 
 func (h *Handlers) Rules() *rules.Engine {
@@ -75,7 +80,11 @@ func (h *Handlers) getCollection(name string) (*database.Collection, error) {
 	if !ok {
 		return nil, errors.New("collection not found")
 	}
-	return database.NewCollection(h.db, col), nil
+	coll := database.NewCollection(h.db, col)
+	if h.hookTrigger != nil {
+		coll.SetHookTrigger(h.hookTrigger)
+	}
+	return coll, nil
 }
 
 func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {

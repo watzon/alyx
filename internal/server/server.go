@@ -28,6 +28,7 @@ type Server struct {
 	rules         *rules.Engine
 	broker        *realtime.Broker
 	funcService   *functions.Service
+	dbHookTrigger *DatabaseHookTrigger
 	deployService *deploy.Service
 	requestLogs   *requestlog.Store
 	httpServer    *http.Server
@@ -133,6 +134,9 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("starting function service: %w", err)
 		}
 		log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Function service started")
+
+		s.dbHookTrigger = NewDatabaseHookTrigger(s.funcService)
+		s.router.SetHookTrigger(s.dbHookTrigger)
 	}
 
 	err := s.httpServer.ListenAndServe()
@@ -199,7 +203,11 @@ func (s *Server) GetCollection(name string) (*database.Collection, error) {
 	if !ok {
 		return nil, fmt.Errorf("collection %q not found", name)
 	}
-	return database.NewCollection(s.db, col), nil
+	coll := database.NewCollection(s.db, col)
+	if s.dbHookTrigger != nil {
+		coll.SetHookTrigger(s.dbHookTrigger)
+	}
+	return coll, nil
 }
 
 // UpdateSchema replaces the server's schema and reloads dependent components.
@@ -230,6 +238,10 @@ func (s *Server) ReloadFunctions() error {
 
 	if err := s.funcService.ReloadFunctions(); err != nil {
 		return fmt.Errorf("reloading functions: %w", err)
+	}
+
+	if s.dbHookTrigger != nil {
+		s.dbHookTrigger.Reload()
 	}
 
 	log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Functions reloaded")
