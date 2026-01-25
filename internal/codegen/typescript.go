@@ -359,12 +359,18 @@ export interface RegisterData {
 `)
 
 	// Main client class
-	b.WriteString(`/** Alyx client for interacting with the Alyx API. */
+	b.WriteString(`/** Subscription event from WebSocket. */
+export interface SubscriptionEvent<T = unknown> {
+  type: 'snapshot' | 'insert' | 'update' | 'delete';
+  data: T | T[];
+}
+
+/** Alyx client for interacting with the Alyx API. */
 export class AlyxClient {
   private url: string;
   private token?: string;
   private ws?: WebSocket;
-  private subscriptions = new Map<string, Set<(data: unknown) => void>>();
+  private subscriptions = new Map<string, Set<(event: SubscriptionEvent) => void>>();
 
   constructor(config: AlyxClientConfig) {
     this.url = config.url.replace(/\/$/, '');
@@ -412,7 +418,7 @@ export class AlyxClient {
   /** Subscribe to collection changes via WebSocket. */
   subscribe<T>(
     collection: string,
-    callback: (data: unknown) => void,
+    callback: SubscriptionCallback<T>,
     _options?: unknown,
   ): () => void {
     this.ensureWebSocket();
@@ -421,7 +427,7 @@ export class AlyxClient {
     if (!this.subscriptions.has(key)) {
       this.subscriptions.set(key, new Set());
     }
-    this.subscriptions.get(key)!.add(callback);
+    this.subscriptions.get(key)!.add(callback as (event: SubscriptionEvent) => void);
 
     // Send subscribe message
     this.ws?.send(JSON.stringify({
@@ -457,8 +463,12 @@ export class AlyxClient {
         const collection = msg.payload?.subscription_id?.split(':')[0];
         const callbacks = this.subscriptions.get(collection);
         if (callbacks) {
+          const subscriptionEvent: SubscriptionEvent = {
+            type: msg.type === 'snapshot' ? 'snapshot' : (msg.payload?.action || 'update'),
+            data: msg.payload?.data,
+          };
           for (const cb of callbacks) {
-            cb(msg);
+            cb(subscriptionEvent);
           }
         }
       }
