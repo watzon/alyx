@@ -237,7 +237,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 4. Update Service/Executor to Use Subprocess Runtime
+- [x] 4. Update Service/Executor to Use Subprocess Runtime
 
   **What to do**:
   - Rewrite `internal/functions/executor.go`

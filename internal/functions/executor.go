@@ -2,9 +2,7 @@ package functions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,32 +21,22 @@ type ServiceConfig struct {
 	ServerPort int
 }
 
-// Service manages function execution using WASM runtime.
+// Service manages function execution using subprocess runtime.
 type Service struct {
-	runtime       *WASMRuntime
+	runtimes      map[Runtime]*SubprocessRuntime
 	registry      *Registry
 	sourceWatcher *SourceWatcher
-	wasmWatcher   *WASMWatcher
 	tokenStore    *InternalTokenStore
 	functionsDir  string
 	config        *config.FunctionsConfig
 	serverPort    int
 }
 
-// NewService creates a new function service with WASM runtime.
+// NewService creates a new function service with subprocess runtime.
 func NewService(cfg *ServiceConfig) (*Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("service config is required")
 	}
-
-	// Create WASM runtime
-	wasmConfig := &WASMConfig{
-		MemoryLimitMB:  256,
-		TimeoutSeconds: 30,
-		EnableWASI:     true,
-		AlyxURL:        fmt.Sprintf("http://localhost:%d", cfg.ServerPort),
-	}
-	runtime := NewWASMRuntime(wasmConfig)
 
 	// Create function registry
 	registry := NewRegistry(cfg.FunctionsDir)
@@ -56,6 +44,20 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 	// Discover functions
 	if err := registry.Discover(); err != nil {
 		return nil, fmt.Errorf("discovering functions: %w", err)
+	}
+
+	// Create subprocess runtimes for each runtime type
+	runtimes := make(map[Runtime]*SubprocessRuntime)
+	for runtime := range defaultRuntimes {
+		rt, err := NewSubprocessRuntime(runtime)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("runtime", string(runtime)).
+				Msg("Runtime not available, functions using this runtime will fail")
+			continue
+		}
+		runtimes[runtime] = rt
 	}
 
 	// Create token store
@@ -68,17 +70,10 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("creating source watcher: %w", err)
 	}
 
-	// Create WASM watcher
-	wasmWatcher, err := NewWASMWatcher(runtime, registry)
-	if err != nil {
-		return nil, fmt.Errorf("creating WASM watcher: %w", err)
-	}
-
 	return &Service{
-		runtime:       runtime,
+		runtimes:      runtimes,
 		registry:      registry,
 		sourceWatcher: sourceWatcher,
-		wasmWatcher:   wasmWatcher,
 		tokenStore:    tokenStore,
 		functionsDir:  cfg.FunctionsDir,
 		config:        cfg.Config,
@@ -88,40 +83,11 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 
 // Start starts the function service and watchers.
 func (s *Service) Start(ctx context.Context) error {
-	// Load all WASM plugins
-	functions := s.registry.List()
-	for _, fn := range functions {
-		funcDir := filepath.Dir(fn.Path)
-		wasmPath := filepath.Join(funcDir, "plugin.wasm")
-
-		// Check if WASM file exists
-		if err := s.runtime.LoadPlugin(fn.Name, wasmPath); err != nil {
-			log.Warn().
-				Err(err).
-				Str("function", fn.Name).
-				Str("path", wasmPath).
-				Msg("Failed to load WASM plugin, will retry on build")
-			continue
-		}
-
-		log.Debug().
-			Str("function", fn.Name).
-			Str("path", wasmPath).
-			Msg("Loaded WASM plugin")
+	// Start source watcher for hot reload
+	if err := s.sourceWatcher.Start(); err != nil {
+		return fmt.Errorf("starting source watcher: %w", err)
 	}
-
-	// Start watchers (always enabled for hot reload)
-	if true {
-		if err := s.sourceWatcher.Start(); err != nil {
-			return fmt.Errorf("starting source watcher: %w", err)
-		}
-		log.Info().Msg("Source watcher started")
-
-		if err := s.wasmWatcher.Start(); err != nil {
-			return fmt.Errorf("starting WASM watcher: %w", err)
-		}
-		log.Info().Msg("WASM watcher started")
-	}
+	log.Info().Msg("Source watcher started")
 
 	return nil
 }
@@ -156,14 +122,20 @@ func (s *Service) Invoke(ctx context.Context, functionName string, input map[str
 		Context:   funcCtx,
 	}
 
-	// Marshal request to JSON
-	inputBytes, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
+	// Get runtime for function
+	runtime, ok := s.runtimes[fn.Runtime]
+	if !ok {
+		duration := time.Since(startTime)
+		return &FunctionResponse{
+			RequestID:  requestID,
+			Success:    false,
+			Error:      &FunctionError{Code: "RUNTIME_NOT_AVAILABLE", Message: fmt.Sprintf("Runtime %s not available", fn.Runtime)},
+			DurationMs: duration.Milliseconds(),
+		}, fmt.Errorf("runtime %s not available", fn.Runtime)
 	}
 
-	// Call WASM function
-	outputBytes, err := s.runtime.Call(functionName, "handle", inputBytes)
+	// Call subprocess function
+	resp, err := runtime.Call(ctx, functionName, fn.Path, req)
 	if err != nil {
 		duration := time.Since(startTime)
 		return &FunctionResponse{
@@ -171,25 +143,12 @@ func (s *Service) Invoke(ctx context.Context, functionName string, input map[str
 			Success:    false,
 			Error:      &FunctionError{Code: "EXECUTION_ERROR", Message: err.Error()},
 			DurationMs: duration.Milliseconds(),
-		}, fmt.Errorf("calling WASM function: %w", err)
+		}, fmt.Errorf("calling function: %w", err)
 	}
 
-	// Parse response
-	var resp FunctionResponse
-	if err := json.Unmarshal(outputBytes, &resp); err != nil {
-		duration := time.Since(startTime)
-		return &FunctionResponse{
-			RequestID:  requestID,
-			Success:    false,
-			Error:      &FunctionError{Code: "INVALID_RESPONSE", Message: "Failed to parse function response"},
-			DurationMs: duration.Milliseconds(),
-		}, fmt.Errorf("parsing function response: %w", err)
-	}
-
-	// Set duration
 	resp.DurationMs = time.Since(startTime).Milliseconds()
 
-	return &resp, nil
+	return resp, nil
 }
 
 // GetFunction returns a function definition by name.
@@ -204,30 +163,13 @@ func (s *Service) ListFunctions() []*FunctionDef {
 
 // ReloadFunctions rediscovers functions and reloads the registry.
 func (s *Service) ReloadFunctions() error {
-	// Clear registry
 	s.registry = NewRegistry(s.functionsDir)
 
-	// Rediscover functions
 	if err := s.registry.Discover(); err != nil {
 		return fmt.Errorf("discovering functions: %w", err)
 	}
 
-	// Reload WASM plugins
 	functions := s.registry.List()
-	for _, fn := range functions {
-		funcDir := filepath.Dir(fn.Path)
-		wasmPath := filepath.Join(funcDir, "plugin.wasm")
-
-		// Reload plugin (unloads old, loads new)
-		if err := s.runtime.Reload(fn.Name, wasmPath); err != nil {
-			log.Warn().
-				Err(err).
-				Str("function", fn.Name).
-				Msg("Failed to reload WASM plugin")
-			continue
-		}
-	}
-
 	log.Info().Int("count", len(functions)).Msg("Functions reloaded")
 
 	return nil
@@ -235,7 +177,6 @@ func (s *Service) ReloadFunctions() error {
 
 // Stats returns runtime statistics (placeholder for compatibility).
 func (s *Service) Stats() map[Runtime]PoolStats {
-	// Return empty stats for now - WASM runtime doesn't use pools
 	return make(map[Runtime]PoolStats)
 }
 
@@ -248,21 +189,10 @@ type PoolStats struct {
 
 // Close shuts down the service and releases resources.
 func (s *Service) Close() error {
-	// Stop watchers
 	if s.sourceWatcher != nil {
 		if err := s.sourceWatcher.Stop(); err != nil {
 			log.Warn().Err(err).Msg("Failed to stop source watcher")
 		}
-	}
-	if s.wasmWatcher != nil {
-		if err := s.wasmWatcher.Stop(); err != nil {
-			log.Warn().Err(err).Msg("Failed to stop WASM watcher")
-		}
-	}
-
-	// Close WASM runtime
-	if err := s.runtime.Close(); err != nil {
-		return fmt.Errorf("closing WASM runtime: %w", err)
 	}
 
 	return nil

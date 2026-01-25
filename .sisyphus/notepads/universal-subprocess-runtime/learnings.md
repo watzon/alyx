@@ -228,3 +228,113 @@ Task 4 will update `executor.go` to use `SubprocessRuntime` instead of `WASMRunt
 - ✅ Executor interface unchanged (drop-in replacement pattern maintained)
 - ✅ FunctionRequest/FunctionResponse types used directly
 - ✅ No breaking changes to public API
+
+## Task 4: Update Executor to Use Subprocess Runtime (2026-01-25)
+
+### Changes Made
+
+1. **Service struct updated**:
+   - Removed `runtime *WASMRuntime` field
+   - Removed `wasmWatcher *WASMWatcher` field
+   - Added `runtimes map[Runtime]*SubprocessRuntime` field (supports multiple runtimes)
+
+2. **NewService() constructor**:
+   - Removed WASM runtime creation code
+   - Removed WASM watcher creation code
+   - Added loop to create SubprocessRuntime for each runtime in `defaultRuntimes` map
+   - Gracefully handles missing runtime binaries with warning logs (non-fatal)
+   - Functions using unavailable runtimes will fail at invocation time with clear error
+
+3. **Start() method**:
+   - Removed WASM plugin loading logic (91-111 lines removed)
+   - Removed WASM watcher initialization (119-123 lines removed)
+   - Kept source watcher initialization (still needed for hot reload)
+   - Simplified from ~38 lines to ~9 lines
+
+4. **Invoke() method**:
+   - Removed JSON marshaling of request (now handled by SubprocessRuntime)
+   - Removed WASM runtime call (`s.runtime.Call()`)
+   - Added runtime lookup from `s.runtimes` map by function's runtime type
+   - Added clear error for unavailable runtimes: `"Runtime deno not available"`
+   - Changed to call `runtime.Call(ctx, name, path, req)` with full FunctionRequest
+   - Removed JSON unmarshaling of response (SubprocessRuntime returns FunctionResponse directly)
+   - Simplified from ~33 lines to ~25 lines
+
+5. **ReloadFunctions() method**:
+   - Removed WASM plugin reload logic (174-188 lines removed)
+   - Simplified to just re-discover functions and update registry
+   - Reduced from ~29 lines to ~12 lines
+
+6. **Close() method**:
+   - Removed WASM watcher stop logic
+   - Removed WASM runtime close logic
+   - Kept source watcher stop logic
+   - Simplified from ~20 lines to ~9 lines
+
+7. **Removed imports**:
+   - `encoding/json` (no longer needed)
+   - `path/filepath` (no longer needed)
+
+### Key Design Decisions
+
+1. **Multi-runtime support**: Changed from single `runtime *WASMRuntime` to `runtimes map[Runtime]*SubprocessRuntime`
+   - Allows functions with different runtimes to coexist
+   - Runtime selected at invocation time based on function's runtime type
+   - Matches the polyglot design goal
+
+2. **Graceful degradation**: Missing runtime binaries log warnings but don't fail service startup
+   - Allows partial functionality if some runtimes unavailable
+   - Clear error at invocation time: `"Runtime deno not available"`
+   - Better UX than failing to start entire service
+
+3. **Simplified lifecycle**: No plugin loading/unloading needed
+   - WASM required pre-loading plugins into memory
+   - Subprocess spawns fresh process per invocation
+   - Eliminates entire plugin management subsystem
+
+4. **Direct protocol**: SubprocessRuntime handles JSON protocol internally
+   - Executor no longer marshals/unmarshals JSON
+   - Cleaner separation of concerns
+   - SubprocessRuntime.Call() signature: `(ctx, name, path, req) -> (resp, err)`
+
+### Code Reduction
+
+| Method | Before | After | Reduction |
+|--------|--------|-------|-----------|
+| Service struct | 9 fields | 7 fields | -2 fields |
+| NewService() | ~48 lines | ~45 lines | -3 lines |
+| Start() | ~38 lines | ~9 lines | -29 lines |
+| Invoke() | ~33 lines | ~25 lines | -8 lines |
+| ReloadFunctions() | ~29 lines | ~12 lines | -17 lines |
+| Close() | ~20 lines | ~9 lines | -11 lines |
+| **Total** | **~177 lines** | **~105 lines** | **-72 lines (41%)** |
+
+### Verification Status
+
+- ✅ `executor.go` updated to use SubprocessRuntime
+- ✅ No references to WASMRuntime, WASMConfig, NewWASMRuntime
+- ✅ No references to wasmWatcher, NewWASMWatcher
+- ✅ Service interface methods unchanged (Invoke, Start, Stop, etc.)
+- ✅ Unused imports removed (encoding/json, path/filepath)
+- ✅ Expected build errors in watcher.go and discovery.go (will be fixed in Tasks 5-6):
+  - `watcher.go:334,346`: Undefined WASMRuntime
+  - `discovery.go:175-177`: Undefined RuntimeWasm
+
+### API Compatibility
+
+- ✅ Service interface unchanged (drop-in replacement)
+- ✅ Public methods unchanged: Invoke(), Start(), Close(), GetFunction(), ListFunctions(), ReloadFunctions(), Stats(), TokenStore()
+- ✅ FunctionRequest/FunctionResponse types unchanged
+- ✅ No breaking changes to external API
+
+### Edge Cases Handled
+
+1. **Missing runtime binary**: Logs warning, continues startup, fails at invocation with clear error
+2. **Function with unavailable runtime**: Returns FunctionResponse with error code `RUNTIME_NOT_AVAILABLE`
+3. **Multiple runtimes**: Each runtime initialized independently, failures isolated
+4. **Hot reload**: Source watcher still active, triggers ReloadFunctions() on changes
+
+### Next Steps
+
+Task 5 (Simplify Discovery) will remove RuntimeWasm references in discovery.go.
+Task 6 (Simplify Watcher) will remove WASMWatcher and update watcher.go.
