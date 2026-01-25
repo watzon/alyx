@@ -89,76 +89,10 @@ type LogEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// ContainerState represents the state of a container.
-type ContainerState string
-
-const (
-	// ContainerStateCreating means the container is being created.
-	ContainerStateCreating ContainerState = "creating"
-	// ContainerStateReady means the container is ready to accept requests.
-	ContainerStateReady ContainerState = "ready"
-	// ContainerStateBusy means the container is processing a request.
-	ContainerStateBusy ContainerState = "busy"
-	// ContainerStateError means the container has encountered an error.
-	ContainerStateError ContainerState = "error"
-	// ContainerStateStopping means the container is being stopped.
-	ContainerStateStopping ContainerState = "stopping"
-	// ContainerStateStopped means the container has been stopped.
-	ContainerStateStopped ContainerState = "stopped"
-)
-
-// Container represents a running function container.
-type Container struct {
-	// ID is the container ID assigned by the container runtime.
-	ID string
-	// Runtime is the language runtime (node, python, go).
-	Runtime Runtime
-	// State is the current container state.
-	State ContainerState
-	// CreatedAt is when the container was created.
-	CreatedAt time.Time
-	// LastUsedAt is when the container was last used.
-	LastUsedAt time.Time
-	// Port is the host port mapped to the container's executor port.
-	Port int
-}
-
-// PoolConfig holds configuration for a container pool.
-type PoolConfig struct {
-	MinWarm          int
-	MaxInstances     int
-	IdleTimeout      time.Duration
-	Image            string
-	MemoryLimit      int
-	CPULimit         float64
-	ExecutionTimeout time.Duration
-	FunctionsDir     string
-}
-
 // Executor defines the interface for executing functions.
 type Executor interface {
 	// Execute invokes a function and returns the response.
 	Execute(ctx context.Context, req *FunctionRequest) (*FunctionResponse, error)
 	// Close shuts down the executor and releases resources.
-	Close() error
-}
-
-// ContainerManager defines the interface for managing containers.
-type ContainerManager interface {
-	// Create creates a new container for the given runtime.
-	Create(ctx context.Context, runtime Runtime, config *PoolConfig) (*Container, error)
-	// Start starts a stopped container.
-	Start(ctx context.Context, containerID string) error
-	// Stop stops a running container.
-	Stop(ctx context.Context, containerID string) error
-	// Remove removes a container.
-	Remove(ctx context.Context, containerID string) error
-	// Invoke sends a function request to a container.
-	Invoke(ctx context.Context, container *Container, req *FunctionRequest) (*FunctionResponse, error)
-	// HealthCheck checks if a container is healthy.
-	HealthCheck(ctx context.Context, container *Container) error
-	// List lists all containers managed by Alyx.
-	List(ctx context.Context) ([]*Container, error)
-	// Close shuts down the container manager.
 	Close() error
 }
