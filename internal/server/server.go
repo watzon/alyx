@@ -89,6 +89,7 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 			FunctionsDir: cfg.Functions.Path,
 			Config:       &cfg.Functions,
 			ServerPort:   cfg.Server.Port,
+			DevMode:      cfg.Dev.Enabled,
 		})
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to create function service")
