@@ -16,8 +16,8 @@ const (
 	ExecutionStatusFailed ExecutionStatus = "failed"
 	// ExecutionStatusTimedOut indicates the execution exceeded its timeout.
 	ExecutionStatusTimedOut ExecutionStatus = "timed_out"
-	// ExecutionStatusCancelled indicates the execution was cancelled.
-	ExecutionStatusCancelled ExecutionStatus = "cancelled"
+	// ExecutionStatusCanceled indicates the execution was canceled.
+	ExecutionStatusCanceled ExecutionStatus = "canceled"
 )
 
 // ExecutionLog represents a function execution log entry.

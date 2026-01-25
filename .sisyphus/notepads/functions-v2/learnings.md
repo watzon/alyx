@@ -84,3 +84,59 @@ This file captures conventions, patterns, and best practices discovered during i
 5. **executions**: Function execution logs
 
 All migrations execute successfully and tests pass.
+
+## 2026-01-25 Task 3: Event Bus Implementation
+
+### Architecture Decisions
+- **In-memory subscriptions + SQLite queue**: EventBus maintains in-memory handler subscriptions (map[string][]EventHandler) while events are persisted in SQLite
+- **At-least-once delivery**: No exactly-once guarantees - handlers may be called multiple times if processing fails
+- **Wildcard matching**: Supports "*" for source and action to match all events of a type
+- **Dual processing modes**: ProcessPending() for immediate events (process_at IS NULL), ProcessScheduled() for delayed events (process_at <= now)
+
+### Background Worker Pattern
+- Used context.WithCancel() for graceful shutdown (pattern from pool.go)
+- Separate goroutines for processing and cleanup with sync.WaitGroup tracking
+- Ticker-based polling (1s for processing, 1h for cleanup by default)
+- CRITICAL: Background goroutines must use bus.ctx (from NewEventBus), not the ctx passed to Start()
+
+### Database Patterns
+- **Timestamp handling**: Store as RFC3339 strings, parse on read (sql.NullString → time.Time)
+- **JSON serialization**: Payload and Metadata serialized to TEXT columns
+- **Status transitions**: pending → processing → completed/failed
+- **Cleanup strategy**: DeleteOlderThan() removes completed/failed events older than retention period (default 7 days)
+
+### SQLite Gotchas
+- **datetime() comparison**: SQLite's datetime('now') returns different format than RFC3339
+- **Solution**: Use Go's time.Now().UTC().Format(time.RFC3339) and string comparison in SQL
+- **Query separation**: GetPending (process_at IS NULL) vs GetScheduled (process_at IS NOT NULL AND process_at <= ?)
+
+### Testing Patterns
+- testDB() helper with t.TempDir() and t.Cleanup()
+- Table-driven tests for wildcard matching scenarios
+- Background processing tests with time.Sleep() for async verification
+- Context cancellation tests for graceful shutdown
+
+### Event Processing Flow
+1. Publish() → INSERT into events table with status='pending'
+2. ProcessPending/ProcessScheduled() → SELECT pending events
+3. For each event:
+   - UPDATE status='processing'
+   - Find matching handlers (exact + wildcard patterns)
+   - Execute all handlers (continue on error)
+   - UPDATE status='completed' or 'failed'
+4. Cleanup loop removes old completed/failed events
+
+### Handler Matching Logic
+- Exact match: type:source:action
+- Wildcard source: type:*:action
+- Wildcard action: type:source:*
+- Wildcard both: type:*:*
+- All matches are executed (not just first match)
+
+### Configuration
+- EventBusConfig: Retention, ProcessInterval, CleanupInterval
+- Defaults: 7 days retention, 1s processing, 1h cleanup
+- Configurable per-instance via NewEventBus()
+
+### Pre-existing Issues Fixed
+- internal/executions/types.go: Fixed misspelling "cancelled" → "canceled" (misspell linter)

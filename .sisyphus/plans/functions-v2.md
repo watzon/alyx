@@ -303,7 +303,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 3. Implement event bus with SQLite backing
+- [x] 3. Implement event bus with SQLite backing
 
   **What to do**:
   - Create `internal/events/bus.go` with EventBus struct
