@@ -265,3 +265,238 @@ hooks:
 - Task 4: Manifest parsing and function metadata (running in parallel)
 - Task 5: File watching and hot reload
 - Task 6: Executor implementation (integrates WASMRuntime with FunctionRequest/Response)
+
+## Task 5: Source File Watcher Implementation (2026-01-25)
+
+### fsnotify API Patterns
+
+**Watcher Creation:**
+- `fsnotify.NewWatcher()` creates a new file system watcher
+- Returns `(*Watcher, error)` - must check error
+- Watcher has `Events` and `Errors` channels for event loop
+
+**Adding Watches:**
+- `watcher.Add(path)` adds a directory or file to watch
+- Must add directories, not glob patterns directly
+- For glob patterns, extract base directory and filter events
+
+**Event Loop Pattern:**
+```go
+for {
+    select {
+    case <-ctx.Done():
+        return
+    case event, ok := <-watcher.Events:
+        if !ok { return }
+        if event.Op&fsnotify.Write == fsnotify.Write { ... }
+    case err, ok := <-watcher.Errors:
+        if !ok { return }
+        log.Error().Err(err).Msg("Watcher error")
+    }
+}
+```
+
+**Event Operations:**
+- `fsnotify.Write` - file modified
+- `fsnotify.Create` - file created
+- `fsnotify.Remove` - file deleted
+- `fsnotify.Rename` - file renamed
+- `fsnotify.Chmod` - permissions changed
+- Use bitwise AND to check: `event.Op&fsnotify.Write == fsnotify.Write`
+
+**Cleanup:**
+- `watcher.Close()` closes the watcher and channels
+- Must be called to free resources
+- Channels will be closed after Close()
+
+### Debouncing Implementation
+
+**Timer-Based Debouncing:**
+- Use `time.AfterFunc(duration, func())` for delayed execution
+- Store timers in map keyed by function name
+- Stop existing timer before creating new one
+- Prevents rapid successive builds from multiple file changes
+
+**Pattern:**
+```go
+type SourceWatcher struct {
+    debounceTimers   map[string]*time.Timer
+    debounceDuration time.Duration
+    mu               sync.Mutex
+}
+
+func (sw *SourceWatcher) debounceBuild(fn *FunctionDef) {
+    sw.mu.Lock()
+    defer sw.mu.Unlock()
+    
+    if timer, exists := sw.debounceTimers[fn.Name]; exists {
+        timer.Stop()
+    }
+    
+    sw.debounceTimers[fn.Name] = time.AfterFunc(sw.debounceDuration, func() {
+        sw.executeBuild(fn)
+    })
+}
+```
+
+**Default Duration:**
+- 100ms default debounce duration
+- Configurable via `SetDebounceDuration()`
+- Balances responsiveness vs. build frequency
+
+### Build Execution Patterns
+
+**Command Execution:**
+- Use `exec.CommandContext(ctx, command, args...)` for cancellable execution
+- Set `cmd.Dir` to function directory for correct working directory
+- Use `cmd.CombinedOutput()` to capture both stdout and stderr
+
+**Timeout Handling:**
+- Create context with timeout: `context.WithTimeout(context.Background(), 5*time.Minute)`
+- Defer `cancel()` to clean up resources
+- Timeout propagates through CommandContext
+
+**Error Handling:**
+- Log build failures but continue watching (graceful degradation)
+- Capture output even on failure for debugging
+- Non-zero exit code indicates build failure
+
+**Pattern:**
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+defer cancel()
+
+cmd := exec.CommandContext(ctx, manifest.Build.Command, manifest.Build.Args...)
+cmd.Dir = funcDir
+
+output, err := cmd.CombinedOutput()
+if err != nil {
+    log.Error().Err(err).Str("output", string(output)).Msg("Build failed")
+    return
+}
+log.Info().Str("output", string(output)).Msg("Build succeeded")
+```
+
+### Glob Pattern Matching
+
+**gobwas/glob Library:**
+- `glob.Compile(pattern, separator)` compiles glob pattern
+- Use `/` as separator for cross-platform compatibility
+- Returns `Glob` interface with `Match(string) bool` method
+
+**Pattern Extraction:**
+- Extract base directory from glob pattern (first non-wildcard component)
+- Watch base directory, filter events by pattern
+- Supports `*`, `**`, `?`, `[...]` wildcards
+
+**Relative Path Matching:**
+- Convert absolute file path to relative path from function directory
+- Match relative path against glob patterns
+- Allows patterns like `src/**/*.js` to work correctly
+
+**Pattern:**
+```go
+matcher, err := glob.Compile(pattern, '/')
+if err != nil {
+    log.Warn().Err(err).Str("pattern", pattern).Msg("Invalid glob pattern")
+    continue
+}
+
+relPath, _ := filepath.Rel(funcDir, filePath)
+if matcher.Match(relPath) {
+    // File matches pattern
+}
+```
+
+### Registry Integration
+
+**Function Discovery:**
+- Use `registry.List()` to get all discovered functions
+- Each function has `Path` field pointing to entry file
+- Use `filepath.Dir(fn.Path)` to get function directory
+
+**Manifest Loading:**
+- Load manifest from `<funcDir>/manifest.yaml`
+- Parse with `yaml.Unmarshal()` into `Manifest` struct
+- Validate with `manifest.Validate()` before use
+
+**Build Config Access:**
+- Check `manifest.Build != nil` before accessing
+- `Build.Command` - build command to execute
+- `Build.Args` - command arguments
+- `Build.Watch` - glob patterns to watch
+- `Build.Output` - output file path
+
+### Thread Safety
+
+**Mutex Protection:**
+- Use `sync.Mutex` to protect `debounceTimers` map
+- Lock before accessing/modifying map
+- Defer unlock for exception safety
+
+**Goroutine Management:**
+- Use `sync.WaitGroup` to track event loop goroutine
+- `wg.Add(1)` before starting goroutine
+- `defer wg.Done()` in goroutine
+- `wg.Wait()` in Stop() to ensure clean shutdown
+
+**Context Cancellation:**
+- Create context with `context.WithCancel()`
+- Store cancel function in struct
+- Call `cancel()` in Stop() to signal shutdown
+- Check `<-ctx.Done()` in event loop
+
+### Test Patterns
+
+**Test Helpers:**
+- `testRegistry(t)` creates temporary registry with cleanup
+- `createTestFunction(t, registry, name, buildConfig)` creates test function with manifest
+- `manifestToYAML(t, manifest)` converts manifest to YAML string
+- Use `t.TempDir()` for isolated test directories
+
+**Timing in Tests:**
+- Use `time.Sleep()` to wait for async operations
+- 100ms for file system events to propagate
+- 200ms for debounced builds to execute
+- Tests are timing-sensitive but reliable
+
+**Table-Driven Tests:**
+- `TestSourceWatcher_GlobPattern` uses table-driven approach
+- Each test case has patterns, files, and expected behavior
+- Subtests with `t.Run()` for isolation
+
+### Gotchas
+
+1. **Directory Creation**: Must create parent directories before adding watch patterns
+2. **Glob vs. Watch**: fsnotify watches directories, not glob patterns - must filter events
+3. **Relative Paths**: Must convert absolute paths to relative for glob matching
+4. **Timer Cleanup**: Must stop timers in Stop() to prevent goroutine leaks
+5. **Channel Closure**: Check `ok` when receiving from channels (closed on watcher.Close())
+6. **YAML Quoting**: Must quote strings in YAML to avoid parsing errors with special characters
+
+### Files Created
+
+- `internal/functions/watcher.go` (350 lines) - SourceWatcher implementation
+- `internal/functions/watcher_test.go` (410 lines) - Comprehensive test suite
+
+### Dependencies Added
+
+- `github.com/fsnotify/fsnotify` - File system notifications
+- `github.com/gobwas/glob` - Glob pattern matching (already present from Extism)
+
+### Test Coverage
+
+- ✅ File change detection
+- ✅ Debouncing (multiple rapid changes → single build)
+- ✅ Build success (command execution with output capture)
+- ✅ Build failure (graceful error handling, continues watching)
+- ✅ Glob pattern matching (single file, nested, exclusion, multiple patterns)
+- ✅ Multiple functions (independent watching)
+- ✅ No build config (skips watching)
+- ✅ Cleanup (Stop() cleans up timers)
+
+### Next Steps
+
+- Task 6: Integrate watcher with server startup
+- Task 7: Add watcher reload on manifest changes
+- Task 8: Implement .wasm file watching for hot reload
