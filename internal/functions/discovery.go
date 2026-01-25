@@ -241,6 +241,23 @@ func (r *Registry) loadManifest(funcDef *FunctionDef, path string) error {
 	funcDef.Hooks = manifest.Hooks
 	funcDef.Schedules = manifest.Schedules
 
+	// Handle build configuration
+	if manifest.Build != nil {
+		funcDef.HasBuild = true
+
+		// Resolve output path relative to function directory
+		dirPath := filepath.Dir(path) // path is the manifest.yaml path
+		funcDef.OutputPath = filepath.Join(dirPath, manifest.Build.Output)
+
+		// Check if output exists (warning only, not error)
+		if _, err := os.Stat(funcDef.OutputPath); os.IsNotExist(err) {
+			log.Warn().
+				Str("function", funcDef.Name).
+				Str("output", funcDef.OutputPath).
+				Msg("Build output file not found (will be created on build)")
+		}
+	}
+
 	if r.registrar != nil {
 		if err := r.autoRegister(context.Background(), funcDef); err != nil {
 			log.Warn().Err(err).Str("function", funcDef.Name).Msg("Failed to auto-register manifest components")
