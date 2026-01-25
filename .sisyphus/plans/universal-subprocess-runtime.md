@@ -303,7 +303,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 6. Simplify Watcher (Remove WASMWatcher)
+- [x] 6. Simplify Watcher (Remove WASMWatcher)
 
   **What to do**:
   - Remove `WASMWatcher` struct and all its methods from `watcher.go`

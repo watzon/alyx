@@ -429,3 +429,113 @@ func (r *Registry) hasDenoConfig(dirPath string) bool {
 
 Task 6 will remove WASMRuntime references in `watcher.go` and complete the migration.
 
+
+## Task 6: Simplify Watcher (Remove WASMWatcher) (2026-01-25)
+
+### Changes Made
+
+1. **Removed WASMWatcher struct and all methods** (~213 lines):
+   - `WASMWatcher` struct (lines 332-343)
+   - `NewWASMWatcher()` constructor
+   - `SetDebounceDuration()` method
+   - `Start()` method
+   - `Stop()` method
+   - `loadManifest()` method (duplicate of SourceWatcher's)
+   - `eventLoop()` method
+   - `handleEvent()` method
+   - `findFunctionForWASM()` method
+   - `debounceReload()` method
+   - `executeReload()` method
+
+2. **Removed WASM-specific constant**:
+   - `defaultWASMDebounceDuration = 200 * time.Millisecond`
+   - Kept `defaultDebounceDuration = 100 * time.Millisecond` for SourceWatcher
+
+3. **Removed test helpers and test cases** (~240 lines):
+   - `testWASMWatcher()` helper function
+   - `TestWASMWatcher_DetectsChanges`
+   - `TestWASMWatcher_TriggersReload`
+   - `TestWASMWatcher_Debouncing`
+   - `TestWASMWatcher_MultipleFunctions`
+   - `TestWASMWatcher_NoBuildConfig`
+   - `TestWASMWatcher_Cleanup`
+
+4. **Kept SourceWatcher intact**:
+   - All SourceWatcher functionality preserved
+   - Still watches source files for changes
+   - Still triggers builds when manifest has `build` config
+   - Still skips watching when manifest has no `build` config (lines 80-82)
+
+### Code Reduction
+
+| File | Before | After | Reduction |
+|------|--------|-------|-----------|
+| `watcher.go` | 544 lines | 329 lines | -215 lines (39.5%) |
+| `watcher_test.go` | 654 lines | 414 lines | -240 lines (36.7%) |
+| **Total** | **1198 lines** | **743 lines** | **-455 lines (38.0%)** |
+
+### SourceWatcher Behavior (Unchanged)
+
+**With `build` config in manifest**:
+- Watches files matching `build.watch` patterns
+- Triggers build command on file changes
+- Debounces rapid changes (100ms default)
+- Logs build success/failure
+
+**Without `build` config in manifest**:
+- Skips watching (lines 80-82 in `Start()`)
+- No build step triggered
+- Function still executable via SubprocessRuntime
+
+### Verification Status
+
+- ✅ `watcher.go` reduced by 215 lines (39.5%)
+- ✅ `watcher_test.go` reduced by 240 lines (36.7%)
+- ✅ All WASMWatcher code removed
+- ✅ SourceWatcher functionality preserved
+- ✅ `go build ./internal/functions/...` succeeds with ZERO errors
+- ✅ `go test ./internal/functions/...` passes (all 44 tests)
+- ✅ No references to WASMRuntime, WASMWatcher, or WASM-specific logic
+
+### Design Decisions
+
+1. **SourceWatcher still needed**: Hot reload for source files with build steps (TypeScript compilation, bundling, etc.)
+2. **Optional build step**: Functions without `build` config work directly (no pre-compilation needed)
+3. **Simplified architecture**: One watcher type instead of two (source + WASM)
+4. **No plugin reload**: Subprocess spawns fresh process per invocation (no reload needed)
+
+### Edge Cases Handled
+
+1. **No build config**: SourceWatcher skips watching (lines 80-82)
+2. **Missing watch patterns**: Defaults to watching entire function directory (line 135)
+3. **Build failures**: Logged but don't crash watcher (lines 317-324)
+4. **Debouncing**: Prevents build spam from rapid file changes (lines 275-286)
+
+### API Compatibility
+
+- ✅ SourceWatcher interface unchanged
+- ✅ NewSourceWatcher() signature unchanged
+- ✅ Start(), Stop(), SetDebounceDuration() methods unchanged
+- ✅ No breaking changes to public API
+
+### Next Steps
+
+This completes the WASM removal migration! The package now:
+- ✅ Builds successfully with zero errors
+- ✅ All tests pass (44 tests)
+- ✅ No WASM dependencies or references
+- ✅ Simplified to single watcher type (SourceWatcher)
+- ✅ Ready for subprocess-based execution
+
+### Total Migration Impact
+
+| Component | Status | Lines Removed |
+|-----------|--------|---------------|
+| Task 1: WASM Implementation | ✅ Complete | -766 lines |
+| Task 2: Runtime Types | ✅ Complete | +60 lines |
+| Task 3: Subprocess Runtime | ✅ Complete | +100 lines |
+| Task 4: Executor Update | ✅ Complete | -72 lines |
+| Task 5: Discovery Update | ✅ Complete | +30 lines |
+| Task 6: Watcher Simplification | ✅ Complete | -455 lines |
+| **Net Change** | **✅ Complete** | **-1103 lines (net reduction)** |
+
