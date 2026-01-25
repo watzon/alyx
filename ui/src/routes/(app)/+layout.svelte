@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth.svelte';
+	import { configStore } from '$lib/stores/config.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { base, resolve } from '$app/paths';
 	import LogOutIcon from 'lucide-svelte/icons/log-out';
+	import BookOpenIcon from 'lucide-svelte/icons/book-open';
+	import ExternalLinkIcon from 'lucide-svelte/icons/external-link';
 	import * as DropdownMenu from '$ui/dropdown-menu';
 	import * as Avatar from '$ui/avatar';
 
@@ -37,6 +40,12 @@
 			goto(resolve('/(auth)/login'));
 		}
 	});
+
+	$effect(() => {
+		if (authStore.isAuthenticated && !configStore.isLoading && !configStore.config) {
+			configStore.load();
+		}
+	});
 </script>
 
 {#if authStore.isLoading}
@@ -54,37 +63,42 @@
 						</a>
 					</div>
 
-					<div class="flex items-center gap-2">
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger>
-								{#snippet child({ props })}
-									<button
-										class="flex items-center gap-2 rounded-full p-0.5 hover:bg-accent transition-colors"
-										{...props}
-									>
-										<Avatar.Root class="h-7 w-7">
-											<Avatar.Fallback class="bg-muted text-xs">
-												{authStore.user?.email?.charAt(0).toUpperCase() ?? 'U'}
-											</Avatar.Fallback>
-										</Avatar.Root>
-									</button>
-								{/snippet}
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content align="end" class="w-56">
-								<DropdownMenu.Label class="font-normal">
-									<div class="flex flex-col space-y-0.5">
-										<p class="text-sm font-medium">{authStore.user?.email}</p>
-										<p class="text-xs text-muted-foreground">{authStore.user?.role}</p>
-									</div>
-								</DropdownMenu.Label>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={handleLogout}>
-									<LogOutIcon class="mr-2 h-4 w-4" />
-									Log out
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<button
+									class="flex items-center gap-2 rounded-full p-0.5 hover:bg-accent transition-colors"
+									{...props}
+								>
+									<Avatar.Root class="h-7 w-7">
+										<Avatar.Fallback class="bg-muted text-xs">
+											{authStore.user?.email?.charAt(0).toUpperCase() ?? 'U'}
+										</Avatar.Fallback>
+									</Avatar.Root>
+								</button>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="end" class="w-56">
+							<DropdownMenu.Label class="font-normal">
+								<div class="flex flex-col space-y-0.5">
+									<p class="text-sm font-medium">{authStore.user?.email}</p>
+									<p class="text-xs text-muted-foreground">{authStore.user?.role}</p>
+								</div>
+							</DropdownMenu.Label>
+							<DropdownMenu.Separator />
+							{#if configStore.docsEnabled}
+								<DropdownMenu.Item onclick={() => window.open(configStore.docsUrl, '_blank')}>
+									<BookOpenIcon class="mr-2 h-4 w-4" />
+									Documentation
+									<ExternalLinkIcon class="ml-auto h-3 w-3 opacity-50" />
 								</DropdownMenu.Item>
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
-					</div>
+							{/if}
+							<DropdownMenu.Item onclick={handleLogout}>
+								<LogOutIcon class="mr-2 h-4 w-4" />
+								Log out
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
 				</div>
 
 				<nav class="flex items-center gap-1 -mb-px">

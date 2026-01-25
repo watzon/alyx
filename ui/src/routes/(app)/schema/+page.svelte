@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { admin, type Schema } from '$lib/api/client';
+	import { configStore } from '$lib/stores/config.svelte';
 	import * as Card from '$ui/card';
 	import * as Tabs from '$ui/tabs';
+	import * as Tooltip from '$ui/tooltip';
 	import { Skeleton } from '$ui/skeleton';
 	import { Badge } from '$ui/badge';
 	import KeyIcon from 'lucide-svelte/icons/key';
 	import LinkIcon from 'lucide-svelte/icons/link';
 	import HashIcon from 'lucide-svelte/icons/hash';
+	import BookOpenIcon from 'lucide-svelte/icons/book-open';
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['admin', 'schema'],
@@ -67,10 +70,29 @@
 			</Tabs.List>
 
 			{#each schemaQuery.data.collections ?? [] as collection}
+				{@const docsUrl = configStore.getCollectionDocsUrl(collection.name)}
 				<Tabs.Content value={collection.name} class="space-y-4">
 					<Card.Root>
-						<Card.Header>
+						<Card.Header class="flex flex-row items-center justify-between space-y-0">
 							<Card.Title>Fields</Card.Title>
+							{#if docsUrl}
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<a
+											href={docsUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+										>
+											<BookOpenIcon class="h-4 w-4" />
+											<span>API Docs</span>
+										</a>
+									</Tooltip.Trigger>
+									<Tooltip.Content>
+										<p>View API documentation for {collection.name}</p>
+									</Tooltip.Content>
+								</Tooltip.Root>
+							{/if}
 						</Card.Header>
 						<Card.Content>
 							<div class="space-y-2">

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { Toaster } from '$ui/sonner';
+	import * as Tooltip from '$ui/tooltip';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
@@ -22,6 +23,8 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-	{@render children()}
+	<Tooltip.Provider>
+		{@render children()}
+	</Tooltip.Provider>
 	<Toaster />
 </QueryClientProvider>

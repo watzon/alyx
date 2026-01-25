@@ -387,3 +387,8 @@ func constraintErrorCode(ce *database.ConstraintError) string {
 		return "CONSTRAINT_VIOLATION"
 	}
 }
+
+// Config returns the server configuration.
+func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
+	JSON(w, http.StatusOK, h.cfg)
+}

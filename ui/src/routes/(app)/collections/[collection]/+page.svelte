@@ -2,11 +2,13 @@
   import { page } from '$app/stores';
   import { createQuery } from '@tanstack/svelte-query';
   import { collections, admin, type Collection } from '$lib/api/client';
+  import { configStore } from '$lib/stores/config.svelte';
   import { CollectionDrawer, CollectionTable } from '$lib/components/collections';
   import { Button } from '$ui/button';
   import { Input } from '$ui/input';
   import { Skeleton } from '$ui/skeleton';
   import * as Card from '$ui/card';
+  import * as Tooltip from '$ui/tooltip';
   import RefreshCwIcon from 'lucide-svelte/icons/refresh-cw';
   import PlusIcon from 'lucide-svelte/icons/plus';
   import SearchIcon from 'lucide-svelte/icons/search';
@@ -14,8 +16,10 @@
   import ChevronRightIcon from 'lucide-svelte/icons/chevron-right';
   import ChevronsLeftIcon from 'lucide-svelte/icons/chevrons-left';
   import ChevronsRightIcon from 'lucide-svelte/icons/chevrons-right';
+  import BookOpenIcon from 'lucide-svelte/icons/book-open';
 
   const collectionName = $derived($page.params.collection);
+  const collectionDocsUrl = $derived(collectionName ? configStore.getCollectionDocsUrl(collectionName) : null);
 
   let pageIndex = $state(1);
   let pageSize = $state(50);
@@ -76,7 +80,26 @@
 <div class="space-y-6">
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-semibold tracking-tight">{collectionName}</h1>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight">{collectionName}</h1>
+        {#if collectionDocsUrl}
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              <a
+                href={collectionDocsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                <BookOpenIcon class="h-4 w-4" />
+              </a>
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+              <p>View API docs</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        {/if}
+      </div>
       <p class="text-sm text-muted-foreground">
         {#if docsQuery.data}
           {docsQuery.data.total} document{docsQuery.data.total === 1 ? '' : 's'}

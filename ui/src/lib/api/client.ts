@@ -309,6 +309,26 @@ export interface AuthStatus {
 	allow_registration: boolean;
 }
 
+export interface ServerConfig {
+	Docs?: {
+		Enabled: boolean;
+		UI: string;
+		Title?: string;
+		Description?: string;
+		Version?: string;
+	};
+	AdminUI?: {
+		Enabled: boolean;
+		Path: string;
+	};
+	Realtime?: {
+		Enabled: boolean;
+	};
+	Functions?: {
+		Enabled: boolean;
+	};
+}
+
 export interface RequestLogEntry {
 	id: string;
 	timestamp: string;
@@ -437,6 +457,10 @@ export const admin = {
 		stats: () => api.get<RequestLogStats>('/admin/logs/stats'),
 		clear: () => api.post<{ message: string }>('/admin/logs/clear')
 	}
+};
+
+export const config = {
+	get: () => api.get<ServerConfig>('/config')
 };
 
 export const collections = {

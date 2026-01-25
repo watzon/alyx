@@ -71,6 +71,7 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("GET /health/stats", r.wrap(healthHandlers.Stats))
 	r.mux.Handle("GET /metrics", metrics.Handler())
 
+	r.mux.HandleFunc("GET /api/config", r.wrap(h.Config))
 	r.mux.HandleFunc("GET /api/collections/{collection}", r.wrap(h.ListDocuments))
 	r.mux.HandleFunc("POST /api/collections/{collection}", r.wrap(h.CreateDocument))
 	r.mux.HandleFunc("GET /api/collections/{collection}/{id}", r.wrap(h.GetDocument))
