@@ -206,6 +206,9 @@ func TestDetectRuntime(t *testing.T) {
 		{".js", RuntimeNode},
 		{".mjs", RuntimeNode},
 		{".cjs", RuntimeNode},
+		{".ts", RuntimeNode},
+		{".mts", RuntimeNode},
+		{".cts", RuntimeNode},
 		{".py", RuntimePython},
 		{".go", RuntimeGo},
 		{".txt", ""},
@@ -524,5 +527,84 @@ func TestRegistry_DirectoryWithNoEntryFile(t *testing.T) {
 
 	if registry.Count() != 0 {
 		t.Errorf("expected 0 functions, got %d", registry.Count())
+	}
+}
+
+func TestRegistry_TypeScriptDiscovery(t *testing.T) {
+	tests := []struct {
+		name         string
+		files        map[string]string
+		expectedFunc string
+		expectedExt  string
+	}{
+		{
+			name: "index.ts only",
+			files: map[string]string{
+				"index.ts": "export default () => ({ message: 'hello' })",
+			},
+			expectedFunc: "ts-only",
+			expectedExt:  "index.ts",
+		},
+		{
+			name: "both index.js and index.ts - JS takes precedence",
+			files: map[string]string{
+				"index.js": "module.exports = {}",
+				"index.ts": "export default () => ({})",
+			},
+			expectedFunc: "js-ts-both",
+			expectedExt:  "index.js",
+		},
+		{
+			name: "index.mts only",
+			files: map[string]string{
+				"index.mts": "export default () => ({ message: 'hello' })",
+			},
+			expectedFunc: "mts-only",
+			expectedExt:  "index.mts",
+		},
+		{
+			name: "index.cts only",
+			files: map[string]string{
+				"index.cts": "export default () => ({ message: 'hello' })",
+			},
+			expectedFunc: "cts-only",
+			expectedExt:  "index.cts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			funcDir := filepath.Join(tmpDir, tt.expectedFunc)
+			if err := os.MkdirAll(funcDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+
+			for filename, content := range tt.files {
+				path := filepath.Join(funcDir, filename)
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			registry := NewRegistry(tmpDir)
+			if err := registry.Discover(); err != nil {
+				t.Fatalf("Discover failed: %v", err)
+			}
+
+			fn, ok := registry.Get(tt.expectedFunc)
+			if !ok {
+				t.Fatalf("expected to find '%s' function", tt.expectedFunc)
+			}
+
+			if fn.Runtime != RuntimeNode {
+				t.Errorf("expected runtime node, got %s", fn.Runtime)
+			}
+
+			expectedPath := filepath.Join(funcDir, tt.expectedExt)
+			if fn.Path != expectedPath {
+				t.Errorf("expected entry file %s, got %s", expectedPath, fn.Path)
+			}
+		})
 	}
 }
