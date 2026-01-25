@@ -1,10 +1,17 @@
+version: 1
+
 collections:
-  - name: users
+  users:
     fields:
-      - name: email
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      email:
         type: string
-        required: true
         unique: true
-      - name: name
+      name:
         type: string
-        required: true
+      created_at:
+        type: timestamp
+        default: now

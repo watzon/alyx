@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -40,17 +42,26 @@ func NewSubprocessRuntime(runtime Runtime) (*SubprocessRuntime, error) {
 // Call executes a function by spawning a subprocess and communicating via JSON.
 // The function receives a FunctionRequest on stdin and returns a FunctionResponse on stdout.
 func (r *SubprocessRuntime) Call(ctx context.Context, name, entrypoint string, req *FunctionRequest) (*FunctionResponse, error) {
-	// Build command arguments
-	args := append(r.config.Args, entrypoint)
-	cmd := exec.CommandContext(ctx, r.config.Command, args...)
+	args := make([]string, 0, len(r.config.Args)+1)
+	args = append(args, r.config.Args...)
 
-	// Marshal request to JSON
+	absPath, err := filepath.Abs(entrypoint)
+	if err != nil {
+		return nil, fmt.Errorf("resolving entrypoint path: %w", err)
+	}
+	funcDir := filepath.Dir(absPath)
+	funcFile := filepath.Base(absPath)
+
+	args = append(args, funcFile)
+	// #nosec G204 - entrypoint is validated during function discovery and comes from trusted manifest files
+	cmd := exec.CommandContext(ctx, r.config.Command, args...)
+	cmd.Dir = funcDir
+
 	inputJSON, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling function request: %w", err)
 	}
 
-	// Set up stdin with JSON input
 	cmd.Stdin = bytes.NewReader(inputJSON)
 
 	// Capture stdout and stderr
@@ -58,18 +69,15 @@ func (r *SubprocessRuntime) Call(ctx context.Context, name, entrypoint string, r
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Execute the command
 	err = cmd.Run()
 
-	// Handle execution errors
 	if err != nil {
-		// Check if it's a context cancellation (timeout)
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("function %s timed out: %w", name, ctx.Err())
 		}
 
-		// Check if it's an exit error
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			stderrStr := strings.TrimSpace(stderr.String())
 			return nil, fmt.Errorf("function %s exited with code %d: %s", name, exitErr.ExitCode(), stderrStr)
 		}

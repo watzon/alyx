@@ -479,7 +479,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 10. Final Verification and Tests
+- [x] 10. Final Verification and Tests
 
   **What to do**:
   - Run `make lint` - must pass with zero issues
