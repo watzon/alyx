@@ -54,8 +54,8 @@ async function loadFunction(name) {
 }
 
 function findFunctionEntry(name) {
-  const entryFiles = ["index.js", "index.mjs", "index.cjs"];
-  const directFiles = [`${name}.js`, `${name}.mjs`, `${name}.cjs`];
+  const entryFiles = ["index.js", "index.mjs", "index.cjs", "index.ts", "index.mts", "index.cts"];
+  const directFiles = [`${name}.js`, `${name}.mjs`, `${name}.cjs`, `${name}.ts`, `${name}.mts`, `${name}.cts`];
 
   const funcDir = path.join(FUNCTIONS_DIR, name);
   if (fs.existsSync(funcDir) && fs.statSync(funcDir).isDirectory()) {
@@ -167,7 +167,7 @@ function handleListFunctions(res) {
         if (e.isDirectory()) {
           return findFunctionEntry(e.name) !== null;
         }
-        return e.name.endsWith(".js") || e.name.endsWith(".mjs") || e.name.endsWith(".cjs");
+        return e.name.endsWith(".js") || e.name.endsWith(".mjs") || e.name.endsWith(".cjs") || e.name.endsWith(".ts") || e.name.endsWith(".mts") || e.name.endsWith(".cts");
       })
       .map((e) => (e.isDirectory() ? e.name : path.basename(e.name, path.extname(e.name))));
 
