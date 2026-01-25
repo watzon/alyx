@@ -846,3 +846,121 @@ functions/
 - Task 8: Manual verification (server starts, function invocation works)
 - Task 9: Test hot reload with example function
 - Task 10: Update documentation with WASM runtime details
+
+## Task 8: Example WASM Function with npm Dependency (2026-01-25)
+
+### Example Structure Created
+
+**Directory:** `examples/functions/hello-wasm/`
+
+**Files:**
+- `manifest.yaml` - Build configuration for WASM function
+- `package.json` - npm dependencies and build scripts
+- `src/index.js` - Function implementation using date-fns
+- `src/index.d.ts` - TypeScript type definitions for Extism runtime
+- `README.md` - Comprehensive setup and usage instructions
+
+### Key Learnings
+
+**extism-js CLI Installation:**
+- `@extism/js-pdk` npm package is **NOT** the CLI tool
+- `@extism/js-pdk` only provides TypeScript type definitions
+- The actual `extism-js` CLI is a Rust-based tool installed via shell script
+- Installation methods:
+  - Linux/macOS: `curl -O https://raw.githubusercontent.com/extism/js-pdk/main/install.sh && bash install.sh`
+  - Windows: PowerShell script (requires 7zip)
+- Verify with: `extism-js --version`
+
+**Dependencies:**
+- `date-fns@^3.0.0` - Production dependency (date formatting)
+- `@extism/js-pdk@^1.0.0` - Dev dependency (TypeScript types only)
+
+**Build Configuration:**
+```yaml
+build:
+  command: npm
+  args: ["run", "build"]
+  watch: ["src/**/*.js", "src/**/*.ts"]
+  output: plugin.wasm
+```
+
+**npm Scripts:**
+```json
+{
+  "build": "extism-js src/index.js -i src/index.d.ts -o plugin.wasm",
+  "watch": "extism-js src/index.js -i src/index.d.ts -o plugin.wasm --watch"
+}
+```
+
+### Function Implementation
+
+**Entry Point:** `export function handle(req)`
+- Receives `FunctionRequest` object
+- Returns `FunctionResponse` object (plain JS object, JSON serialized)
+- Uses `date-fns` for date formatting (demonstrates npm package usage)
+- Accesses request data via `req.input`
+- Accesses context via `req.context` (auth, env, alyx_url, internal_token)
+
+**Type Definitions:**
+- `FunctionRequest` - Request structure with request_id, function_name, input, context
+- `FunctionResponse` - Response structure (any JSON-serializable object)
+- `FunctionContext` - Context with auth, env, alyx_url, internal_token
+- `AuthContext` - Authentication info (id, email, role, metadata)
+
+### Documentation
+
+**README.md Sections:**
+1. Features - What the example demonstrates
+2. Prerequisites - Node.js, extism-js CLI, Alyx server
+3. Setup - Install dependencies, build function, start server
+4. Usage - Invoke function, pass input data
+5. Development Workflow - Hot reload explanation
+6. Project Structure - File organization
+7. Configuration - manifest.yaml and package.json details
+8. Accessing Alyx APIs - How to call internal APIs with token
+9. Troubleshooting - Common issues and solutions
+10. Next Steps - Ideas for extending the example
+
+### E2E Verification Status
+
+**Completed:**
+- ✅ Directory structure created
+- ✅ All files written (manifest, package.json, source, types, README)
+- ✅ npm install successful (3 packages installed)
+
+**Blocked:**
+- ❌ Build verification - `extism-js` CLI not installed on system
+- ❌ Function invocation test - Cannot build without CLI
+- ❌ Hot reload test - Cannot test without built plugin
+
+**Manual Verification Required:**
+User must install `extism-js` CLI and run:
+1. `cd examples/functions/hello-wasm && npm run build`
+2. Start Alyx server: `./build/alyx dev`
+3. Test invocation: `curl http://localhost:8090/api/functions/hello-wasm`
+4. Test hot reload: Edit `src/index.js`, verify rebuild and reload
+
+### Gotchas
+
+1. **npm Package Confusion**: `@extism/js-pdk` is NOT the CLI, just TypeScript types
+2. **CLI Installation**: Must use shell script, not npm install
+3. **Platform-Specific**: Windows requires 7zip and PowerShell
+4. **Binaryen Dependency**: extism-js requires `wasm-opt` from Binaryen (not documented in our README)
+5. **Module Syntax**: Must use CJS (`module.exports`) not ESM (`export`) without bundler
+6. **Type Definitions**: Must provide `.d.ts` file for extism-js compiler
+
+### Files Created
+
+- `examples/functions/hello-wasm/manifest.yaml` (8 lines)
+- `examples/functions/hello-wasm/package.json` (15 lines)
+- `examples/functions/hello-wasm/src/index.js` (48 lines)
+- `examples/functions/hello-wasm/src/index.d.ts` (60 lines)
+- `examples/functions/hello-wasm/README.md` (310 lines)
+
+### Next Steps
+
+- User must install `extism-js` CLI to complete E2E verification
+- Consider adding Binaryen installation instructions to README
+- Consider creating a GitHub Action to test example builds in CI
+- Consider adding more examples (with bundler, with TypeScript, with React)
+
