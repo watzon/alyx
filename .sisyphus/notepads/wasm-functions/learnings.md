@@ -500,3 +500,163 @@ if matcher.Match(relPath) {
 - Task 6: Integrate watcher with server startup
 - Task 7: Add watcher reload on manifest changes
 - Task 8: Implement .wasm file watching for hot reload
+
+## Task 6: WASM File Watcher with Hot Reload (2026-01-25)
+
+### WASMRuntime.Reload() Implementation
+
+**Method Signature:**
+```go
+func (w *WASMRuntime) Reload(name string, wasmPath string) error
+```
+
+**Reload Strategy:**
+1. Acquire write lock (full mutex, not RWMutex)
+2. Close existing plugin if present
+3. Delete from plugins map
+4. Load new plugin using `loadPluginLocked()`
+5. Log reload success
+
+**Key Design Decision:**
+- Extracted `loadPluginLocked()` internal method to avoid duplicate code
+- Reload works even if plugin doesn't exist (creates new)
+- Failed reload leaves plugin unloaded (no rollback to old version)
+- Thread-safe with mutex protection
+
+### WASMWatcher Architecture
+
+**Structure:**
+```go
+type WASMWatcher struct {
+    runtime          *WASMRuntime
+    registry         *Registry
+    watcher          *fsnotify.Watcher
+    debounceTimers   map[string]*time.Timer
+    debounceDuration time.Duration
+    mu               sync.Mutex
+    ctx              context.Context
+    cancel           context.CancelFunc
+    wg               sync.WaitGroup
+}
+```
+
+**Debounce Duration:**
+- Default: 200ms (vs. 100ms for SourceWatcher)
+- Rationale: Longer delay allows builds to complete before triggering reload
+- Prevents reload attempts on incomplete WASM files
+
+### Coordination Between Watchers
+
+**Flow:**
+1. SourceWatcher detects source change
+2. SourceWatcher triggers build (debounced 100ms)
+3. Build writes new .wasm file
+4. WASMWatcher detects .wasm change
+5. WASMWatcher triggers reload (debounced 200ms)
+
+**Timing:**
+- Source debounce: 100ms (fast response to edits)
+- WASM debounce: 200ms (wait for build completion)
+- Total latency: ~300ms from source change to reload
+
+### File Watching Patterns
+
+**WASM File Detection:**
+- Watch directory containing .wasm file (not file directly)
+- Filter events by `.wasm` extension
+- Match against expected output path from manifest
+
+**Directory Structure:**
+```
+functions/
+  my-function/
+    src/
+      index.js          <- SourceWatcher
+    manifest.yaml
+    plugin.wasm         <- WASMWatcher
+```
+
+### Error Handling
+
+**Reload Failures:**
+- Log error but continue watching
+- Plugin remains unloaded after failed reload
+- No automatic retry (waits for next file change)
+
+**Invalid WASM:**
+- Extism validates WASM on load
+- Returns error for invalid format
+- Test: `TestWASMWatcher_DetectsChanges` shows graceful failure
+
+### Thread Safety
+
+**Mutex Strategy:**
+- WASMWatcher uses `sync.Mutex` for debounceTimers map
+- WASMRuntime uses `sync.RWMutex` for plugins map
+- Reload acquires write lock (blocks all reads during reload)
+
+**Concurrent Reload:**
+- Test: `TestWASMRuntime_Reload/reload_while_plugin_is_in_use`
+- Mutex ensures safe reload even during concurrent reads
+- No race conditions detected
+
+### Test Coverage
+
+**WASMRuntime.Reload() Tests:**
+- ✅ Reload existing plugin (verifies new instance created)
+- ✅ Reload nonexistent plugin (creates new)
+- ✅ Reload with invalid WASM (leaves plugin unloaded)
+- ✅ Reload while plugin in use (thread safety)
+
+**WASMWatcher Tests:**
+- ✅ Detects .wasm file changes
+- ✅ Triggers reload on change
+- ✅ Debouncing (5 rapid changes → 1 reload)
+- ✅ Multiple functions (independent watching)
+- ✅ No build config (skips watching)
+- ✅ Cleanup (Stop() cleans up timers)
+
+### Integration Points
+
+**Registry Integration:**
+- Uses `registry.List()` to discover functions
+- Loads manifest to get build output path
+- Skips functions without build config
+
+**WASMRuntime Integration:**
+- Calls `runtime.Reload(name, wasmPath)` on change
+- No direct plugin access (encapsulation)
+- Runtime handles all plugin lifecycle
+
+### Gotchas
+
+1. **File Extension Check**: Must check `.wasm` extension to avoid triggering on temp files
+2. **Debounce Timing**: 200ms chosen empirically - too short causes reload on incomplete builds
+3. **Directory Watching**: fsnotify watches directories, not individual files
+4. **Manifest Reloading**: Each event reloads manifest (could cache, but simple approach works)
+5. **No Rollback**: Failed reload leaves plugin unloaded (intentional - fail fast)
+
+### Performance Considerations
+
+**Memory:**
+- One fsnotify.Watcher per WASMWatcher instance
+- One timer per function in debounceTimers map
+- Timers cleaned up on Stop()
+
+**CPU:**
+- Minimal overhead (event-driven)
+- Debouncing prevents excessive reloads
+- Manifest parsing only on events
+
+### Files Modified
+
+- `internal/functions/wasm.go` - Added Reload() method, extracted loadPluginLocked()
+- `internal/functions/watcher.go` - Added WASMWatcher struct and methods
+- `internal/functions/wasm_test.go` - Added TestWASMRuntime_Reload tests
+- `internal/functions/watcher_test.go` - Added WASMWatcher tests, testWASMWatcher helper
+
+### Next Steps
+
+- Task 7: Integrate watchers with server startup
+- Task 8: Add coordination between SourceWatcher and WASMWatcher
+- Task 9: Add metrics/logging for reload performance

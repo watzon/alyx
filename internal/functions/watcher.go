@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	defaultDebounceDuration = 100 * time.Millisecond
+	defaultDebounceDuration     = 100 * time.Millisecond
+	defaultWASMDebounceDuration = 200 * time.Millisecond
 )
 
 // SourceWatcher watches source files and triggers builds when changes are detected.
@@ -324,4 +325,217 @@ func (sw *SourceWatcher) executeBuild(fn *FunctionDef) {
 		Str("function", fn.Name).
 		Str("output", string(output)).
 		Msg("Build succeeded")
+}
+
+// WASMWatcher watches WASM files and triggers plugin reloads when changes are detected.
+type WASMWatcher struct {
+	runtime          *WASMRuntime
+	registry         *Registry
+	watcher          *fsnotify.Watcher
+	debounceTimers   map[string]*time.Timer
+	debounceDuration time.Duration
+	mu               sync.Mutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+}
+
+// NewWASMWatcher creates a new WASM file watcher.
+func NewWASMWatcher(runtime *WASMRuntime, registry *Registry) (*WASMWatcher, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("creating fsnotify watcher: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &WASMWatcher{
+		runtime:          runtime,
+		registry:         registry,
+		watcher:          watcher,
+		debounceDuration: defaultWASMDebounceDuration,
+		debounceTimers:   make(map[string]*time.Timer),
+		ctx:              ctx,
+		cancel:           cancel,
+	}, nil
+}
+
+// SetDebounceDuration sets the debounce duration for file change events.
+func (ww *WASMWatcher) SetDebounceDuration(d time.Duration) {
+	ww.mu.Lock()
+	defer ww.mu.Unlock()
+	ww.debounceDuration = d
+}
+
+// Start begins watching WASM files for all functions with build configurations.
+func (ww *WASMWatcher) Start() error {
+	functions := ww.registry.List()
+
+	for _, fn := range functions {
+		funcDir := filepath.Dir(fn.Path)
+
+		manifestPath := filepath.Join(funcDir, "manifest.yaml")
+		if _, err := os.Stat(manifestPath); err != nil {
+			continue
+		}
+
+		manifest, err := ww.loadManifest(manifestPath)
+		if err != nil {
+			log.Warn().Err(err).Str("function", fn.Name).Msg("Failed to load manifest")
+			continue
+		}
+
+		if manifest.Build == nil {
+			continue
+		}
+
+		wasmPath := filepath.Join(funcDir, manifest.Build.Output)
+		wasmDir := filepath.Dir(wasmPath)
+
+		if err := ww.watcher.Add(wasmDir); err != nil {
+			log.Warn().Err(err).Str("function", fn.Name).Msg("Failed to add WASM watch")
+			continue
+		}
+
+		log.Debug().
+			Str("function", fn.Name).
+			Str("wasm_path", wasmPath).
+			Msg("Watching WASM file")
+	}
+
+	ww.wg.Add(1)
+	go ww.eventLoop()
+
+	return nil
+}
+
+// Stop stops the watcher and cleans up resources.
+func (ww *WASMWatcher) Stop() error {
+	ww.cancel()
+	ww.wg.Wait()
+
+	ww.mu.Lock()
+	for _, timer := range ww.debounceTimers {
+		timer.Stop()
+	}
+	ww.mu.Unlock()
+
+	return ww.watcher.Close()
+}
+
+func (ww *WASMWatcher) loadManifest(path string) (*Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest: %w", err)
+	}
+
+	var manifest Manifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parsing manifest: %w", err)
+	}
+
+	if err := manifest.Validate(); err != nil {
+		return nil, fmt.Errorf("validating manifest: %w", err)
+	}
+
+	return &manifest, nil
+}
+
+func (ww *WASMWatcher) eventLoop() {
+	defer ww.wg.Done()
+
+	for {
+		select {
+		case <-ww.ctx.Done():
+			return
+
+		case event, ok := <-ww.watcher.Events:
+			if !ok {
+				return
+			}
+
+			if event.Op&fsnotify.Write == fsnotify.Write ||
+				event.Op&fsnotify.Create == fsnotify.Create {
+				ww.handleEvent(event)
+			}
+
+		case err, ok := <-ww.watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Error().Err(err).Msg("WASM watcher error")
+		}
+	}
+}
+
+func (ww *WASMWatcher) handleEvent(event fsnotify.Event) {
+	if filepath.Ext(event.Name) != ".wasm" {
+		return
+	}
+
+	fn, wasmPath := ww.findFunctionForWASM(event.Name)
+	if fn == nil {
+		return
+	}
+
+	log.Debug().
+		Str("file", event.Name).
+		Str("function", fn.Name).
+		Msg("WASM file changed")
+
+	ww.debounceReload(fn, wasmPath)
+}
+
+func (ww *WASMWatcher) findFunctionForWASM(wasmPath string) (*FunctionDef, string) {
+	functions := ww.registry.List()
+
+	for _, fn := range functions {
+		funcDir := filepath.Dir(fn.Path)
+
+		manifestPath := filepath.Join(funcDir, "manifest.yaml")
+		manifest, err := ww.loadManifest(manifestPath)
+		if err != nil || manifest.Build == nil {
+			continue
+		}
+
+		expectedWASMPath := filepath.Join(funcDir, manifest.Build.Output)
+
+		if wasmPath == expectedWASMPath {
+			return fn, expectedWASMPath
+		}
+	}
+
+	return nil, ""
+}
+
+func (ww *WASMWatcher) debounceReload(fn *FunctionDef, wasmPath string) {
+	ww.mu.Lock()
+	defer ww.mu.Unlock()
+
+	if timer, exists := ww.debounceTimers[fn.Name]; exists {
+		timer.Stop()
+	}
+
+	ww.debounceTimers[fn.Name] = time.AfterFunc(ww.debounceDuration, func() {
+		ww.executeReload(fn, wasmPath)
+	})
+}
+
+func (ww *WASMWatcher) executeReload(fn *FunctionDef, wasmPath string) {
+	log.Info().
+		Str("function", fn.Name).
+		Str("wasm_path", wasmPath).
+		Msg("Reloading WASM plugin")
+
+	if err := ww.runtime.Reload(fn.Name, wasmPath); err != nil {
+		log.Error().
+			Err(err).
+			Str("function", fn.Name).
+			Msg("Failed to reload WASM plugin")
+		return
+	}
+
+	log.Info().
+		Str("function", fn.Name).
+		Msg("WASM plugin reloaded successfully")
 }

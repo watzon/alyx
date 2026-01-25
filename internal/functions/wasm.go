@@ -64,6 +64,11 @@ func (w *WASMRuntime) LoadPlugin(name string, wasmPath string) error {
 		return fmt.Errorf("plugin %s already loaded", name)
 	}
 
+	return w.loadPluginLocked(name, wasmPath)
+}
+
+// loadPluginLocked loads a plugin without acquiring the lock (internal use).
+func (w *WASMRuntime) loadPluginLocked(name string, wasmPath string) error {
 	// Read WASM file
 	wasmData, err := os.ReadFile(wasmPath)
 	if err != nil {
@@ -123,6 +128,28 @@ func (w *WASMRuntime) UnloadPlugin(name string) error {
 	delete(w.plugins, name)
 
 	log.Debug().Str("name", name).Msg("Unloaded WASM plugin")
+
+	return nil
+}
+
+// Reload reloads a WASM plugin by unloading and reloading it.
+func (w *WASMRuntime) Reload(name string, wasmPath string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Unload existing plugin if it exists
+	if plugin, ok := w.plugins[name]; ok {
+		plugin.Close(context.Background())
+		delete(w.plugins, name)
+		log.Debug().Str("name", name).Msg("Unloaded plugin for reload")
+	}
+
+	// Load the new plugin
+	if err := w.loadPluginLocked(name, wasmPath); err != nil {
+		return fmt.Errorf("reloading plugin: %w", err)
+	}
+
+	log.Info().Str("name", name).Str("path", wasmPath).Msg("Reloaded WASM plugin")
 
 	return nil
 }

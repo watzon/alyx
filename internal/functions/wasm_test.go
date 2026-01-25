@@ -350,3 +350,116 @@ func TestWASMRuntime_HTTPHostFunction(t *testing.T) {
 
 	t.Logf("HTTP request data: %s", string(reqData))
 }
+
+func TestWASMRuntime_Reload(t *testing.T) {
+	t.Run("reload existing plugin", func(t *testing.T) {
+		runtime := testWASMRuntime(t)
+		wasmPath := createTestWASM(t)
+
+		if err := runtime.LoadPlugin("test", wasmPath); err != nil {
+			t.Fatalf("LoadPlugin failed: %v", err)
+		}
+
+		runtime.mu.RLock()
+		oldPlugin := runtime.plugins["test"]
+		runtime.mu.RUnlock()
+
+		if err := runtime.Reload("test", wasmPath); err != nil {
+			t.Fatalf("Reload failed: %v", err)
+		}
+
+		runtime.mu.RLock()
+		newPlugin := runtime.plugins["test"]
+		runtime.mu.RUnlock()
+
+		if newPlugin == nil {
+			t.Error("Plugin not found after reload")
+		}
+
+		if oldPlugin == newPlugin {
+			t.Error("Plugin instance should be different after reload")
+		}
+	})
+
+	t.Run("reload nonexistent plugin", func(t *testing.T) {
+		runtime := testWASMRuntime(t)
+		wasmPath := createTestWASM(t)
+
+		err := runtime.Reload("nonexistent", wasmPath)
+		if err != nil {
+			t.Fatalf("Reload of nonexistent plugin should succeed (creates new): %v", err)
+		}
+
+		runtime.mu.RLock()
+		_, exists := runtime.plugins["nonexistent"]
+		runtime.mu.RUnlock()
+
+		if !exists {
+			t.Error("Plugin should exist after reload of nonexistent plugin")
+		}
+	})
+
+	t.Run("reload with invalid wasm", func(t *testing.T) {
+		runtime := testWASMRuntime(t)
+		wasmPath := createTestWASM(t)
+
+		if err := runtime.LoadPlugin("test", wasmPath); err != nil {
+			t.Fatalf("LoadPlugin failed: %v", err)
+		}
+
+		tmpDir := t.TempDir()
+		invalidPath := filepath.Join(tmpDir, "invalid.wasm")
+		if err := os.WriteFile(invalidPath, []byte("not wasm"), 0644); err != nil {
+			t.Fatalf("Failed to write invalid WASM file: %v", err)
+		}
+
+		err := runtime.Reload("test", invalidPath)
+		if err == nil {
+			t.Error("Expected error for invalid WASM data, got nil")
+		}
+
+		runtime.mu.RLock()
+		_, exists := runtime.plugins["test"]
+		runtime.mu.RUnlock()
+
+		if exists {
+			t.Error("Plugin should be removed after failed reload")
+		}
+	})
+
+	t.Run("reload while plugin is in use", func(t *testing.T) {
+		runtime := testWASMRuntime(t)
+		wasmPath := createTestWASM(t)
+
+		if err := runtime.LoadPlugin("test", wasmPath); err != nil {
+			t.Fatalf("LoadPlugin failed: %v", err)
+		}
+
+		done := make(chan bool)
+		go func() {
+			for i := 0; i < 5; i++ {
+				runtime.mu.RLock()
+				_ = runtime.plugins["test"]
+				runtime.mu.RUnlock()
+				time.Sleep(10 * time.Millisecond)
+			}
+			done <- true
+		}()
+
+		time.Sleep(20 * time.Millisecond)
+
+		if err := runtime.Reload("test", wasmPath); err != nil {
+			t.Fatalf("Reload failed: %v", err)
+		}
+
+		<-done
+
+		runtime.mu.RLock()
+		_, exists := runtime.plugins["test"]
+		runtime.mu.RUnlock()
+
+		if !exists {
+			t.Error("Plugin should exist after reload")
+		}
+	})
+}
