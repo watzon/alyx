@@ -688,3 +688,158 @@ func UpdateStatus(ctx, id, status, output, errorMsg, logs string, duration int) 
 - Pre-existing race condition in internal/events/bus_test.go (TestEventBus_StartStop) - not related to this task
 - All new handler code is race-free
 - Routes will return 404 until server initialization adds event system components
+
+## [2026-01-25 01:33] Task 12: TypeScript SDK Generator
+
+### Implementation Summary
+- Created `cmd/alyx/generate/sdk.go` for SDK generation command (registered as subcommand of `generate`)
+- Created `internal/cli/generate_sdk.go` with Cobra command integration
+- Created `internal/sdk/typescript/generator.go` with OpenAPI-to-TypeScript conversion
+- Generated SDK structure: types/, resources/, client.ts, context.ts, index.ts
+- Comprehensive TypeScript SDK with all API operations
+
+### SDK Structure
+```
+sdk/
+  package.json          - NPM package with TypeScript dependency
+  tsconfig.json         - TypeScript compiler config (ES2020, DOM lib)
+  index.ts              - Main exports
+  client.ts             - AlyxClient class with collections, auth, functions, events
+  context.ts            - Runtime context helper for functions (getContext())
+  types/
+    collections.ts      - Collection types from OpenAPI schema
+    auth.ts             - User, TokenPair, AuthResponse, RegisterInput, LoginInput
+    functions.ts        - FunctionInfo, FunctionResponse, LogEntry
+    events.ts           - Event types, hook payload types (database, auth, webhook, schedule)
+  resources/
+    collections.ts      - CollectionClient<T> with CRUD operations
+    auth.ts             - AuthClient with register, login, refresh, logout, me
+    functions.ts        - FunctionsClient with list, invoke, stats, reload
+    events.ts           - EventsClient with publish
+```
+
+### Code Generation Approach
+- **Direct string building**: Used `strings.Builder` instead of templates (simpler for this use case)
+- **OpenAPI schema parsing**: Converted OpenAPI Schema to TypeScript types recursively
+- **Type mapping**: string→string, integer/number→number, boolean→boolean, array→T[], object→Record<string,any>
+- **Enum handling**: Generated union types for enum fields (e.g., `'user' | 'admin'`)
+- **Optional fields**: Used `?` for non-required fields based on OpenAPI `required` array
+
+### Client Initialization Pattern
+- **Two-phase initialization**: Declare properties, then initialize in constructor
+- **Reason**: Avoid "property used before initialization" TypeScript error
+- **Pattern**: Properties declared as `public collections: {...}`, initialized in constructor with `this.collections = {...}`
+- **Header injection**: `getHeaders()` method passed as arrow function to resource clients for auth token
+
+### TypeScript Configuration
+- **Target**: ES2020 for modern JavaScript features
+- **Lib**: ES2020 + DOM for fetch API and URLSearchParams
+- **Dependencies**: @types/node for process.env in context.ts
+- **File permissions**: 0600 for all generated files (gosec compliance)
+
+### Linter Fixes
+- **File permissions**: Changed from 0644 to 0600 (gosec G306)
+- **Redundant if-return**: Simplified error returns (revive)
+- **Unused parameter**: Used `_` for unused `collections` parameter (unparam)
+- **String constant**: Extracted "number" to `tsTypeNumber` constant (goconst)
+
+### Verification Results
+- ✅ `alyx generate sdk --output ./sdk` works
+- ✅ Generated SDK compiles with `npx tsc` (zero errors)
+- ✅ All files generated correctly (13 TypeScript files + package.json + tsconfig.json)
+- ✅ Compiled output in dist/ with .js and .d.ts files
+- ✅ No new test failures (pre-existing race in events package unrelated)
+
+### Generated Code Example
+```typescript
+// client.ts
+export class AlyxClient {
+  private config: AlyxConfig;
+  public collections: {
+    users: CollectionClient<Users, UsersInput>;
+    posts: CollectionClient<Posts, PostsInput>;
+  };
+  public auth: AuthClient;
+  public functions: FunctionsClient;
+  public events: EventsClient;
+
+  constructor(config: AlyxConfig) {
+    this.config = config;
+    this.collections = {
+      users: new CollectionClient<Users, UsersInput>(this.config.url, 'users', () => this.getHeaders()),
+      posts: new CollectionClient<Posts, PostsInput>(this.config.url, 'posts', () => this.getHeaders()),
+    };
+    this.auth = new AuthClient(this.config.url, () => this.getHeaders());
+    this.functions = new FunctionsClient(this.config.url, () => this.getHeaders());
+    this.events = new EventsClient(this.config.url, () => this.getHeaders());
+  }
+
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (this.config.token) {
+      headers['Authorization'] = `Bearer ${this.config.token}`;
+    }
+    return headers;
+  }
+}
+
+// context.ts (for function runtime)
+export function getContext(): FunctionContext {
+  const config: AlyxConfig = {
+    url: process.env.ALYX_URL || 'http://localhost:8090',
+    token: process.env.ALYX_INTERNAL_TOKEN,
+  };
+
+  let auth: User | null = null;
+  if (process.env.ALYX_AUTH) {
+    try {
+      auth = JSON.parse(process.env.ALYX_AUTH);
+    } catch (e) {
+      console.error('Failed to parse ALYX_AUTH:', e);
+    }
+  }
+
+  return {
+    alyx: new AlyxClient(config),
+    auth,
+    env: process.env as Record<string, string | undefined>,
+  };
+}
+```
+
+### Usage Example
+```typescript
+import { AlyxClient } from './sdk';
+
+const client = new AlyxClient({
+  url: 'http://localhost:8090',
+  token: 'your-access-token',
+});
+
+// Create document
+const user = await client.collections.users.create({
+  email: 'user@example.com',
+  name: 'John Doe',
+});
+
+// Invoke function
+const result = await client.functions.invoke('hello', {
+  input: { name: 'World' },
+});
+```
+
+### Key Learnings
+1. **Template-free generation**: String building is simpler than templates for structured code generation
+2. **TypeScript initialization order**: Properties must be declared before use in constructor
+3. **OpenAPI to TypeScript**: Recursive schema conversion handles nested types and references
+4. **File permissions**: Generated files should use 0600 for security (gosec requirement)
+5. **DOM lib required**: TypeScript needs DOM lib for fetch API even in Node.js projects
+6. **@types/node required**: process.env requires @types/node package
+
+### Future Improvements
+- Add SDK tests (integration tests with mock server)
+- Generate JSDoc comments from OpenAPI descriptions
+- Support custom type mappings (e.g., Date for timestamp fields)
+- Add retry logic and error handling to resource clients
+- Generate Zod schemas for runtime validation
+- Support streaming responses for large collections

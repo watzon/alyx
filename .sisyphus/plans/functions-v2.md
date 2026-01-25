@@ -795,7 +795,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 12. Implement TypeScript SDK generator
+- [x] 12. Implement TypeScript SDK generator
 
   **What to do**:
   - Create `cmd/alyx/generate/sdk.go` for SDK generation command
