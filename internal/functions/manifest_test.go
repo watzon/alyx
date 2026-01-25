@@ -472,13 +472,13 @@ dependencies:
 
 func TestManifest_BuildConfig_Valid(t *testing.T) {
 	manifest := &Manifest{
-		Name:    "wasm-function",
-		Runtime: "wasm",
+		Name:    "node-function",
+		Runtime: "node",
 		Build: &BuildConfig{
-			Command: "extism-js",
-			Args:    []string{"src/index.js", "-o", "plugin.wasm"},
-			Watch:   []string{"src/**/*.js"},
-			Output:  "plugin.wasm",
+			Command: "tsc",
+			Args:    []string{"src/index.ts", "--outDir", "dist"},
+			Watch:   []string{"src/**/*.ts"},
+			Output:  "dist/index.js",
 		},
 	}
 
@@ -489,10 +489,10 @@ func TestManifest_BuildConfig_Valid(t *testing.T) {
 
 func TestManifest_BuildConfig_MissingCommand(t *testing.T) {
 	manifest := &Manifest{
-		Name:    "wasm-function",
-		Runtime: "wasm",
+		Name:    "node-function",
+		Runtime: "node",
 		Build: &BuildConfig{
-			Output: "plugin.wasm",
+			Output: "dist/index.js",
 		},
 	}
 
@@ -507,10 +507,10 @@ func TestManifest_BuildConfig_MissingCommand(t *testing.T) {
 
 func TestManifest_BuildConfig_MissingOutput(t *testing.T) {
 	manifest := &Manifest{
-		Name:    "wasm-function",
-		Runtime: "wasm",
+		Name:    "node-function",
+		Runtime: "node",
 		Build: &BuildConfig{
-			Command: "extism-js",
+			Command: "tsc",
 		},
 	}
 
@@ -523,14 +523,25 @@ func TestManifest_BuildConfig_MissingOutput(t *testing.T) {
 	}
 }
 
-func TestManifest_Runtime_Wasm(t *testing.T) {
+func TestManifest_Runtime_Deno(t *testing.T) {
 	manifest := &Manifest{
-		Name:    "wasm-function",
-		Runtime: "wasm",
+		Name:    "deno-function",
+		Runtime: "deno",
 	}
 
 	if err := manifest.Validate(); err != nil {
-		t.Errorf("expected wasm runtime to be valid, got error: %v", err)
+		t.Errorf("expected deno runtime to be valid, got error: %v", err)
+	}
+}
+
+func TestManifest_Runtime_Bun(t *testing.T) {
+	manifest := &Manifest{
+		Name:    "bun-function",
+		Runtime: "bun",
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Errorf("expected bun runtime to be valid, got error: %v", err)
 	}
 }
 
@@ -623,13 +634,13 @@ func TestBuildConfig_Validate(t *testing.T) {
 
 func TestManifest_YAML_WithBuildConfig(t *testing.T) {
 	yamlContent := `
-name: my-wasm-function
-runtime: wasm
+name: my-node-function
+runtime: node
 build:
-  command: extism-js
-  args: ["src/index.js", "-i", "src/index.d.ts", "-o", "plugin.wasm"]
-  watch: ["src/**/*.js", "src/**/*.ts"]
-  output: plugin.wasm
+  command: tsc
+  args: ["src/index.ts", "--outDir", "dist", "--declaration"]
+  watch: ["src/**/*.ts"]
+  output: dist/index.js
 hooks:
   - type: database
     source: users
@@ -645,31 +656,31 @@ hooks:
 		t.Fatalf("validation failed: %v", err)
 	}
 
-	if manifest.Name != "my-wasm-function" {
-		t.Errorf("expected name 'my-wasm-function', got %s", manifest.Name)
+	if manifest.Name != "my-node-function" {
+		t.Errorf("expected name 'my-node-function', got %s", manifest.Name)
 	}
 
-	if manifest.Runtime != "wasm" {
-		t.Errorf("expected runtime 'wasm', got %s", manifest.Runtime)
+	if manifest.Runtime != "node" {
+		t.Errorf("expected runtime 'node', got %s", manifest.Runtime)
 	}
 
 	if manifest.Build == nil {
 		t.Fatal("expected build config, got nil")
 	}
 
-	if manifest.Build.Command != "extism-js" {
-		t.Errorf("expected command 'extism-js', got %s", manifest.Build.Command)
+	if manifest.Build.Command != "tsc" {
+		t.Errorf("expected command 'tsc', got %s", manifest.Build.Command)
 	}
 
-	if manifest.Build.Output != "plugin.wasm" {
-		t.Errorf("expected output 'plugin.wasm', got %s", manifest.Build.Output)
+	if manifest.Build.Output != "dist/index.js" {
+		t.Errorf("expected output 'dist/index.js', got %s", manifest.Build.Output)
 	}
 
-	if len(manifest.Build.Args) != 5 {
-		t.Errorf("expected 5 args, got %d", len(manifest.Build.Args))
+	if len(manifest.Build.Args) != 4 {
+		t.Errorf("expected 4 args, got %d", len(manifest.Build.Args))
 	}
 
-	if len(manifest.Build.Watch) != 2 {
-		t.Errorf("expected 2 watch patterns, got %d", len(manifest.Build.Watch))
+	if len(manifest.Build.Watch) != 1 {
+		t.Errorf("expected 1 watch pattern, got %d", len(manifest.Build.Watch))
 	}
 }

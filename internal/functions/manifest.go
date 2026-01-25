@@ -285,11 +285,12 @@ func validateRuntime(runtime string) error {
 		"node":   true,
 		"python": true,
 		"go":     true,
-		"wasm":   true,
+		"deno":   true,
+		"bun":    true,
 	}
 
 	if !validRuntimes[runtime] {
-		return fmt.Errorf("invalid runtime: %s (must be node, python, go, or wasm)", runtime)
+		return fmt.Errorf("invalid runtime: %s (must be node, python, go, deno, or bun)", runtime)
 	}
 
 	return nil

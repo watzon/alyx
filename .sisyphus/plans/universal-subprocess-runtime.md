@@ -171,7 +171,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 2. Update Runtime Type Definitions
+- [x] 2. Update Runtime Type Definitions
 
   **What to do**:
   - Remove `RuntimeWasm` constant from `types.go`
@@ -419,7 +419,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 8. Update Manifest Validation
+- [x] 8. Update Manifest Validation
 
   **What to do**:
   - Update `validateRuntime()` in `manifest.go`
