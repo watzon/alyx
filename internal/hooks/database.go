@@ -131,7 +131,7 @@ func (t *DatabaseHookTrigger) executeHooks(ctx context.Context, eventType, sourc
 }
 
 // executeSyncHook executes a synchronous hook with timeout.
-func (t *DatabaseHookTrigger) executeSyncHook(ctx context.Context, hook *Hook, payload any) error {
+func (t *DatabaseHookTrigger) executeSyncHook(ctx context.Context, hook *Hook, _ any) error {
 	// Set timeout (default 5s)
 	timeout := hook.Config.Timeout
 	if timeout == 0 {

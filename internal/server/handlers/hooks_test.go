@@ -14,6 +14,7 @@ import (
 	"github.com/watzon/alyx/internal/hooks"
 )
 
+//nolint:unparam // Returns all components for flexibility in different tests
 func testHookDB(t *testing.T) (*database.DB, *hooks.Registry) {
 	t.Helper()
 

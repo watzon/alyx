@@ -3,7 +3,6 @@ package executions
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -157,6 +156,8 @@ func (s *Store) Get(ctx context.Context, id string) (*ExecutionLog, error) {
 }
 
 // List retrieves execution logs with filters.
+//
+//nolint:gocyclo // Filter building requires multiple conditionals
 func (s *Store) List(ctx context.Context, filters map[string]any, limit, offset int) ([]*ExecutionLog, error) {
 	query := `
 		SELECT id, function_id, request_id, trigger_type, trigger_id,
@@ -280,16 +281,4 @@ func (s *Store) DeleteOlderThan(ctx context.Context, duration time.Duration) err
 	}
 
 	return nil
-}
-
-// serializeLogs converts log entries to JSON string.
-func serializeLogs(logs []map[string]any) string {
-	if len(logs) == 0 {
-		return "[]"
-	}
-	data, err := json.Marshal(logs)
-	if err != nil {
-		return "[]"
-	}
-	return string(data)
 }

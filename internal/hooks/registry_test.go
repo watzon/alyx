@@ -304,8 +304,8 @@ func TestRegistry_FindByEvent_Priority(t *testing.T) {
 	}
 
 	for _, hook := range hooks {
-		err := registry.Register(ctx, hook)
-		require.NoError(t, err)
+		regErr := registry.Register(ctx, hook)
+		require.NoError(t, regErr)
 	}
 
 	// Find by event
@@ -368,8 +368,8 @@ func TestRegistry_FindByFunction(t *testing.T) {
 	}
 
 	for _, hook := range hooks {
-		err := registry.Register(ctx, hook)
-		require.NoError(t, err)
+		regErr := registry.Register(ctx, hook)
+		require.NoError(t, regErr)
 	}
 
 	// Find by function
@@ -424,8 +424,8 @@ func TestRegistry_List(t *testing.T) {
 	}
 
 	for _, hook := range hooks {
-		err := registry.Register(ctx, hook)
-		require.NoError(t, err)
+		regErr := registry.Register(ctx, hook)
+		require.NoError(t, regErr)
 	}
 
 	// List all hooks

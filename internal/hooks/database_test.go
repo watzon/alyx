@@ -58,6 +58,7 @@ collections:
 	return s
 }
 
+//nolint:unparam // Returns all components for flexibility in different tests
 func setupTestEnvironment(t *testing.T) (*database.DB, *Registry, *events.EventBus, *DatabaseHookTrigger) {
 	t.Helper()
 

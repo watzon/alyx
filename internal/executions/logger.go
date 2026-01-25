@@ -167,7 +167,7 @@ func (l *ExecutionLogger) WrapExecution(
 	status := ExecutionStatusSuccess
 	var outputJSON string
 	var errorMsg string
-	var logsJSON string = "[]"
+	logsJSON := "[]"
 
 	if execErr != nil {
 		status = ExecutionStatusFailed

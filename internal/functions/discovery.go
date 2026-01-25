@@ -225,9 +225,10 @@ func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error
 		log.Debug().Str("function", functionID).Int("count", len(funcDef.Schedules)).Msg("Auto-registered schedules")
 	}
 
+	const hookTypeWebhook = "webhook"
 	webhookHooks := make([]HookConfig, 0)
 	for _, hook := range funcDef.Hooks {
-		if hook.Type == "webhook" {
+		if hook.Type == hookTypeWebhook {
 			webhookHooks = append(webhookHooks, hook)
 		}
 	}

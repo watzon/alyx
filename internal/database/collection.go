@@ -195,6 +195,7 @@ func (c *Collection) Create(ctx context.Context, data Row) (Row, error) {
 	return doc, nil
 }
 
+//nolint:gocyclo // CRUD operations require validation and hook handling
 func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, error) {
 	pk := c.schema.PrimaryKeyField()
 	if pk == nil {
@@ -242,7 +243,7 @@ func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, erro
 		return nil, fmt.Errorf("updating document: %w", err)
 	}
 
-	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+	if affected, affectedErr := result.RowsAffected(); affectedErr == nil && affected == 0 {
 		return nil, ErrNotFound
 	}
 

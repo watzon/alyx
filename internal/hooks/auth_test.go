@@ -14,6 +14,7 @@ import (
 	"github.com/watzon/alyx/internal/events"
 )
 
+//nolint:unparam // Returns all components for flexibility in different tests
 func testAuthSetup(t *testing.T) (*auth.Service, *AuthHookTrigger, *events.EventBus, *database.DB) {
 	t.Helper()
 

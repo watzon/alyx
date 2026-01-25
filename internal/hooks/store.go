@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -129,7 +130,7 @@ func (s *Store) Get(ctx context.Context, hookID string) (*Hook, error) {
 
 	hook, err := s.scanHook(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("hook not found: %s", hookID)
 		}
 		return nil, fmt.Errorf("getting hook: %w", err)
@@ -221,8 +222,8 @@ func (s *Store) scanHook(row *sql.Row) (*Hook, error) {
 	}
 
 	// Deserialize config
-	if err := json.Unmarshal([]byte(configJSON), &hook.Config); err != nil {
-		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	if unmarshalErr := json.Unmarshal([]byte(configJSON), &hook.Config); unmarshalErr != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", unmarshalErr)
 	}
 
 	// Parse mode
@@ -277,8 +278,8 @@ func (s *Store) scanHooks(rows *sql.Rows) ([]*Hook, error) {
 		}
 
 		// Deserialize config
-		if err := json.Unmarshal([]byte(configJSON), &hook.Config); err != nil {
-			return nil, fmt.Errorf("unmarshaling config: %w", err)
+		if unmarshalErr := json.Unmarshal([]byte(configJSON), &hook.Config); unmarshalErr != nil {
+			return nil, fmt.Errorf("unmarshaling config: %w", unmarshalErr)
 		}
 
 		// Parse mode

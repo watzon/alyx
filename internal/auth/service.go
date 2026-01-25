@@ -116,8 +116,8 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, *To
 	log.Info().Str("user_id", user.ID).Str("email", user.Email).Msg("User registered")
 
 	if s.hookTrigger != nil {
-		if err := s.hookTrigger.OnSignup(ctx, user, nil); err != nil {
-			log.Error().Err(err).Str("user_id", user.ID).Msg("Signup hook failed")
+		if hookErr := s.hookTrigger.OnSignup(ctx, user, nil); hookErr != nil {
+			log.Error().Err(hookErr).Str("user_id", user.ID).Msg("Signup hook failed")
 		}
 	}
 
@@ -160,8 +160,8 @@ func (s *Service) Login(ctx context.Context, input LoginInput, userAgent, ipAddr
 			"ip":         ipAddress,
 			"user_agent": userAgent,
 		}
-		if err := s.hookTrigger.OnLogin(ctx, user, metadata); err != nil {
-			log.Error().Err(err).Str("user_id", user.ID).Msg("Login hook failed")
+		if hookErr := s.hookTrigger.OnLogin(ctx, user, metadata); hookErr != nil {
+			log.Error().Err(hookErr).Str("user_id", user.ID).Msg("Login hook failed")
 		}
 	}
 

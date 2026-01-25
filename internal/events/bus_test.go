@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -390,9 +391,9 @@ func TestEventBus_StartStop(t *testing.T) {
 	bus := NewEventBus(db, nil)
 	ctx := context.Background()
 
-	var handlerCalled bool
+	var handlerCalled atomic.Bool
 	handler := func(ctx context.Context, event *Event) error {
-		handlerCalled = true
+		handlerCalled.Store(true)
 		return nil
 	}
 
@@ -420,7 +421,7 @@ func TestEventBus_StartStop(t *testing.T) {
 	// Wait for background processing
 	time.Sleep(200 * time.Millisecond)
 
-	require.True(t, handlerCalled)
+	require.True(t, handlerCalled.Load())
 
 	// Stop bus
 	bus.Stop()

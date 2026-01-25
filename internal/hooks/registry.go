@@ -81,7 +81,7 @@ func (r *Registry) FindByEvent(ctx context.Context, eventType, source, action st
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var matches []*Hook
+	matches := make([]*Hook, 0)
 
 	// Iterate through cache and match hooks
 	for _, hook := range r.cache {
