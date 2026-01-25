@@ -101,19 +101,17 @@ func (r *Registry) Discover() error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
-			// Skip directories (could be _shared or node_modules)
+		if !entry.IsDir() {
 			continue
 		}
 
 		name := entry.Name()
 
-		// Skip hidden files and shared modules
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "node_modules" {
 			continue
 		}
 
-		funcDef, err := r.parseFunction(name)
+		funcDef, err := r.parseFunctionDirectory(name)
 		if errors.Is(err, errNotAFunction) {
 			continue
 		}
@@ -134,26 +132,22 @@ func (r *Registry) Discover() error {
 	return nil
 }
 
-func (r *Registry) parseFunction(filename string) (*FunctionDef, error) {
-	ext := filepath.Ext(filename)
-	baseName := strings.TrimSuffix(filename, ext)
+func (r *Registry) parseFunctionDirectory(dirName string) (*FunctionDef, error) {
+	dirPath := filepath.Join(r.functionsDir, dirName)
 
-	runtime := detectRuntime(ext)
-	if runtime == "" {
+	entryFile, runtime := r.findEntryFile(dirPath)
+	if entryFile == "" {
 		return nil, errNotAFunction
 	}
 
-	funcPath := filepath.Join(r.functionsDir, filename)
-
 	funcDef := &FunctionDef{
-		Name:    baseName,
+		Name:    dirName,
 		Runtime: runtime,
-		Path:    funcPath,
+		Path:    entryFile,
 		Env:     make(map[string]string),
 	}
 
-	// Try to load manifest file
-	manifestPath := filepath.Join(r.functionsDir, baseName+".yaml")
+	manifestPath := filepath.Join(dirPath, "manifest.yaml")
 	if _, err := os.Stat(manifestPath); err == nil {
 		if err := r.loadManifest(funcDef, manifestPath); err != nil {
 			return nil, fmt.Errorf("loading manifest: %w", err)
@@ -162,6 +156,29 @@ func (r *Registry) parseFunction(filename string) (*FunctionDef, error) {
 	}
 
 	return funcDef, nil
+}
+
+func (r *Registry) findEntryFile(dirPath string) (string, Runtime) {
+	candidates := []struct {
+		name    string
+		runtime Runtime
+	}{
+		{"index.js", RuntimeNode},
+		{"index.mjs", RuntimeNode},
+		{"index.cjs", RuntimeNode},
+		{"index.py", RuntimePython},
+		{"main.go", RuntimeGo},
+		{"index.go", RuntimeGo},
+	}
+
+	for _, c := range candidates {
+		path := filepath.Join(dirPath, c.name)
+		if _, err := os.Stat(path); err == nil {
+			return path, c.runtime
+		}
+	}
+
+	return "", ""
 }
 
 // loadManifest loads a function manifest file.

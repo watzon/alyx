@@ -7,20 +7,36 @@ import (
 	"testing"
 )
 
+func createFunctionDir(t *testing.T, baseDir, name, entryFile, code string) {
+	t.Helper()
+	funcDir := filepath.Join(baseDir, name)
+	if err := os.MkdirAll(funcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(funcDir, entryFile), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createFunctionDirWithManifest(t *testing.T, baseDir, name, entryFile, code, manifest string) {
+	t.Helper()
+	createFunctionDir(t, baseDir, name, entryFile, code)
+	funcDir := filepath.Join(baseDir, name)
+	if err := os.WriteFile(filepath.Join(funcDir, "manifest.yaml"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRegistry_Discover(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create test function files
-	if err := os.WriteFile(filepath.Join(dir, "hello.js"), []byte("module.exports = {}"), 0644); err != nil {
+	createFunctionDir(t, dir, "hello", "index.js", "module.exports = {}")
+	createFunctionDir(t, dir, "greet", "index.py", "default = {}")
+
+	if err := os.MkdirAll(filepath.Join(dir, "_shared"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "greet.py"), []byte("default = {}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "_shared.js"), []byte("// shared"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".hidden.js"), []byte("// hidden"), 0644); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".hidden"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,19 +64,16 @@ func TestRegistry_Discover(t *testing.T) {
 	}
 
 	if _, ok := registry.Get("_shared"); ok {
-		t.Error("should not discover files starting with underscore")
+		t.Error("should not discover directories starting with underscore")
 	}
 	if _, ok := registry.Get(".hidden"); ok {
-		t.Error("should not discover hidden files")
+		t.Error("should not discover hidden directories")
 	}
 }
 
 func TestRegistry_DiscoverWithManifest(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "compute.js"), []byte("module.exports = {}"), 0644); err != nil {
-		t.Fatal(err)
-	}
 	manifest := `
 name: compute
 runtime: node
@@ -69,9 +82,7 @@ memory: 512mb
 env:
   API_KEY: test-key
 `
-	if err := os.WriteFile(filepath.Join(dir, "compute.yaml"), []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	createFunctionDirWithManifest(t, dir, "compute", "index.js", "module.exports = {}", manifest)
 
 	registry := NewRegistry(dir)
 	if err := registry.Discover(); err != nil {
@@ -124,15 +135,9 @@ func TestRegistry_NonExistentDirectory(t *testing.T) {
 func TestRegistry_GetByRuntime(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "a.js"), []byte(""), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "b.js"), []byte(""), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "c.py"), []byte(""), 0644); err != nil {
-		t.Fatal(err)
-	}
+	createFunctionDir(t, dir, "a", "index.js", "")
+	createFunctionDir(t, dir, "b", "index.js", "")
+	createFunctionDir(t, dir, "c", "index.py", "")
 
 	registry := NewRegistry(dir)
 	if err := registry.Discover(); err != nil {
@@ -276,15 +281,7 @@ schedules:
     timezone: UTC
 `
 
-	manifestPath := filepath.Join(tmpDir, "test-function.yaml")
-	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
-	}
-
-	functionPath := filepath.Join(tmpDir, "test-function.js")
-	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
-		t.Fatalf("failed to write function: %v", err)
-	}
+	createFunctionDirWithManifest(t, tmpDir, "test-function", "index.js", "export default function() {}", manifestYAML)
 
 	registry := NewRegistry(tmpDir)
 	registrar := newMockRegistrar()
@@ -348,15 +345,7 @@ env:
   API_KEY: secret
 `
 
-	manifestPath := filepath.Join(tmpDir, "legacy-function.yaml")
-	if err := os.WriteFile(manifestPath, []byte(legacyManifestYAML), 0o600); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
-	}
-
-	functionPath := filepath.Join(tmpDir, "legacy-function.py")
-	if err := os.WriteFile(functionPath, []byte("def handler(req, res): pass"), 0o600); err != nil {
-		t.Fatalf("failed to write function: %v", err)
-	}
+	createFunctionDirWithManifest(t, tmpDir, "legacy-function", "index.py", "def handler(req, res): pass", legacyManifestYAML)
 
 	registry := NewRegistry(tmpDir)
 	registrar := newMockRegistrar()
@@ -422,15 +411,7 @@ hooks:
     mode: async
 `
 
-	manifestPath := filepath.Join(tmpDir, "test-function.yaml")
-	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
-	}
-
-	functionPath := filepath.Join(tmpDir, "test-function.js")
-	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
-		t.Fatalf("failed to write function: %v", err)
-	}
+	createFunctionDirWithManifest(t, tmpDir, "test-function", "index.js", "export default function() {}", manifestYAML)
 
 	registry := NewRegistry(tmpDir)
 
@@ -456,15 +437,7 @@ name: invalid-function
 runtime: invalid-runtime
 `
 
-	manifestPath := filepath.Join(tmpDir, "invalid-function.yaml")
-	if err := os.WriteFile(manifestPath, []byte(invalidManifestYAML), 0o600); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
-	}
-
-	functionPath := filepath.Join(tmpDir, "invalid-function.js")
-	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
-		t.Fatalf("failed to write function: %v", err)
-	}
+	createFunctionDirWithManifest(t, tmpDir, "invalid-function", "index.js", "export default function() {}", invalidManifestYAML)
 
 	registry := NewRegistry(tmpDir)
 
@@ -502,15 +475,7 @@ hooks:
       secret: secret
 `
 
-	manifestPath := filepath.Join(tmpDir, "multi-hook.yaml")
-	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
-	}
-
-	functionPath := filepath.Join(tmpDir, "multi-hook.js")
-	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
-		t.Fatalf("failed to write function: %v", err)
-	}
+	createFunctionDirWithManifest(t, tmpDir, "multi-hook", "index.js", "export default function() {}", manifestYAML)
 
 	registry := NewRegistry(tmpDir)
 	registrar := newMockRegistrar()
@@ -538,5 +503,26 @@ hooks:
 
 	if webhooks[0].Type != "webhook" {
 		t.Errorf("expected webhook type, got %s", webhooks[0].Type)
+	}
+}
+
+func TestRegistry_DirectoryWithNoEntryFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	funcDir := filepath.Join(tmpDir, "no-entry")
+	if err := os.MkdirAll(funcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(funcDir, "readme.txt"), []byte("not a function"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := NewRegistry(tmpDir)
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	if registry.Count() != 0 {
+		t.Errorf("expected 0 functions, got %d", registry.Count())
 	}
 }

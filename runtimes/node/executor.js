@@ -23,41 +23,58 @@ const functionCache = new Map();
  * @returns {Promise<object>} The function definition
  */
 async function loadFunction(name) {
-  // Check cache first
   if (functionCache.has(name)) {
     return functionCache.get(name);
   }
 
-  // Try different file extensions
-  const extensions = [".js", ".mjs", ".cjs"];
-  let functionPath = null;
-
-  for (const ext of extensions) {
-    const testPath = path.join(FUNCTIONS_DIR, `${name}${ext}`);
-    if (fs.existsSync(testPath)) {
-      functionPath = testPath;
-      break;
-    }
-  }
-
+  const functionPath = findFunctionEntry(name);
   if (!functionPath) {
     throw new Error(`Function '${name}' not found`);
   }
 
-  // Import the function module
   const moduleUrl = pathToFileURL(functionPath).href;
   const module = await import(moduleUrl);
 
-  // Get the function definition (default export)
   const functionDef = module.default;
-  if (!functionDef || typeof functionDef.handler !== "function") {
-    throw new Error(`Function '${name}' does not export a valid function definition`);
+  if (!functionDef) {
+    throw new Error(`Function '${name}' does not export a default`);
   }
 
-  // Cache the function
-  functionCache.set(name, functionDef);
+  if (typeof functionDef === "function") {
+    functionCache.set(name, { handler: functionDef });
+    return { handler: functionDef };
+  }
 
+  if (typeof functionDef.handler !== "function" && typeof functionDef !== "function") {
+    throw new Error(`Function '${name}' does not export a valid handler`);
+  }
+
+  functionCache.set(name, functionDef);
   return functionDef;
+}
+
+function findFunctionEntry(name) {
+  const entryFiles = ["index.js", "index.mjs", "index.cjs"];
+  const directFiles = [`${name}.js`, `${name}.mjs`, `${name}.cjs`];
+
+  const funcDir = path.join(FUNCTIONS_DIR, name);
+  if (fs.existsSync(funcDir) && fs.statSync(funcDir).isDirectory()) {
+    for (const entry of entryFiles) {
+      const testPath = path.join(funcDir, entry);
+      if (fs.existsSync(testPath)) {
+        return testPath;
+      }
+    }
+  }
+
+  for (const file of directFiles) {
+    const testPath = path.join(FUNCTIONS_DIR, file);
+    if (fs.existsSync(testPath)) {
+      return testPath;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -143,11 +160,16 @@ function handleListFunctions(res) {
       return;
     }
 
-    const files = fs.readdirSync(FUNCTIONS_DIR);
-    const functions = files
-      .filter((f) => f.endsWith(".js") || f.endsWith(".mjs") || f.endsWith(".cjs"))
-      .filter((f) => !f.startsWith("_")) // Exclude shared modules
-      .map((f) => path.basename(f, path.extname(f)));
+    const entries = fs.readdirSync(FUNCTIONS_DIR, { withFileTypes: true });
+    const functions = entries
+      .filter((e) => !e.name.startsWith("_") && !e.name.startsWith("."))
+      .filter((e) => {
+        if (e.isDirectory()) {
+          return findFunctionEntry(e.name) !== null;
+        }
+        return e.name.endsWith(".js") || e.name.endsWith(".mjs") || e.name.endsWith(".cjs");
+      })
+      .map((e) => (e.isDirectory() ? e.name : path.basename(e.name, path.extname(e.name))));
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ functions }));

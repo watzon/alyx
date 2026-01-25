@@ -29,18 +29,30 @@ FUNCTIONS_DIR = Path(os.environ.get("FUNCTIONS_DIR", "/functions"))
 function_cache: dict[str, FunctionDefinition] = {}
 
 
+def find_function_entry(name: str) -> Path | None:
+    """Find the entry file for a function (supports nested directories)."""
+    func_dir = FUNCTIONS_DIR / name
+    if func_dir.is_dir():
+        index_path = func_dir / "index.py"
+        if index_path.exists():
+            return index_path
+
+    direct_path = FUNCTIONS_DIR / f"{name}.py"
+    if direct_path.exists():
+        return direct_path
+
+    return None
+
+
 def load_function(name: str) -> FunctionDefinition:
     """Load a function module from the functions directory."""
-    # Check cache first
     if name in function_cache:
         return function_cache[name]
 
-    # Find the function file
-    function_path = FUNCTIONS_DIR / f"{name}.py"
-    if not function_path.exists():
+    function_path = find_function_entry(name)
+    if function_path is None:
         raise FileNotFoundError(f"Function '{name}' not found")
 
-    # Load the module
     spec = importlib.util.spec_from_file_location(name, function_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load function '{name}'")
@@ -49,7 +61,6 @@ def load_function(name: str) -> FunctionDefinition:
     sys.modules[name] = module
     spec.loader.exec_module(module)
 
-    # Get the function definition (default export)
     if not hasattr(module, "default"):
         raise ValueError(
             f"Function '{name}' does not export a 'default' FunctionDefinition"
@@ -61,9 +72,7 @@ def load_function(name: str) -> FunctionDefinition:
             f"Function '{name}' default export is not a FunctionDefinition"
         )
 
-    # Cache the function
     function_cache[name] = function_def
-
     return function_def
 
 
@@ -162,9 +171,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_json_response(200, {"functions": []})
                 return
 
-            functions = [
-                f.stem for f in FUNCTIONS_DIR.glob("*.py") if not f.name.startswith("_")
-            ]
+            functions = []
+            for entry in FUNCTIONS_DIR.iterdir():
+                if entry.name.startswith("_") or entry.name.startswith("."):
+                    continue
+                if entry.is_dir():
+                    if find_function_entry(entry.name) is not None:
+                        functions.append(entry.name)
+                elif entry.suffix == ".py":
+                    functions.append(entry.stem)
 
             self.send_json_response(200, {"functions": functions})
         except Exception as e:
