@@ -16,12 +16,26 @@ const internalTokenTTL = 5 * time.Minute
 
 // Service manages function execution.
 type Service struct {
-	registry    *Registry
-	poolManager *PoolManager
-	cfg         *config.FunctionsConfig
-	hostNetwork string
-	serverPort  int
-	tokenStore  *InternalTokenStore
+	registry        *Registry
+	poolManager     *PoolManager
+	cfg             *config.FunctionsConfig
+	hostNetwork     string
+	serverPort      int
+	tokenStore      *InternalTokenStore
+	executionLogger ExecutionLogger
+}
+
+// ExecutionLogger defines the interface for logging function executions.
+type ExecutionLogger interface {
+	WrapExecution(
+		ctx context.Context,
+		functionID string,
+		requestID string,
+		triggerType string,
+		triggerID string,
+		input map[string]any,
+		execute func() (*FunctionResponse, error),
+	) (*FunctionResponse, error)
 }
 
 // ServiceConfig holds configuration for the function service.
@@ -73,11 +87,12 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 	tokenStore := NewInternalTokenStore(internalTokenTTL)
 
 	return &Service{
-		registry:    registry,
-		poolManager: poolManager,
-		cfg:         cfg.Config,
-		serverPort:  cfg.ServerPort,
-		tokenStore:  tokenStore,
+		registry:        registry,
+		poolManager:     poolManager,
+		cfg:             cfg.Config,
+		serverPort:      cfg.ServerPort,
+		tokenStore:      tokenStore,
+		executionLogger: nil,
 	}, nil
 }
 
@@ -90,8 +105,18 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
+// SetExecutionLogger sets the execution logger for the service.
+func (s *Service) SetExecutionLogger(logger ExecutionLogger) {
+	s.executionLogger = logger
+}
+
 // Invoke executes a function by name.
 func (s *Service) Invoke(ctx context.Context, name string, input map[string]any, auth *AuthContext) (*FunctionResponse, error) {
+	return s.InvokeWithTrigger(ctx, name, input, auth, "http", "")
+}
+
+// InvokeWithTrigger executes a function with trigger information for logging.
+func (s *Service) InvokeWithTrigger(ctx context.Context, name string, input map[string]any, auth *AuthContext, triggerType, triggerID string) (*FunctionResponse, error) {
 	// Look up function
 	funcDef, ok := s.registry.Get(name)
 	if !ok {
@@ -128,7 +153,20 @@ func (s *Service) Invoke(ctx context.Context, name string, input map[string]any,
 		Str("alyx_url", req.Context.AlyxURL).
 		Msg("Invoking function")
 
-	// Invoke via pool
+	if s.executionLogger != nil {
+		return s.executionLogger.WrapExecution(
+			invokeCtx,
+			name,
+			req.RequestID,
+			triggerType,
+			triggerID,
+			input,
+			func() (*FunctionResponse, error) {
+				return s.poolManager.Invoke(invokeCtx, funcDef.Runtime, req)
+			},
+		)
+	}
+
 	resp, err := s.poolManager.Invoke(invokeCtx, funcDef.Runtime, req)
 	if err != nil {
 		return nil, fmt.Errorf("invoking function: %w", err)

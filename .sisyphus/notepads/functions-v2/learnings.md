@@ -443,3 +443,87 @@ All migrations execute successfully and tests pass.
 - Retry logic for failed schedules (currently relies on event bus retry)
 - Schedule pausing/resuming (currently only enable/disable)
 - Cron expression validation on create (currently fails at runtime)
+
+## [2026-01-25 01:06] Task 9: Execution Logging
+
+### Implementation Summary
+- Created `internal/executions/store.go` for database CRUD operations
+- Created `internal/executions/logger.go` with ExecutionLogger and WrapExecution pattern
+- Integrated with `internal/functions/executor.go` via interface-based dependency injection
+- Comprehensive test coverage: 16 tests passing (store, logger, integration)
+
+### Architecture Decisions
+- **Interface-based integration**: ExecutionLogger interface in functions package to avoid circular dependencies
+- **Optional logging**: Service.executionLogger is optional (nil-safe), set via SetExecutionLogger()
+- **Wrapper pattern**: WrapExecution() wraps function execution with logging lifecycle
+- **Status lifecycle**: pending → running → success/failed/timed_out/canceled
+
+### Database Patterns
+- **Timestamp storage**: RFC3339 strings in TEXT columns (consistent with events/hooks/schedules)
+- **Nullable times**: sql.NullString for completed_at (nil if still running)
+- **String scanning**: Must scan started_at into string variable, then parse to time.Time
+- **JSON serialization**: Input, output, error, logs stored as JSON strings
+
+### Execution Flow
+1. **Before execution**: Create log with status=pending, capture input
+2. **Start execution**: Update status=running
+3. **Execute function**: Measure duration, capture response
+4. **After execution**: Update status, output, error, logs, duration, completed_at
+5. **Background cleanup**: Periodic deletion of old logs (default 30 days retention)
+
+### WrapExecution Pattern
+```go
+resp, err := logger.WrapExecution(
+    ctx, functionID, requestID, triggerType, triggerID, input,
+    func() (*FunctionResponse, error) {
+        return poolManager.Invoke(ctx, runtime, req)
+    },
+)
+```
+
+### Integration Points
+- **InvokeWithTrigger**: New method on Service to pass trigger info for logging
+- **Invoke**: Calls InvokeWithTrigger with triggerType="http", triggerID=""
+- **SetExecutionLogger**: Setter method to inject logger after service creation
+
+### Store Operations
+- **Create**: Insert new execution log
+- **Update**: Update existing log (status, output, error, logs, duration, completed_at)
+- **Get**: Retrieve single log by ID
+- **List**: Query with filters (function_id, status, trigger_type, trigger_id) + pagination
+- **DeleteOlderThan**: Cleanup old completed/failed logs
+
+### Retention Cleanup
+- **Background loop**: Runs every 1 hour (configurable)
+- **Default retention**: 30 days
+- **Cleanup criteria**: Only deletes completed/failed/timed_out/canceled executions
+- **Running executions**: Never deleted (status=pending or running)
+
+### Test Coverage
+- **Store tests**: CRUD operations, filtering, pagination, cleanup (6 tests)
+- **Logger tests**: LogExecution, UpdateStatus, WrapExecution success/failure/error, cleanup, start/stop (7 tests)
+- **Integration tests**: Full execution flow, status transitions, filtering by trigger type (3 tests)
+
+### Key Learnings
+1. **Timestamp scanning gotcha**: SQLite stores timestamps as TEXT, must scan into string then parse
+2. **Interface placement**: Put interface in consumer package (functions) to avoid circular deps
+3. **Nil-safe integration**: Check `if logger != nil` before calling WrapExecution
+4. **Logs serialization**: Must pass logs to UpdateStatus separately (not part of FunctionResponse.Output)
+5. **Test isolation**: Use specific filters (request_id + trigger_type) to avoid cross-test contamination
+
+### UpdateStatus Signature
+```go
+func UpdateStatus(ctx, id, status, output, errorMsg, logs string, duration int) error
+```
+- Added `logs` parameter to preserve function logs in final update
+- Logs are serialized from FunctionResponse.Logs in WrapExecution
+
+### Pre-existing Issues
+- Event bus has data race in `TestEventBus_StartStop` (not related to executions)
+- All executions tests pass with race detection
+
+### Future Improvements
+- Add execution metrics (avg duration, success rate, etc.)
+- Implement execution replay/retry functionality
+- Add execution search by date range
+- Consider partitioning old executions to archive table
