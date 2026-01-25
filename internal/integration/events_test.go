@@ -355,7 +355,3 @@ func (m *mockFunctionService) Close() error {
 func (m *mockFunctionService) Start(ctx context.Context) error {
 	return nil
 }
-
-//nolint:unused // Required by FunctionService interface
-func (m *mockFunctionService) SetExecutionLogger(logger functions.ExecutionLogger) {
-}

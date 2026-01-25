@@ -63,6 +63,8 @@ type VerificationConfig struct {
 }
 
 // Validate validates the manifest structure.
+//
+//nolint:gocyclo // Validation logic is inherently sequential
 func (m *Manifest) Validate() error {
 	if m.Name == "" {
 		return errors.New("manifest: name is required")

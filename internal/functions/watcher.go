@@ -304,9 +304,11 @@ func (sw *SourceWatcher) executeBuild(fn *FunctionDef) {
 		Str("command", manifest.Build.Command).
 		Msg("Building function")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	const buildTimeout = 5 * time.Minute
+	ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
 	defer cancel()
 
+	//nolint:gosec // Build command is from trusted manifest file
 	cmd := exec.CommandContext(ctx, manifest.Build.Command, manifest.Build.Args...)
 	cmd.Dir = funcDir
 

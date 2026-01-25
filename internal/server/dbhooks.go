@@ -107,7 +107,7 @@ func (t *DatabaseHookTrigger) executeHooks(ctx context.Context, collection, acti
 			Msg("Executing database hook")
 
 		if hook.Mode == "sync" {
-			resp, err := t.funcService.InvokeWithTrigger(ctx, hook.FunctionName, input, nil, "database", collection+":"+action)
+			resp, err := t.funcService.Invoke(ctx, hook.FunctionName, input, nil)
 			if err != nil {
 				log.Error().Err(err).Str("function", hook.FunctionName).Msg("Sync hook failed")
 				return err
@@ -121,7 +121,7 @@ func (t *DatabaseHookTrigger) executeHooks(ctx context.Context, collection, acti
 			}
 		} else {
 			go func(hookCopy DatabaseHook) {
-				resp, err := t.funcService.InvokeWithTrigger(context.Background(), hookCopy.FunctionName, input, nil, "database", collection+":"+action)
+				resp, err := t.funcService.Invoke(context.Background(), hookCopy.FunctionName, input, nil)
 				if err != nil {
 					log.Error().Err(err).Str("function", hookCopy.FunctionName).Msg("Async hook failed")
 					return
