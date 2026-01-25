@@ -409,6 +409,13 @@ export interface SchemaRaw {
 	path: string;
 }
 
+export interface ValidateRuleResponse {
+	valid: boolean;
+	error?: string;
+	message?: string;
+	hints?: string[];
+}
+
 export interface ConfigRaw {
 	content: string;
 	path: string;
@@ -424,6 +431,9 @@ export const admin = {
 		update: (content: string) =>
 			api.put<{ success: boolean; message?: string }>('/admin/schema/raw', { content })
 	},
+
+	validateRule: (expression: string, fields?: string[]) =>
+		api.post<ValidateRuleResponse>('/admin/schema/validate-rule', { expression, fields }),
 
 	configRaw: {
 		get: () => api.get<ConfigRaw>('/admin/config/raw'),

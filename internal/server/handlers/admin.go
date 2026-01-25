@@ -3,11 +3,13 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/google/cel-go/cel"
 	"github.com/rs/zerolog/log"
 
 	"github.com/watzon/alyx/internal/auth"
@@ -902,4 +904,85 @@ func (h *AdminHandlers) ConfigRawUpdate(w http.ResponseWriter, r *http.Request) 
 		"success": true,
 		"message": "Config updated successfully. Restart the server to apply changes.",
 	})
+}
+
+// ValidateRuleRequest is the request body for CEL rule validation.
+type ValidateRuleRequest struct {
+	Expression string   `json:"expression"`
+	Fields     []string `json:"fields,omitempty"`
+}
+
+// ValidateRuleResponse is the response for CEL rule validation.
+type ValidateRuleResponse struct {
+	Valid   bool     `json:"valid"`
+	Error   string   `json:"error,omitempty"`
+	Message string   `json:"message,omitempty"`
+	Hints   []string `json:"hints,omitempty"`
+}
+
+// ValidateRule handles POST /api/admin/schema/validate-rule.
+func (h *AdminHandlers) ValidateRule(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionDeploy)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	var req ValidateRuleRequest
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	if req.Expression == "" {
+		JSON(w, http.StatusOK, ValidateRuleResponse{
+			Valid:   true,
+			Message: "Empty expression (allows all)",
+		})
+		return
+	}
+
+	validationErr := validateCELExpression(req.Expression)
+	if validationErr != nil {
+		resp := ValidateRuleResponse{
+			Valid: false,
+			Error: validationErr.Error(),
+		}
+
+		errStr := validationErr.Error()
+		if strings.Contains(errStr, "undeclared reference") {
+			resp.Hints = append(resp.Hints, "Available variables: auth, doc, request")
+			resp.Hints = append(resp.Hints, "auth fields: id, email, verified, role, metadata")
+			resp.Hints = append(resp.Hints, "request fields: method, ip")
+		}
+		if strings.Contains(errStr, "found no matching overload") {
+			resp.Hints = append(resp.Hints, "Check operator types match (e.g., comparing string to string)")
+		}
+
+		JSON(w, http.StatusOK, resp)
+		return
+	}
+
+	JSON(w, http.StatusOK, ValidateRuleResponse{
+		Valid:   true,
+		Message: "Expression is valid",
+	})
+}
+
+func validateCELExpression(expr string) error {
+	env, err := cel.NewEnv(
+		cel.Variable("auth", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("doc", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
+	)
+	if err != nil {
+		return fmt.Errorf("creating CEL environment: %w", err)
+	}
+
+	_, issues := env.Compile(expr)
+	if issues != nil && issues.Err() != nil {
+		return issues.Err()
+	}
+
+	return nil
 }

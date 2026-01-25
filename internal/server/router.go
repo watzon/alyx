@@ -149,6 +149,7 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("GET /api/admin/schema", r.wrap(adminHandlers.SchemaGet))
 		r.mux.HandleFunc("GET /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawGet))
 		r.mux.HandleFunc("PUT /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawUpdate))
+		r.mux.HandleFunc("POST /api/admin/schema/validate-rule", r.wrap(adminHandlers.ValidateRule))
 		r.mux.HandleFunc("GET /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawGet))
 		r.mux.HandleFunc("PUT /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawUpdate))
 		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
