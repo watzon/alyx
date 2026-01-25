@@ -20,6 +20,8 @@ const (
 	RuntimeDeno Runtime = "deno"
 	// RuntimeBun is the Bun runtime.
 	RuntimeBun Runtime = "bun"
+	// RuntimeBinary is the compiled binary runtime.
+	RuntimeBinary Runtime = "binary"
 )
 
 // RuntimeConfig defines the execution configuration for a runtime.

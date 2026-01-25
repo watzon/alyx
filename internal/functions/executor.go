@@ -19,6 +19,8 @@ type ServiceConfig struct {
 	Config *config.FunctionsConfig
 	// ServerPort is the port the Alyx server is running on.
 	ServerPort int
+	// DevMode indicates whether the service is running in development mode.
+	DevMode bool
 }
 
 // Service manages function execution using subprocess runtime.
@@ -30,6 +32,7 @@ type Service struct {
 	functionsDir  string
 	config        *config.FunctionsConfig
 	serverPort    int
+	devMode       bool
 }
 
 // NewService creates a new function service with subprocess runtime.
@@ -78,6 +81,7 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 		functionsDir:  cfg.FunctionsDir,
 		config:        cfg.Config,
 		serverPort:    cfg.ServerPort,
+		devMode:       cfg.DevMode,
 	}, nil
 }
 

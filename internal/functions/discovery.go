@@ -24,6 +24,10 @@ type FunctionDef struct {
 	Runtime Runtime `json:"runtime"`
 	// Path is the absolute path to the function file.
 	Path string `json:"path"`
+	// OutputPath is the absolute path to the compiled output (if HasBuild is true).
+	OutputPath string `json:"output_path,omitempty"`
+	// HasBuild indicates if this function has a build configuration.
+	HasBuild bool `json:"has_build"`
 	// Timeout overrides the default timeout (optional).
 	Timeout int `json:"timeout,omitempty"`
 	// Memory overrides the default memory limit in MB (optional).
@@ -420,4 +424,17 @@ func (r *Registry) GetByRuntime(runtime Runtime) []*FunctionDef {
 // FunctionsDir returns the configured functions directory.
 func (r *Registry) FunctionsDir() string {
 	return r.functionsDir
+}
+
+// GetEntrypoint returns the appropriate entrypoint path based on dev mode.
+// In dev mode, returns the source file. In production mode with a build config,
+// returns the compiled output. Falls back to source if no build config exists.
+func (f *FunctionDef) GetEntrypoint(devMode bool) string {
+	if devMode {
+		return f.Path
+	}
+	if f.HasBuild && f.OutputPath != "" {
+		return f.OutputPath
+	}
+	return f.Path
 }
