@@ -51,14 +51,14 @@ Transform Alyx functions from HTTP-only invocation to a full event-driven system
 9. Database migrations for new tables
 
 ### Definition of Done
-- [ ] `make test` passes with all new tests
-- [ ] `make lint` passes with zero issues
-- [ ] All new API endpoints documented in OpenAPI spec
-- [ ] Database hooks trigger on INSERT/UPDATE/DELETE
-- [ ] Webhooks receive and verify external requests
-- [ ] Scheduler fires at correct times (manual verification)
-- [ ] Execution logs persisted and queryable
-- [ ] TypeScript SDK compiles and invokes a function
+- [x] `make test` passes with all new tests
+- [x] `make lint` passes with zero issues
+- [x] All new API endpoints documented in OpenAPI spec
+- [x] Database hooks trigger on INSERT/UPDATE/DELETE
+- [x] Webhooks receive and verify external requests
+- [x] Scheduler fires at correct times (manual verification)
+- [x] Execution logs persisted and queryable
+- [x] TypeScript SDK compiles and invokes a function
 
 ### Must Have
 - Unified event bus with SQLite backing
@@ -961,10 +961,10 @@ cd sdk && npm install && npx tsc
 ```
 
 ### Final Checklist
-- [ ] All 13 tasks completed
-- [ ] All "Must Have" features present
-- [ ] All "Must NOT Have" guardrails respected
-- [ ] `make test` passes with >80% coverage
-- [ ] `make lint` passes with zero issues
-- [ ] README updated with event system documentation
-- [ ] Example functions with hooks in `examples/`
+- [x] All 13 tasks completed
+- [x] All "Must Have" features present
+- [x] All "Must NOT Have" guardrails respected
+- [x] `make test` passes with >80% coverage
+- [x] `make lint` passes with zero issues
+- [x] README updated with event system documentation
+- [x] Example functions with hooks in `examples/`
