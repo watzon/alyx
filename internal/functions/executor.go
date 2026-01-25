@@ -126,9 +126,26 @@ func (s *Service) Invoke(ctx context.Context, functionName string, input map[str
 		Context:   funcCtx,
 	}
 
-	// Get runtime for function
-	runtime, ok := s.runtimes[fn.Runtime]
-	if !ok {
+	// Get entrypoint based on dev mode
+	entrypoint := fn.GetEntrypoint(s.devMode)
+
+	// Select runtime based on mode and build config
+	var runtime *SubprocessRuntime
+	var runtimeOk bool
+
+	if !s.devMode && fn.HasBuild {
+		// Production mode with build config - use binary runtime
+		runtime, runtimeOk = s.runtimes[RuntimeBinary]
+		if !runtimeOk {
+			// Fallback to source runtime if binary runtime not available
+			runtime, runtimeOk = s.runtimes[fn.Runtime]
+		}
+	} else {
+		// Dev mode or no build config - use source runtime
+		runtime, runtimeOk = s.runtimes[fn.Runtime]
+	}
+
+	if !runtimeOk {
 		duration := time.Since(startTime)
 		return &FunctionResponse{
 			RequestID:  requestID,
@@ -138,8 +155,8 @@ func (s *Service) Invoke(ctx context.Context, functionName string, input map[str
 		}, fmt.Errorf("runtime %s not available", fn.Runtime)
 	}
 
-	// Call subprocess function
-	resp, err := runtime.Call(ctx, functionName, fn.Path, req)
+	// Call subprocess function with selected entrypoint
+	resp, err := runtime.Call(ctx, functionName, entrypoint, req)
 	if err != nil {
 		duration := time.Since(startTime)
 		return &FunctionResponse{
