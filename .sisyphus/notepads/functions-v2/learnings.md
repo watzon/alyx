@@ -527,3 +527,92 @@ func UpdateStatus(ctx, id, status, output, errorMsg, logs string, duration int) 
 - Implement execution replay/retry functionality
 - Add execution search by date range
 - Consider partitioning old executions to archive table
+
+## [2026-01-25 01:20] Task 10: Enhanced Function Manifest
+
+### Implementation Summary
+- Created `internal/functions/manifest.go` with enhanced manifest types (Manifest, RouteConfig, HookConfig, ScheduleConfig, VerificationConfig)
+- Updated `internal/functions/discovery.go` to parse enhanced manifests with validation
+- Implemented auto-registration via `Registrar` interface for hooks/schedules/webhooks
+- Comprehensive test coverage: 24 manifest validation tests + 6 integration tests
+
+### Manifest Schema Design
+- **Backward compatible**: Old manifests (name, runtime, timeout, memory, env) still work
+- **New sections**: routes, hooks, schedules (all optional)
+- **Validation**: Each section has its own Validate() method with detailed error messages
+- **YAML parsing**: Uses gopkg.in/yaml.v3 for unmarshaling
+
+### Validation Strategy
+- **Manifest.Validate()**: Top-level validation, calls child validators
+- **RouteConfig.Validate()**: Path must start with /, methods must be valid HTTP verbs
+- **HookConfig.Validate()**: Type-specific validation (database/auth require source+action, webhook requires verification)
+- **ScheduleConfig.Validate()**: Type-specific expression validation (cron, interval, one_time)
+- **VerificationConfig.Validate()**: HMAC type, header, and secret required
+
+### Auto-Registration Architecture
+- **Registrar interface**: Defines RegisterHooks, RegisterSchedules, RegisterWebhooks methods
+- **Optional dependency**: Registry.registrar is nil-safe, set via SetRegistrar()
+- **Separation of concerns**: Webhook hooks extracted from general hooks and registered separately
+- **Error handling**: Auto-registration errors logged but don't prevent function discovery
+
+### Auto-Registration Flow
+1. Parse manifest YAML
+2. Validate manifest structure (fail if invalid)
+3. Apply manifest overrides to FunctionDef
+4. If registrar is set:
+   - Call RegisterHooks() with all hooks
+   - Call RegisterSchedules() with all schedules
+   - Call RegisterWebhooks() with webhook-type hooks only
+5. Log success/failure for each registration type
+
+### FunctionDef Extensions
+- Added `Routes []RouteConfig` field for HTTP route configurations
+- Added `Hooks []HookConfig` field for hook configurations
+- Added `Schedules []ScheduleConfig` field for schedule configurations
+- All fields are optional (omitempty) for backward compatibility
+
+### Test Coverage
+**Unit tests (manifest_test.go):**
+- Manifest validation: minimal, full, missing fields, invalid values
+- RouteConfig validation: valid routes, missing path, invalid methods
+- HookConfig validation: database, auth, webhook types, missing fields
+- ScheduleConfig validation: cron, interval, one_time types, timezone
+- VerificationConfig validation: HMAC types, missing fields
+- YAML parsing: full manifest with all sections
+- Backward compatibility: legacy manifest without new sections
+
+**Integration tests (discovery_test.go):**
+- Auto-registration: Verify hooks/schedules/webhooks registered via mock
+- Backward compatibility: Legacy manifests work without registrar
+- No registrar: Manifest parsed but nothing registered
+- Invalid manifest: Validation errors prevent function registration
+- Multiple hook types: Database, auth, webhook hooks all registered correctly
+
+### Key Design Decisions
+1. **Interface-based registrar**: Avoids circular dependencies, allows optional integration
+2. **Validation before registration**: Invalid manifests fail fast with clear errors
+3. **Webhook hook separation**: Webhook hooks registered to both hook registry and webhook store
+4. **Nil-safe auto-registration**: Missing registrar doesn't break discovery
+5. **Backward compatibility**: Old FunctionManifest type deprecated but still works
+
+### Validation Error Messages
+- Clear, actionable error messages with field context
+- Example: `"manifest: hooks[0]: database hook requires source"`
+- Nested validation errors bubble up with full path
+
+### Gotchas
+- **Webhook hooks**: Must be registered twice (hooks registry + webhook store)
+- **Validation order**: Manifest.Validate() must be called before auto-registration
+- **Context usage**: Auto-registration uses context.Background() (not request context)
+- **Error logging**: Auto-registration errors logged as warnings, not failures
+
+### Pre-existing Issues
+- Event bus has data race in `TestEventBus_StartStop` (not related to manifest implementation)
+- All functions tests pass with race detection
+
+### Future Improvements
+- Add manifest schema versioning for breaking changes
+- Implement manifest hot-reload (watch for YAML changes)
+- Add manifest linting/validation CLI command
+- Support manifest inheritance (base manifest + overrides)
+- Add manifest documentation generation

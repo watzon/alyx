@@ -2,6 +2,7 @@
 package functions
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -31,9 +32,16 @@ type FunctionDef struct {
 	Env map[string]string `json:"env,omitempty"`
 	// HasManifest indicates if a YAML manifest was found.
 	HasManifest bool `json:"has_manifest"`
+	// Routes contains HTTP route configurations from manifest.
+	Routes []RouteConfig `json:"routes,omitempty"`
+	// Hooks contains hook configurations from manifest.
+	Hooks []HookConfig `json:"hooks,omitempty"`
+	// Schedules contains schedule configurations from manifest.
+	Schedules []ScheduleConfig `json:"schedules,omitempty"`
 }
 
-// FunctionManifest represents a function's YAML manifest file.
+// FunctionManifest represents a function's YAML manifest file (legacy format).
+// Deprecated: Use Manifest for new manifests with hooks/schedules/routes support.
 type FunctionManifest struct {
 	Name         string            `yaml:"name"`
 	Runtime      string            `yaml:"runtime"`
@@ -43,10 +51,18 @@ type FunctionManifest struct {
 	Dependencies []string          `yaml:"dependencies"`
 }
 
+// Registrar defines the interface for auto-registering manifest components.
+type Registrar interface {
+	RegisterHooks(ctx context.Context, functionID string, hooks []HookConfig) error
+	RegisterSchedules(ctx context.Context, functionID string, schedules []ScheduleConfig) error
+	RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error
+}
+
 // Registry manages discovered functions.
 type Registry struct {
 	functionsDir string
 	functions    map[string]*FunctionDef
+	registrar    Registrar
 	mu           sync.RWMutex
 }
 
@@ -56,6 +72,13 @@ func NewRegistry(functionsDir string) *Registry {
 		functionsDir: functionsDir,
 		functions:    make(map[string]*FunctionDef),
 	}
+}
+
+// SetRegistrar sets the registrar for auto-registration of manifest components.
+func (r *Registry) SetRegistrar(registrar Registrar) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.registrar = registrar
 }
 
 // Discover scans the functions directory and discovers all functions.
@@ -148,12 +171,15 @@ func (r *Registry) loadManifest(funcDef *FunctionDef, path string) error {
 		return err
 	}
 
-	var manifest FunctionManifest
+	var manifest Manifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
 		return fmt.Errorf("parsing manifest: %w", err)
 	}
 
-	// Apply manifest overrides
+	if err := manifest.Validate(); err != nil {
+		return fmt.Errorf("validating manifest: %w", err)
+	}
+
 	if manifest.Runtime != "" {
 		funcDef.Runtime = Runtime(manifest.Runtime)
 	}
@@ -167,6 +193,50 @@ func (r *Registry) loadManifest(funcDef *FunctionDef, path string) error {
 		for k, v := range manifest.Env {
 			funcDef.Env[k] = expandEnv(v)
 		}
+	}
+
+	funcDef.Routes = manifest.Routes
+	funcDef.Hooks = manifest.Hooks
+	funcDef.Schedules = manifest.Schedules
+
+	if r.registrar != nil {
+		if err := r.autoRegister(context.Background(), funcDef); err != nil {
+			log.Warn().Err(err).Str("function", funcDef.Name).Msg("Failed to auto-register manifest components")
+		}
+	}
+
+	return nil
+}
+
+func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error {
+	functionID := funcDef.Name
+
+	if len(funcDef.Hooks) > 0 {
+		if err := r.registrar.RegisterHooks(ctx, functionID, funcDef.Hooks); err != nil {
+			return fmt.Errorf("registering hooks: %w", err)
+		}
+		log.Debug().Str("function", functionID).Int("count", len(funcDef.Hooks)).Msg("Auto-registered hooks")
+	}
+
+	if len(funcDef.Schedules) > 0 {
+		if err := r.registrar.RegisterSchedules(ctx, functionID, funcDef.Schedules); err != nil {
+			return fmt.Errorf("registering schedules: %w", err)
+		}
+		log.Debug().Str("function", functionID).Int("count", len(funcDef.Schedules)).Msg("Auto-registered schedules")
+	}
+
+	webhookHooks := make([]HookConfig, 0)
+	for _, hook := range funcDef.Hooks {
+		if hook.Type == "webhook" {
+			webhookHooks = append(webhookHooks, hook)
+		}
+	}
+
+	if len(webhookHooks) > 0 {
+		if err := r.registrar.RegisterWebhooks(ctx, functionID, webhookHooks); err != nil {
+			return fmt.Errorf("registering webhooks: %w", err)
+		}
+		log.Debug().Str("function", functionID).Int("count", len(webhookHooks)).Msg("Auto-registered webhooks")
 	}
 
 	return nil

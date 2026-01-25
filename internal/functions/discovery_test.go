@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -211,5 +212,331 @@ func TestDetectRuntime(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("detectRuntime(%q) = %q, expected %q", tt.ext, result, tt.expected)
 		}
+	}
+}
+
+type mockRegistrar struct {
+	hooks     map[string][]HookConfig
+	schedules map[string][]ScheduleConfig
+	webhooks  map[string][]HookConfig
+}
+
+func newMockRegistrar() *mockRegistrar {
+	return &mockRegistrar{
+		hooks:     make(map[string][]HookConfig),
+		schedules: make(map[string][]ScheduleConfig),
+		webhooks:  make(map[string][]HookConfig),
+	}
+}
+
+func (m *mockRegistrar) RegisterHooks(ctx context.Context, functionID string, hooks []HookConfig) error {
+	m.hooks[functionID] = hooks
+	return nil
+}
+
+func (m *mockRegistrar) RegisterSchedules(ctx context.Context, functionID string, schedules []ScheduleConfig) error {
+	m.schedules[functionID] = schedules
+	return nil
+}
+
+func (m *mockRegistrar) RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error {
+	m.webhooks[functionID] = hooks
+	return nil
+}
+
+func TestRegistry_AutoRegistration(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifestYAML := `
+name: test-function
+runtime: node
+timeout: 30s
+memory: 256mb
+
+routes:
+  - path: /api/test
+    methods: [GET, POST]
+
+hooks:
+  - type: database
+    source: users
+    action: insert
+    mode: async
+    
+  - type: webhook
+    verification:
+      type: hmac-sha256
+      header: X-Signature
+      secret: secret123
+
+schedules:
+  - name: daily-job
+    type: cron
+    expression: "0 0 * * *"
+    timezone: UTC
+`
+
+	manifestPath := filepath.Join(tmpDir, "test-function.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	functionPath := filepath.Join(tmpDir, "test-function.js")
+	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
+		t.Fatalf("failed to write function: %v", err)
+	}
+
+	registry := NewRegistry(tmpDir)
+	registrar := newMockRegistrar()
+	registry.SetRegistrar(registrar)
+
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+
+	fn, ok := registry.Get("test-function")
+	if !ok {
+		t.Fatal("function not found")
+	}
+
+	if len(fn.Routes) != 1 {
+		t.Errorf("expected 1 route, got %d", len(fn.Routes))
+	}
+
+	if len(fn.Hooks) != 2 {
+		t.Errorf("expected 2 hooks, got %d", len(fn.Hooks))
+	}
+
+	if len(fn.Schedules) != 1 {
+		t.Errorf("expected 1 schedule, got %d", len(fn.Schedules))
+	}
+
+	hooks, ok := registrar.hooks["test-function"]
+	if !ok {
+		t.Fatal("hooks not registered")
+	}
+	if len(hooks) != 2 {
+		t.Errorf("expected 2 hooks registered, got %d", len(hooks))
+	}
+
+	schedules, ok := registrar.schedules["test-function"]
+	if !ok {
+		t.Fatal("schedules not registered")
+	}
+	if len(schedules) != 1 {
+		t.Errorf("expected 1 schedule registered, got %d", len(schedules))
+	}
+
+	webhooks, ok := registrar.webhooks["test-function"]
+	if !ok {
+		t.Fatal("webhooks not registered")
+	}
+	if len(webhooks) != 1 {
+		t.Errorf("expected 1 webhook registered, got %d", len(webhooks))
+	}
+}
+
+func TestRegistry_BackwardCompatibility(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	legacyManifestYAML := `
+name: legacy-function
+runtime: python
+timeout: 60s
+memory: 512mb
+env:
+  API_KEY: secret
+`
+
+	manifestPath := filepath.Join(tmpDir, "legacy-function.yaml")
+	if err := os.WriteFile(manifestPath, []byte(legacyManifestYAML), 0o600); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	functionPath := filepath.Join(tmpDir, "legacy-function.py")
+	if err := os.WriteFile(functionPath, []byte("def handler(req, res): pass"), 0o600); err != nil {
+		t.Fatalf("failed to write function: %v", err)
+	}
+
+	registry := NewRegistry(tmpDir)
+	registrar := newMockRegistrar()
+	registry.SetRegistrar(registrar)
+
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+
+	fn, ok := registry.Get("legacy-function")
+	if !ok {
+		t.Fatal("function not found")
+	}
+
+	if fn.Runtime != RuntimePython {
+		t.Errorf("expected runtime python, got %s", fn.Runtime)
+	}
+
+	if fn.Timeout != 60 {
+		t.Errorf("expected timeout 60, got %d", fn.Timeout)
+	}
+
+	if fn.Memory != 512 {
+		t.Errorf("expected memory 512, got %d", fn.Memory)
+	}
+
+	if len(fn.Routes) != 0 {
+		t.Errorf("expected 0 routes, got %d", len(fn.Routes))
+	}
+
+	if len(fn.Hooks) != 0 {
+		t.Errorf("expected 0 hooks, got %d", len(fn.Hooks))
+	}
+
+	if len(fn.Schedules) != 0 {
+		t.Errorf("expected 0 schedules, got %d", len(fn.Schedules))
+	}
+
+	if len(registrar.hooks) != 0 {
+		t.Errorf("expected no hooks registered, got %d", len(registrar.hooks))
+	}
+
+	if len(registrar.schedules) != 0 {
+		t.Errorf("expected no schedules registered, got %d", len(registrar.schedules))
+	}
+
+	if len(registrar.webhooks) != 0 {
+		t.Errorf("expected no webhooks registered, got %d", len(registrar.webhooks))
+	}
+}
+
+func TestRegistry_NoRegistrar(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifestYAML := `
+name: test-function
+runtime: node
+
+hooks:
+  - type: database
+    source: users
+    action: insert
+    mode: async
+`
+
+	manifestPath := filepath.Join(tmpDir, "test-function.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	functionPath := filepath.Join(tmpDir, "test-function.js")
+	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
+		t.Fatalf("failed to write function: %v", err)
+	}
+
+	registry := NewRegistry(tmpDir)
+
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+
+	fn, ok := registry.Get("test-function")
+	if !ok {
+		t.Fatal("function not found")
+	}
+
+	if len(fn.Hooks) != 1 {
+		t.Errorf("expected 1 hook in function def, got %d", len(fn.Hooks))
+	}
+}
+
+func TestRegistry_InvalidManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	invalidManifestYAML := `
+name: invalid-function
+runtime: invalid-runtime
+`
+
+	manifestPath := filepath.Join(tmpDir, "invalid-function.yaml")
+	if err := os.WriteFile(manifestPath, []byte(invalidManifestYAML), 0o600); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	functionPath := filepath.Join(tmpDir, "invalid-function.js")
+	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
+		t.Fatalf("failed to write function: %v", err)
+	}
+
+	registry := NewRegistry(tmpDir)
+
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+
+	if _, ok := registry.Get("invalid-function"); ok {
+		t.Error("expected invalid function to be skipped, but it was registered")
+	}
+}
+
+func TestRegistry_MultipleHookTypes(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifestYAML := `
+name: multi-hook
+runtime: node
+
+hooks:
+  - type: database
+    source: users
+    action: insert
+    mode: async
+    
+  - type: auth
+    source: signup
+    action: after
+    mode: sync
+    
+  - type: webhook
+    verification:
+      type: hmac-sha256
+      header: X-Signature
+      secret: secret
+`
+
+	manifestPath := filepath.Join(tmpDir, "multi-hook.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o600); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	functionPath := filepath.Join(tmpDir, "multi-hook.js")
+	if err := os.WriteFile(functionPath, []byte("export default function() {}"), 0o600); err != nil {
+		t.Fatalf("failed to write function: %v", err)
+	}
+
+	registry := NewRegistry(tmpDir)
+	registrar := newMockRegistrar()
+	registry.SetRegistrar(registrar)
+
+	if err := registry.Discover(); err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+
+	hooks, ok := registrar.hooks["multi-hook"]
+	if !ok {
+		t.Fatal("hooks not registered")
+	}
+	if len(hooks) != 3 {
+		t.Errorf("expected 3 hooks registered, got %d", len(hooks))
+	}
+
+	webhooks, ok := registrar.webhooks["multi-hook"]
+	if !ok {
+		t.Fatal("webhooks not registered")
+	}
+	if len(webhooks) != 1 {
+		t.Errorf("expected 1 webhook registered, got %d", len(webhooks))
+	}
+
+	if webhooks[0].Type != "webhook" {
+		t.Errorf("expected webhook type, got %s", webhooks[0].Type)
 	}
 }

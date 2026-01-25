@@ -645,7 +645,7 @@ Phase 4: SDK & Integration
 
 ### Phase 4: SDK & Integration
 
-- [ ] 10. Enhance function manifest schema
+- [x] 10. Enhance function manifest schema
 
   **What to do**:
   - Update `internal/functions/discovery.go` to parse enhanced manifest
