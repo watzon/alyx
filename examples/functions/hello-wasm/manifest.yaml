@@ -1,0 +1,9 @@
+name: hello-wasm
+runtime: wasm
+build:
+  command: npm
+  args: ["run", "build"]
+  watch: ["src/**/*.js", "src/**/*.ts"]
+  output: plugin.wasm
+timeout: 30s
+memory: 256mb

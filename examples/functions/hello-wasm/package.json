@@ -1,0 +1,16 @@
+{
+  "name": "hello-wasm",
+  "version": "1.0.0",
+  "description": "Example WASM function using npm dependencies",
+  "type": "module",
+  "scripts": {
+    "build": "extism-js src/index.js -i src/index.d.ts -o plugin.wasm",
+    "watch": "extism-js src/index.js -i src/index.d.ts -o plugin.wasm --watch"
+  },
+  "dependencies": {
+    "date-fns": "^3.0.0"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "^1.0.0"
+  }
+}
