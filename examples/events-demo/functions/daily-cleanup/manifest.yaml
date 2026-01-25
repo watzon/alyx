@@ -1,0 +1,12 @@
+name: daily-cleanup
+runtime: node
+timeout: 60s
+memory: 256mb
+schedules:
+  - name: cleanup-old-logs
+    type: cron
+    expression: "0 2 * * *"
+    timezone: America/New_York
+    config:
+      input:
+        retention_days: 30

@@ -272,6 +272,172 @@ def handler(req, res):
 
 Functions are automatically discovered and hot-reloaded during development.
 
+### Event-Driven Architecture
+
+Alyx provides a comprehensive event system for building reactive applications with database hooks, webhooks, and scheduled functions.
+
+#### Database Hooks
+
+Trigger functions automatically when database operations occur:
+
+```yaml
+# functions/on-user-created/manifest.yaml
+name: on-user-created
+runtime: node
+hooks:
+  - type: database
+    source: users
+    action: insert
+    mode: async
+```
+
+**Supported actions**: `insert`, `update`, `delete`  
+**Modes**:
+- `async`: Non-blocking, queued execution (default)
+- `sync`: Blocking execution with configurable timeout
+
+**Example function**:
+```javascript
+// functions/on-user-created/index.js
+export default async function handler(req, res) {
+  const { document, collection, action } = req.input;
+  
+  // Send welcome email
+  await sendEmail(document.email, 'Welcome!');
+  
+  return res.json({ success: true });
+}
+```
+
+#### Webhooks
+
+Receive and verify webhook requests from external services:
+
+```yaml
+# functions/stripe-webhook/manifest.yaml
+name: stripe-webhook
+runtime: node
+hooks:
+  - type: webhook
+    verification:
+      type: hmac-sha256
+      header: X-Stripe-Signature
+      secret: ${STRIPE_WEBHOOK_SECRET}
+```
+
+**Verification types**: `hmac-sha256`, `hmac-sha1`
+
+**Example function**:
+```javascript
+// functions/stripe-webhook/index.js
+export default async function handler(req, res) {
+  const { body, verified, verification_error } = req.input;
+  
+  if (!verified) {
+    return res.json({ error: verification_error }, 401);
+  }
+  
+  const event = JSON.parse(body);
+  
+  if (event.type === 'charge.succeeded') {
+    // Handle successful charge
+  }
+  
+  return res.json({ received: true });
+}
+```
+
+#### Scheduled Functions
+
+Run functions on a schedule using cron expressions, intervals, or one-time execution:
+
+```yaml
+# functions/daily-cleanup/manifest.yaml
+name: daily-cleanup
+runtime: node
+schedules:
+  - name: cleanup-old-logs
+    type: cron
+    expression: "0 2 * * *"  # Daily at 2 AM
+    timezone: America/New_York
+    config:
+      input:
+        retention_days: 30
+```
+
+**Schedule types**:
+- `cron`: Standard cron expressions (e.g., `"0 * * * *"` for hourly)
+- `interval`: Duration strings (e.g., `"5m"`, `"1h"`, `"30s"`)
+- `one_time`: RFC3339 timestamps (e.g., `"2026-01-25T15:00:00Z"`)
+
+**Example function**:
+```javascript
+// functions/daily-cleanup/index.js
+export default async function handler(req, res) {
+  const { retention_days } = req.input;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retention_days);
+  
+  // Clean up old logs
+  const deleted = await ctx.alyx.collections.logs.deleteMany({
+    created_at: { $lt: cutoff }
+  });
+  
+  return res.json({ deleted: deleted.count });
+}
+```
+
+#### Execution Logging
+
+All function executions are automatically logged with:
+- Input/output data
+- Execution duration
+- Success/failure status
+- Error messages and stack traces
+- Trigger information (HTTP, webhook, database, schedule)
+
+Query execution logs via API:
+```bash
+GET /api/executions?function_id=on-user-created&status=success
+GET /api/executions?trigger_type=database&limit=50
+```
+
+#### TypeScript SDK
+
+Generate a type-safe SDK with full event system support:
+
+```bash
+alyx generate sdk --output ./sdk
+```
+
+**Usage in functions**:
+```typescript
+import { getContext } from './sdk';
+
+export default async function handler(req, res) {
+  const { alyx, auth, env } = getContext();
+  
+  // Access database
+  const users = await alyx.collections.users.list();
+  
+  // Invoke other functions
+  const result = await alyx.functions.invoke('send-email', {
+    to: auth.email,
+    subject: 'Hello!'
+  });
+  
+  // Publish custom events
+  await alyx.events.publish({
+    type: 'custom',
+    source: 'my-app',
+    action: 'user-action',
+    payload: { user_id: auth.id }
+  });
+  
+  return res.json({ success: true });
+}
+```
+
 ## API
 
 ### REST Endpoints

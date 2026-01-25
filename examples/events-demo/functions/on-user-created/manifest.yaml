@@ -1,0 +1,9 @@
+name: on-user-created
+runtime: node
+timeout: 10s
+memory: 128mb
+hooks:
+  - type: database
+    source: users
+    action: insert
+    mode: async
