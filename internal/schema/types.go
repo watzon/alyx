@@ -18,12 +18,18 @@ const (
 	FieldTypeTimestamp FieldType = "timestamp"
 	FieldTypeJSON      FieldType = "json"
 	FieldTypeBlob      FieldType = "blob"
+	FieldTypeEmail     FieldType = "email"
+	FieldTypeURL       FieldType = "url"
+	FieldTypeDate      FieldType = "date"
+	FieldTypeSelect    FieldType = "select"
+	FieldTypeRelation  FieldType = "relation"
 )
 
 func (t FieldType) IsValid() bool {
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeInt,
-		FieldTypeFloat, FieldTypeBool, FieldTypeTimestamp, FieldTypeJSON, FieldTypeBlob:
+		FieldTypeFloat, FieldTypeBool, FieldTypeTimestamp, FieldTypeJSON, FieldTypeBlob,
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation:
 		return true
 	}
 	return false
@@ -31,7 +37,8 @@ func (t FieldType) IsValid() bool {
 
 func (t FieldType) SQLiteType() string {
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp, FieldTypeJSON:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp,
+		FieldTypeJSON, FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation:
 		return "TEXT"
 	case FieldTypeInt, FieldTypeBool:
 		return "INTEGER"
@@ -49,7 +56,8 @@ func (t FieldType) GoType(nullable bool) string {
 		prefix = "*"
 	}
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation:
 		return prefix + "string"
 	case FieldTypeInt:
 		return prefix + "int64"
@@ -63,6 +71,10 @@ func (t FieldType) GoType(nullable bool) string {
 		return "any"
 	case FieldTypeBlob:
 		return "[]byte"
+	case FieldTypeSelect:
+		// Select can be single (string) or multi ([]string), but Go type is always string/[]string
+		// Multi-select stored as JSON array in DB
+		return "any" // Can be string or []string
 	default:
 		return prefix + "string"
 	}
@@ -71,7 +83,8 @@ func (t FieldType) GoType(nullable bool) string {
 func (t FieldType) TypeScriptType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation:
 		base = "string"
 	case FieldTypeInt, FieldTypeFloat:
 		base = "number"
@@ -83,6 +96,8 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 		base = "unknown"
 	case FieldTypeBlob:
 		base = "Uint8Array"
+	case FieldTypeSelect:
+		base = "string | string[]"
 	default:
 		base = "string"
 	}
@@ -95,7 +110,8 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 func (t FieldType) PythonType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+		FieldTypeEmail, FieldTypeURL, FieldTypeRelation:
 		base = "str"
 	case FieldTypeInt:
 		base = "int"
@@ -109,6 +125,10 @@ func (t FieldType) PythonType(nullable bool) string {
 		base = "Any"
 	case FieldTypeBlob:
 		base = "bytes"
+	case FieldTypeDate:
+		base = "date"
+	case FieldTypeSelect:
+		base = "Union[str, List[str]]"
 	default:
 		base = "str"
 	}
@@ -207,9 +227,30 @@ type Field struct {
 	Internal   bool             `yaml:"internal"`
 	Validate   *FieldValidation `yaml:"validate"`
 	RichText   *RichTextConfig  `yaml:"richtext"`
+	Select     *SelectConfig    `yaml:"select"`
+	Relation   *RelationConfig  `yaml:"relation"`
 
 	MinLength *int `yaml:"minLength"`
 	MaxLength *int `yaml:"maxLength"`
+}
+
+// SelectConfig defines options for select field type.
+type SelectConfig struct {
+	Values    []string `yaml:"values"`
+	MaxSelect int      `yaml:"maxSelect"`
+}
+
+// IsMultiple returns true if field allows multiple selections.
+func (c *SelectConfig) IsMultiple() bool {
+	return c != nil && c.MaxSelect != 1
+}
+
+// RelationConfig defines options for relation field type.
+type RelationConfig struct {
+	Collection  string         `yaml:"collection"`
+	Field       string         `yaml:"field"`
+	OnDelete    OnDeleteAction `yaml:"onDelete"`
+	DisplayName string         `yaml:"displayName"`
 }
 
 func (f *Field) HasDefault() bool {

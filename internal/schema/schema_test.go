@@ -466,6 +466,11 @@ func TestFieldType_SQLiteType(t *testing.T) {
 		{FieldTypeTimestamp, "TEXT"},
 		{FieldTypeJSON, "TEXT"},
 		{FieldTypeBlob, "BLOB"},
+		{FieldTypeEmail, "TEXT"},
+		{FieldTypeURL, "TEXT"},
+		{FieldTypeDate, "TEXT"},
+		{FieldTypeSelect, "TEXT"},
+		{FieldTypeRelation, "TEXT"},
 	}
 
 	for _, tt := range tests {
@@ -489,6 +494,11 @@ func TestFieldType_GoType(t *testing.T) {
 		{FieldTypeBool, true, "*bool"},
 		{FieldTypeJSON, false, "any"},
 		{FieldTypeJSON, true, "any"},
+		{FieldTypeEmail, false, "string"},
+		{FieldTypeURL, false, "string"},
+		{FieldTypeDate, false, "string"},
+		{FieldTypeRelation, false, "string"},
+		{FieldTypeSelect, false, "any"},
 	}
 
 	for _, tt := range tests {
@@ -497,5 +507,103 @@ func TestFieldType_GoType(t *testing.T) {
 				t.Errorf("expected %s, got %s", tt.expected, got)
 			}
 		})
+	}
+}
+
+func TestValidation_SelectField(t *testing.T) {
+	schemaYAML := `
+version: 1
+collections:
+  items:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      status:
+        type: select
+        select:
+          values:
+            - draft
+            - published
+            - archived
+          maxSelect: 1
+`
+	_, err := Parse([]byte(schemaYAML))
+	if err != nil {
+		t.Errorf("expected valid schema, got error: %v", err)
+	}
+}
+
+func TestValidation_SelectFieldMissingConfig(t *testing.T) {
+	schemaYAML := `
+version: 1
+collections:
+  items:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      status:
+        type: select
+`
+	_, err := Parse([]byte(schemaYAML))
+	if err == nil {
+		t.Error("expected validation error for select field without config")
+	}
+}
+
+func TestValidation_RelationField(t *testing.T) {
+	schemaYAML := `
+version: 1
+collections:
+  users:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      name:
+        type: string
+  posts:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      author:
+        type: relation
+        relation:
+          collection: users
+          field: id
+          onDelete: cascade
+`
+	_, err := Parse([]byte(schemaYAML))
+	if err != nil {
+		t.Errorf("expected valid schema, got error: %v", err)
+	}
+}
+
+func TestValidation_EmailURLDateFields(t *testing.T) {
+	schemaYAML := `
+version: 1
+collections:
+  contacts:
+    fields:
+      id:
+        type: uuid
+        primary: true
+        default: auto
+      email:
+        type: email
+      website:
+        type: url
+      birthday:
+        type: date
+`
+	_, err := Parse([]byte(schemaYAML))
+	if err != nil {
+		t.Errorf("expected valid schema, got error: %v", err)
 	}
 }

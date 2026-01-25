@@ -77,10 +77,17 @@ func validateFieldValue(field *schema.Field, value any, errs *ValidationErrors) 
 		validateInt(field, value, errs)
 	case schema.FieldTypeFloat:
 		validateFloat(field, value, errs)
-	case schema.FieldTypeUUID:
+	case schema.FieldTypeUUID, schema.FieldTypeRelation:
 		validateUUID(field, value, errs)
+	case schema.FieldTypeEmail:
+		validateEmail(field, value, errs)
+	case schema.FieldTypeURL:
+		validateURL(field, value, errs)
+	case schema.FieldTypeDate:
+		validateDate(field, value, errs)
+	case schema.FieldTypeSelect:
+		validateSelect(field, value, errs)
 	case schema.FieldTypeBool, schema.FieldTypeTimestamp, schema.FieldTypeJSON, schema.FieldTypeBlob:
-		// No specific validation
 	}
 
 	if field.Validate != nil {
@@ -128,6 +135,101 @@ func validateUUID(field *schema.Field, value any, errs *ValidationErrors) {
 	if !uuidRegex.MatchString(str) {
 		errs.Add(field.Name, "invalid_uuid", fmt.Sprintf("Field '%s' must be a valid UUID", field.Name))
 	}
+}
+
+func validateEmail(field *schema.Field, value any, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' must be a string", field.Name))
+		return
+	}
+	if !emailRegex.MatchString(str) {
+		errs.Add(field.Name, "invalid_email", fmt.Sprintf("Field '%s' must be a valid email address", field.Name))
+	}
+}
+
+func validateURL(field *schema.Field, value any, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' must be a string", field.Name))
+		return
+	}
+	if !urlRegex.MatchString(str) {
+		errs.Add(field.Name, "invalid_url", fmt.Sprintf("Field '%s' must be a valid URL", field.Name))
+	}
+}
+
+var dateRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+func validateDate(field *schema.Field, value any, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' must be a string", field.Name))
+		return
+	}
+	if !dateRegex.MatchString(str) {
+		errs.Add(field.Name, "invalid_date", fmt.Sprintf("Field '%s' must be a valid date (YYYY-MM-DD)", field.Name))
+	}
+}
+
+func validateSelect(field *schema.Field, value any, errs *ValidationErrors) {
+	if field.Select == nil {
+		return
+	}
+
+	values := field.Select.Values
+	maxSelect := field.Select.MaxSelect
+
+	switch v := value.(type) {
+	case string:
+		if !contains(values, v) {
+			errs.Add(field.Name, "invalid_select", fmt.Sprintf("Field '%s' must be one of: %s", field.Name, strings.Join(values, ", ")))
+		}
+	case []any:
+		if maxSelect == 1 {
+			errs.Add(field.Name, "invalid_select", fmt.Sprintf("Field '%s' only allows single selection", field.Name))
+			return
+		}
+		if maxSelect > 0 && len(v) > maxSelect {
+			errs.Add(field.Name, "max_select", fmt.Sprintf("Field '%s' allows at most %d selections", field.Name, maxSelect))
+			return
+		}
+		for _, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' values must be strings", field.Name))
+				return
+			}
+			if !contains(values, str) {
+				errs.Add(field.Name, "invalid_select", fmt.Sprintf("Field '%s' contains invalid value %q; must be one of: %s", field.Name, str, strings.Join(values, ", ")))
+			}
+		}
+	case []string:
+		if maxSelect == 1 {
+			errs.Add(field.Name, "invalid_select", fmt.Sprintf("Field '%s' only allows single selection", field.Name))
+			return
+		}
+		if maxSelect > 0 && len(v) > maxSelect {
+			errs.Add(field.Name, "max_select", fmt.Sprintf("Field '%s' allows at most %d selections", field.Name, maxSelect))
+			return
+		}
+		for _, str := range v {
+			if !contains(values, str) {
+				errs.Add(field.Name, "invalid_select", fmt.Sprintf("Field '%s' contains invalid value %q; must be one of: %s", field.Name, str, strings.Join(values, ", ")))
+			}
+		}
+	default:
+		errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' must be a string or array of strings", field.Name))
+	}
+}
+
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }
 
 func validateWithRules(field *schema.Field, value any, errs *ValidationErrors) {

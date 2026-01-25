@@ -261,6 +261,18 @@ export interface RichTextConfig {
 	deny?: RichTextFormat[];
 }
 
+export interface SelectConfig {
+	values: string[];
+	maxSelect?: number;
+}
+
+export interface RelationConfig {
+	collection: string;
+	field?: string;
+	onDelete?: string;
+	displayName?: string;
+}
+
 export interface Field {
 	name: string;
 	type: string;
@@ -273,6 +285,8 @@ export interface Field {
 	onDelete?: string;
 	validate?: Record<string, unknown>;
 	richtext?: RichTextConfig;
+	select?: SelectConfig;
+	relation?: RelationConfig;
 }
 
 export interface Index {

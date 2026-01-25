@@ -13,9 +13,10 @@
     value: string | null;
     errors?: string[];
     disabled?: boolean;
+    dateOnly?: boolean;
   }
 
-  let { field, value = $bindable(), errors, disabled = false }: Props = $props();
+  let { field, value = $bindable(), errors, disabled = false, dateOnly = false }: Props = $props();
 
   const hasAutoDefault = $derived(field.default === 'now' || field.default === 'CURRENT_TIMESTAMP');
   const isOptional = $derived(field.nullable || hasAutoDefault);
@@ -47,16 +48,14 @@
   let inputValue = $state(initialParsed.input);
   let calendarValue = $state<CalendarDate | undefined>(initialParsed.calendar);
 
-  // Update inputValue when calendarValue changes from calendar picker
   $effect(() => {
     if (calendarValue) {
       const date = calendarValue.toDate(getLocalTimeZone());
-      value = date.toISOString();
-      inputValue = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+      inputValue = date.toISOString().split('T')[0];
+      value = dateOnly ? inputValue : date.toISOString();
     }
   });
 
-  // Update calendarValue when inputValue changes (manual typing)
   function handleInput(e: Event) {
     const target = e.target as HTMLInputElement;
     inputValue = target.value;
@@ -64,13 +63,14 @@
     try {
       if (inputValue && inputValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
         calendarValue = parseDate(inputValue);
-        value = calendarValue.toDate(getLocalTimeZone()).toISOString();
+        const date = calendarValue.toDate(getLocalTimeZone());
+        value = dateOnly ? inputValue : date.toISOString();
       } else if (!inputValue) {
         calendarValue = undefined;
         value = null;
       }
     } catch {
-      // Invalid date format, keep inputValue but don't update calendar
+      // Keep inputValue on invalid date format
     }
   }
 

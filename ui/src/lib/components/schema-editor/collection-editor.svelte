@@ -11,6 +11,7 @@
 		type EditableField,
 		type EditableIndex,
 		type EditableRules,
+		type SchemaValidationError,
 		createEmptyField
 	} from './types';
 	import PlusIcon from 'lucide-svelte/icons/plus';
@@ -26,6 +27,7 @@
 		onupdate: (collection: EditableCollection) => void;
 		ondelete: () => void;
 		disabled?: boolean;
+		errors?: SchemaValidationError[];
 	}
 
 	let {
@@ -33,8 +35,15 @@
 		allCollections,
 		onupdate,
 		ondelete,
-		disabled = false
+		disabled = false,
+		errors = []
 	}: Props = $props();
+
+	const collectionErrors = $derived(errors.filter((e) => !e.fieldId));
+	
+	function getFieldErrors(fieldId: string): SchemaValidationError[] {
+		return errors.filter((e) => e.fieldId === fieldId);
+	}
 
 	let rulesOpen = $state(false);
 	let indexesOpen = $state(false);
@@ -156,13 +165,22 @@
 <Card.Root>
 	<Card.Header class="pb-3">
 		<div class="flex items-center gap-3">
-			<Input
-				class="text-lg font-semibold h-10 max-w-xs"
-				placeholder="Collection name"
-				value={collection.name}
-				onchange={(e) => updateName(e.currentTarget.value)}
-				{disabled}
-			/>
+			<div class="space-y-1">
+				<Input
+					class="text-lg font-semibold h-10 max-w-xs {collectionErrors.length > 0 ? 'border-destructive' : ''}"
+					placeholder="Collection name"
+					value={collection.name}
+					onchange={(e) => updateName(e.currentTarget.value)}
+					{disabled}
+				/>
+				{#if collectionErrors.length > 0}
+					<div class="text-sm text-destructive">
+						{#each collectionErrors as error}
+							<p>{error.message}</p>
+						{/each}
+					</div>
+				{/if}
+			</div>
 
 			<div class="ml-auto flex items-center gap-2">
 				<Button
@@ -203,6 +221,7 @@
 						isDragOver={dragOverFieldId === field._id}
 						isDragging={draggingFieldId === field._id}
 						{disabled}
+						errors={getFieldErrors(field._id)}
 					/>
 				{/each}
 			</div>

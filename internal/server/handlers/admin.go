@@ -468,6 +468,30 @@ func serializeField(f *schema.Field) map[string]any {
 		}
 		field["richtext"] = richtext
 	}
+	if f.Select != nil {
+		selectConfig := map[string]any{
+			"values": f.Select.Values,
+		}
+		if f.Select.MaxSelect != 0 {
+			selectConfig["maxSelect"] = f.Select.MaxSelect
+		}
+		field["select"] = selectConfig
+	}
+	if f.Relation != nil {
+		relation := map[string]any{
+			"collection": f.Relation.Collection,
+		}
+		if f.Relation.Field != "" {
+			relation["field"] = f.Relation.Field
+		}
+		if f.Relation.OnDelete != "" {
+			relation["onDelete"] = string(f.Relation.OnDelete)
+		}
+		if f.Relation.DisplayName != "" {
+			relation["displayName"] = f.Relation.DisplayName
+		}
+		field["relation"] = relation
+	}
 	return field
 }
 

@@ -13,7 +13,12 @@ export const FIELD_TYPES = [
 	'bool',
 	'timestamp',
 	'json',
-	'blob'
+	'blob',
+	'email',
+	'url',
+	'date',
+	'select',
+	'relation'
 ] as const;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -37,10 +42,28 @@ export const RICHTEXT_PRESETS = ['minimal', 'basic', 'standard', 'full'] as cons
 export type RichTextPreset = (typeof RICHTEXT_PRESETS)[number];
 
 /**
+ * Select field configuration
+ */
+export interface SelectConfig {
+	values: string[];
+	maxSelect?: number;
+}
+
+/**
+ * Relation field configuration
+ */
+export interface RelationConfig {
+	collection: string;
+	field?: string;
+	onDelete?: OnDeleteAction;
+	displayName?: string;
+}
+
+/**
  * Editable version of Field with a unique ID for tracking
  */
 export interface EditableField {
-	_id: string; // Unique ID for list tracking (not persisted)
+	_id: string;
 	name: string;
 	type: FieldType;
 	primary?: boolean;
@@ -60,6 +83,8 @@ export interface EditableField {
 		enum?: string[];
 	};
 	richtext?: RichTextConfig;
+	select?: SelectConfig;
+	relation?: RelationConfig;
 }
 
 /**
@@ -101,9 +126,119 @@ export interface EditableSchema {
 	collections: EditableCollection[];
 }
 
-/**
- * Generate a unique ID for tracking list items
- */
+export interface SchemaValidationError {
+	path: string;
+	message: string;
+	collectionId?: string;
+	fieldId?: string;
+}
+
+const IDENTIFIER_REGEX = /^[a-z][a-z0-9_]*$/;
+
+export function validateSchema(schema: EditableSchema): SchemaValidationError[] {
+	const errors: SchemaValidationError[] = [];
+
+	if (schema.version < 1) {
+		errors.push({ path: 'version', message: 'Version must be at least 1' });
+	}
+
+	if (schema.collections.length === 0) {
+		errors.push({ path: 'collections', message: 'At least one collection is required' });
+	}
+
+	for (const collection of schema.collections) {
+		const colPath = `collections.${collection.name || '(unnamed)'}`;
+
+		if (!collection.name) {
+			errors.push({
+				path: colPath,
+				message: 'Collection name is required',
+				collectionId: collection._id
+			});
+		} else if (!IDENTIFIER_REGEX.test(collection.name)) {
+			errors.push({
+				path: colPath,
+				message: 'Name must start with a lowercase letter and contain only lowercase letters, numbers, and underscores',
+				collectionId: collection._id
+			});
+		}
+
+		if (collection.fields.length === 0) {
+			errors.push({
+				path: `${colPath}.fields`,
+				message: 'At least one field is required',
+				collectionId: collection._id
+			});
+		}
+
+		const hasPrimary = collection.fields.some((f) => f.primary);
+		if (!hasPrimary) {
+			errors.push({
+				path: `${colPath}.fields`,
+				message: 'Collection must have a primary key field',
+				collectionId: collection._id
+			});
+		}
+
+		for (const field of collection.fields) {
+			const fieldPath = `${colPath}.fields.${field.name || '(unnamed)'}`;
+
+			if (!field.name) {
+				errors.push({
+					path: fieldPath,
+					message: 'Field name is required',
+					collectionId: collection._id,
+					fieldId: field._id
+				});
+			} else if (!IDENTIFIER_REGEX.test(field.name)) {
+				errors.push({
+					path: fieldPath,
+					message: 'Name must start with a lowercase letter and contain only lowercase letters, numbers, and underscores',
+					collectionId: collection._id,
+					fieldId: field._id
+				});
+			}
+
+			if (field.primary && field.nullable) {
+				errors.push({
+					path: fieldPath,
+					message: 'Primary key cannot be nullable',
+					collectionId: collection._id,
+					fieldId: field._id
+				});
+			}
+
+			if (field.type === 'select' && (!field.select?.values || field.select.values.length === 0)) {
+				errors.push({
+					path: fieldPath,
+					message: 'Select field must have at least one option value',
+					collectionId: collection._id,
+					fieldId: field._id
+				});
+			}
+
+			if (field.type === 'relation' && !field.relation?.collection) {
+				errors.push({
+					path: fieldPath,
+					message: 'Relation field must specify a target collection',
+					collectionId: collection._id,
+					fieldId: field._id
+				});
+			}
+		}
+	}
+
+	return errors;
+}
+
+export function getFieldErrors(errors: SchemaValidationError[], fieldId: string): SchemaValidationError[] {
+	return errors.filter((e) => e.fieldId === fieldId);
+}
+
+export function getCollectionErrors(errors: SchemaValidationError[], collectionId: string): SchemaValidationError[] {
+	return errors.filter((e) => e.collectionId === collectionId && !e.fieldId);
+}
+
 export function generateId(): string {
 	return crypto.randomUUID();
 }
@@ -192,7 +327,9 @@ export function toEditableField(field: Field): EditableField {
 		references: field.references,
 		onDelete: field.onDelete as OnDeleteAction | undefined,
 		validate: field.validate as EditableField['validate'],
-		richtext: field.richtext
+		richtext: field.richtext,
+		select: field.select as SelectConfig | undefined,
+		relation: field.relation as RelationConfig | undefined
 	};
 }
 
@@ -278,6 +415,27 @@ export function toYamlString(schema: EditableSchema): string {
 					}
 				}
 			}
+
+			if (field.select) {
+				const s = field.select;
+				lines.push('        select:');
+				if (s.values && s.values.length > 0) {
+					lines.push('          values:');
+					for (const v of s.values) {
+						lines.push(`            - ${v}`);
+					}
+				}
+				if (s.maxSelect !== undefined) lines.push(`          maxSelect: ${s.maxSelect}`);
+			}
+
+			if (field.relation) {
+				const r = field.relation;
+				lines.push('        relation:');
+				lines.push(`          collection: ${r.collection}`);
+				if (r.field) lines.push(`          field: ${r.field}`);
+				if (r.onDelete) lines.push(`          onDelete: ${r.onDelete}`);
+				if (r.displayName) lines.push(`          displayName: ${r.displayName}`);
+			}
 		}
 
 		if (collection.indexes.length > 0) {
@@ -323,7 +481,12 @@ export function getFieldTypeInfo(type: FieldType): { label: string; description:
 		bool: { label: 'Boolean', description: 'True/false value' },
 		timestamp: { label: 'Timestamp', description: 'Date and time' },
 		json: { label: 'JSON', description: 'Arbitrary JSON data' },
-		blob: { label: 'Blob', description: 'Binary data' }
+		blob: { label: 'Blob', description: 'Binary data' },
+		email: { label: 'Email', description: 'Email address' },
+		url: { label: 'URL', description: 'Web URL address' },
+		date: { label: 'Date', description: 'Date only (YYYY-MM-DD)' },
+		select: { label: 'Select', description: 'Single or multi-select from options' },
+		relation: { label: 'Relation', description: 'Link to another collection' }
 	};
 	return info[type];
 }
@@ -351,6 +514,17 @@ export function supportsValidation(type: FieldType): {
 				format: true,
 				pattern: true,
 				enum: true
+			};
+		case 'email':
+		case 'url':
+			return {
+				minLength: true,
+				maxLength: true,
+				min: false,
+				max: false,
+				format: false,
+				pattern: true,
+				enum: false
 			};
 		case 'int':
 		case 'float':

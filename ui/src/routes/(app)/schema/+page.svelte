@@ -9,7 +9,7 @@
 	import { Badge } from '$ui/badge';
 	import { Button } from '$ui/button';
 	import { YamlEditor } from '$lib/components/yaml-editor';
-	import { SchemaEditor, toEditableSchema, toYamlString, type EditableSchema } from '$lib/components/schema-editor';
+	import { SchemaEditor, toEditableSchema, toYamlString, validateSchema, type EditableSchema, type SchemaValidationError } from '$lib/components/schema-editor';
 	import { toast } from 'svelte-sonner';
 	import KeyIcon from 'lucide-svelte/icons/key';
 	import LinkIcon from 'lucide-svelte/icons/link';
@@ -28,6 +28,7 @@
 	let editedContent = $state('');
 	let editableSchema = $state<EditableSchema | null>(null);
 	let saveError = $state<string | null>(null);
+	let validationErrors = $state<SchemaValidationError[]>([]);
 	let activeTab = $state<string>('');
 	let initialTabFromHash = browser ? window.location.hash.slice(1) : '';
 
@@ -128,6 +129,14 @@
 
 	function saveVisualSchema() {
 		if (editableSchema) {
+			const errors = validateSchema(editableSchema);
+			if (errors.length > 0) {
+				validationErrors = errors;
+				toast.error(`Schema has ${errors.length} validation error${errors.length > 1 ? 's' : ''}`);
+				return;
+			}
+			validationErrors = [];
+			saveError = null;
 			const yamlContent = toYamlString(editableSchema);
 			saveMutation.mutate(yamlContent);
 		}
@@ -228,9 +237,10 @@
 	{:else if isVisualEditMode && editableSchema}
 		<SchemaEditor
 			schema={editableSchema}
-			onchange={(s) => { editableSchema = s; }}
+			onchange={(s) => { editableSchema = s; validationErrors = []; }}
 			initialCollection={activeTab}
 			disabled={saveMutation.isPending}
+			errors={validationErrors}
 		/>
 	{:else if schemaQuery.isPending}
 		<Card.Root>

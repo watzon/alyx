@@ -236,6 +236,8 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 	errs = append(errs, validateFieldTimestamps(path, f)...)
 	errs = append(errs, validateFieldLength(path, f)...)
 	errs = append(errs, validateFieldRichText(path, f)...)
+	errs = append(errs, validateFieldSelect(path, f)...)
+	errs = append(errs, validateFieldRelation(path, f, s)...)
 
 	if f.Validate != nil {
 		errs = append(errs, validateFieldValidation(path+".validate", f)...)
@@ -257,7 +259,7 @@ func validateFieldBasics(path, name string, f *Field) ValidationErrors {
 	if !f.Type.IsValid() {
 		errs = append(errs, &ValidationError{
 			Path:    path + ".type",
-			Message: fmt.Sprintf("invalid type %q; must be one of: uuid, string, text, int, float, bool, timestamp, json, blob", f.Type),
+			Message: fmt.Sprintf("invalid type %q; must be one of: uuid, string, text, richtext, int, float, bool, timestamp, json, blob, email, url, date, select, relation", f.Type),
 		})
 	}
 
@@ -409,6 +411,126 @@ func validateFieldRichText(path string, f *Field) ValidationErrors {
 				Message: fmt.Sprintf("invalid format: %s", format),
 			})
 		}
+	}
+
+	return errs
+}
+
+func validateFieldSelect(path string, f *Field) ValidationErrors {
+	var errs ValidationErrors
+
+	if f.Select != nil && f.Type != FieldTypeSelect {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".select",
+			Message: "select config can only be used with select field type",
+		})
+		return errs
+	}
+
+	if f.Type == FieldTypeSelect && f.Select == nil {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".select",
+			Message: "select field type requires select config with values",
+		})
+		return errs
+	}
+
+	if f.Select == nil {
+		return errs
+	}
+
+	if len(f.Select.Values) == 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".select.values",
+			Message: "at least one value is required",
+		})
+	}
+
+	seen := make(map[string]bool)
+	for i, v := range f.Select.Values {
+		if v == "" {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.select.values[%d]", path, i),
+				Message: "value cannot be empty",
+			})
+		}
+		if seen[v] {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.select.values[%d]", path, i),
+				Message: fmt.Sprintf("duplicate value: %s", v),
+			})
+		}
+		seen[v] = true
+	}
+
+	if f.Select.MaxSelect < 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".select.maxSelect",
+			Message: "must be non-negative (0 means unlimited)",
+		})
+	}
+
+	return errs
+}
+
+func validateFieldRelation(path string, f *Field, s *Schema) ValidationErrors {
+	var errs ValidationErrors
+
+	if f.Relation != nil && f.Type != FieldTypeRelation {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation",
+			Message: "relation config can only be used with relation field type",
+		})
+		return errs
+	}
+
+	if f.Type == FieldTypeRelation && f.Relation == nil {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation",
+			Message: "relation field type requires relation config",
+		})
+		return errs
+	}
+
+	if f.Relation == nil {
+		return errs
+	}
+
+	if f.Relation.Collection == "" {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation.collection",
+			Message: "collection is required",
+		})
+	} else if refCol, ok := s.Collections[f.Relation.Collection]; !ok {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation.collection",
+			Message: fmt.Sprintf("referenced collection %q does not exist", f.Relation.Collection),
+		})
+	} else {
+		field := f.Relation.Field
+		if field == "" {
+			field = "id"
+		}
+		if _, ok := refCol.Fields[field]; !ok {
+			errs = append(errs, &ValidationError{
+				Path:    path + ".relation.field",
+				Message: fmt.Sprintf("referenced field %q does not exist in collection %q", field, f.Relation.Collection),
+			})
+		}
+	}
+
+	if !f.Relation.OnDelete.IsValid() {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation.onDelete",
+			Message: "must be one of: restrict, cascade, set null",
+		})
+	}
+
+	if f.Relation.OnDelete == OnDeleteSetNull && !f.Nullable {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".relation.onDelete",
+			Message: "cannot use 'set null' on non-nullable field",
+		})
 	}
 
 	return errs

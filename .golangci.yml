@@ -223,6 +223,22 @@ issues:
         - revive
       text: "ConfigFilePath"
 
+    # Allow high cyclomatic complexity for type-handling functions
+    - path: internal/database/collection\.go
+      linters:
+        - gocyclo
+      text: "convertValue|processRow"
+
+    - path: internal/database/validate\.go
+      linters:
+        - gocyclo
+      text: "validateSelect"
+
+    - path: internal/server/handlers/admin\.go
+      linters:
+        - gocyclo
+      text: "serializeField"
+
 
 
 

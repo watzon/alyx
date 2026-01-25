@@ -6,6 +6,7 @@
 	import {
 		type EditableSchema,
 		type EditableCollection,
+		type SchemaValidationError,
 		createEmptyCollection,
 		toYamlString
 	} from './types';
@@ -19,9 +20,10 @@
 		onchange: (schema: EditableSchema) => void;
 		initialCollection?: string;
 		disabled?: boolean;
+		errors?: SchemaValidationError[];
 	}
 
-	let { schema, onchange, initialCollection, disabled = false }: Props = $props();
+	let { schema, onchange, initialCollection, disabled = false, errors = [] }: Props = $props();
 
 	let viewMode: 'visual' | 'yaml' = $state('visual');
 	let activeCollection = $state<string>('');
@@ -57,6 +59,10 @@
 	const sortedCollections = $derived(
 		[...schema.collections].sort((a, b) => a.name.localeCompare(b.name))
 	);
+
+	function getCollectionErrorCount(collectionId: string): number {
+		return errors.filter((e) => e.collectionId === collectionId).length;
+	}
 
 	$effect(() => {
 		if (sortedCollections.length > 0 && !activeCollection) {
@@ -152,8 +158,14 @@
 			<Tabs.Root bind:value={activeCollection}>
 				<Tabs.List class="w-full justify-start overflow-x-auto">
 					{#each sortedCollections as collection (collection._id)}
-						<Tabs.Trigger value={collection._id}>
+						{@const errorCount = getCollectionErrorCount(collection._id)}
+						<Tabs.Trigger value={collection._id} class="gap-2">
 							{collection.name || 'Unnamed'}
+							{#if errorCount > 0}
+								<span class="inline-flex items-center justify-center h-5 min-w-5 px-1 text-xs font-medium rounded-full bg-destructive text-destructive-foreground">
+									{errorCount}
+								</span>
+							{/if}
 						</Tabs.Trigger>
 					{/each}
 				</Tabs.List>
@@ -166,6 +178,7 @@
 							onupdate={(c) => updateCollection(collection._id, c)}
 							ondelete={() => deleteCollection(collection._id)}
 							{disabled}
+							errors={errors.filter((e) => e.collectionId === collection._id)}
 						/>
 					</Tabs.Content>
 				{/each}

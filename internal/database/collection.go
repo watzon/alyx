@@ -337,8 +337,18 @@ func (c *Collection) processRow(row Row) Row {
 					row[fieldName] = t
 				}
 			}
-		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
-			// No conversion needed
+		case schema.FieldTypeSelect:
+			if s, ok := value.(string); ok && s != "" {
+				var parsed any
+				if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+					row[fieldName] = parsed
+				} else {
+					row[fieldName] = s
+				}
+			}
+		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText,
+			schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob,
+			schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation:
 		}
 	}
 
@@ -348,8 +358,14 @@ func (c *Collection) processRow(row Row) Row {
 func (c *Collection) getSearchableFields() []string {
 	var fields []string
 	for _, f := range c.schema.OrderedFields() {
-		if f.Type == schema.FieldTypeString || f.Type == schema.FieldTypeText || f.Type == schema.FieldTypeUUID {
+		switch f.Type {
+		case schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeUUID,
+			schema.FieldTypeEmail, schema.FieldTypeURL:
 			fields = append(fields, f.Name)
+		case schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat,
+			schema.FieldTypeBool, schema.FieldTypeTimestamp, schema.FieldTypeJSON,
+			schema.FieldTypeBlob, schema.FieldTypeDate, schema.FieldTypeSelect,
+			schema.FieldTypeRelation:
 		}
 	}
 	return fields
@@ -387,8 +403,22 @@ func (c *Collection) convertValue(value any, field *schema.Field) any {
 		case string:
 			return v
 		}
-	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
-		// Return as-is
+	case schema.FieldTypeSelect:
+		switch v := value.(type) {
+		case string:
+			return v
+		case []string:
+			if b, err := json.Marshal(v); err == nil {
+				return string(b)
+			}
+		case []any:
+			if b, err := json.Marshal(v); err == nil {
+				return string(b)
+			}
+		}
+	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText,
+		schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob,
+		schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation:
 	}
 
 	return value
