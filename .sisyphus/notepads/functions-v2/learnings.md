@@ -616,3 +616,75 @@ func UpdateStatus(ctx, id, status, output, errorMsg, logs string, duration int) 
 - Add manifest linting/validation CLI command
 - Support manifest inheritance (base manifest + overrides)
 - Add manifest documentation generation
+
+## [2026-01-25 01:25] Task 11: API Handlers for Event System
+
+### Implementation Summary
+- Created handlers for hooks, webhooks, schedules, and executions
+- All handlers follow existing patterns from functions.go
+- Router updated with commented-out route registration (awaiting server initialization)
+- Comprehensive unit tests for hooks handler (5 tests, all passing)
+
+### Handler Patterns Used
+- **Request/Response structs**: CreateXRequest, UpdateXRequest with pointer fields for optional updates
+- **Path parameters**: `r.PathValue("id")` for extracting route parameters
+- **Response helpers**: JSON(), Error(), BadRequest(), NotFound(), InternalError()
+- **Validation**: Check required fields before processing
+- **Logging**: Use zerolog with structured fields (Str, Err, etc.)
+
+### CRUD Operations Implemented
+1. **Hooks** (hooks.go):
+   - List (with optional function_id filter)
+   - Get by ID
+   - Create (with validation and defaults)
+   - Update (unregister + re-register pattern for cache invalidation)
+   - Delete
+   - ListForFunction
+
+2. **Webhooks** (webhooks.go):
+   - List, Get, Create, Update, Delete
+   - Default methods to ["POST"] if not specified
+
+3. **Schedules** (schedules.go):
+   - List, Get, Create, Update, Delete, Trigger
+   - Calculate next_run on create/update
+   - Trigger calls scheduler.ProcessDue()
+
+4. **Executions** (executions.go):
+   - List (with filters: function_id, status, trigger_type, trigger_id)
+   - Get by ID
+   - ListForFunction
+   - Pagination with limit/offset (default 50)
+
+### Router Integration
+- Routes commented out in router.go with TODO marker
+- Event system components (HookRegistry, WebhookStore, Scheduler, ExecutionStore) not yet initialized in Server
+- Routes will be enabled when server initialization is complete (separate task)
+- Pattern: Conditional registration with nil checks
+
+### Update Pattern for Hooks
+- Registry doesn't have Update method
+- Solution: Unregister old hook, then Register updated hook
+- This ensures cache is properly invalidated and updated
+
+### Query Parameter Handling
+- Use `r.URL.Query().Get("param")` for single values
+- Parse integers with `strconv.Atoi()` and validate
+- Build filter maps for store.List() calls
+
+### Test Patterns
+- testDB helper creates temp database with migrations
+- Use httptest.NewRequest and httptest.NewRecorder
+- Set path values with `req.SetPathValue("id", "value")`
+- Decode JSON responses for assertions
+- All 5 hooks handler tests pass
+
+### Verification Results
+- `go build ./internal/server/...` ✅ Compiles successfully
+- `make test` ✅ All tests pass (except pre-existing race in events package)
+- Handler tests: 5/5 passing for hooks.go
+
+### Notes
+- Pre-existing race condition in internal/events/bus_test.go (TestEventBus_StartStop) - not related to this task
+- All new handler code is race-free
+- Routes will return 404 until server initialization adds event system components

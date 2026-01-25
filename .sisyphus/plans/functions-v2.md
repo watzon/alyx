@@ -729,7 +729,7 @@ Phase 4: SDK & Integration
 
 ---
 
-- [ ] 11. Implement API handlers for event system
+- [x] 11. Implement API handlers for event system
 
   **What to do**:
   - Create `internal/server/handlers/hooks.go` for hook CRUD
