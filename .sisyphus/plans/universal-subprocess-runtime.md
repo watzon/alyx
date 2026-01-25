@@ -271,7 +271,7 @@ curl -X POST http://localhost:8090/api/functions/hello-python \
 
 ---
 
-- [ ] 5. Update Discovery for New Runtimes
+- [x] 5. Update Discovery for New Runtimes
 
   **What to do**:
   - Update `findEntryFile()` in `discovery.go`

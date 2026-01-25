@@ -338,3 +338,94 @@ Task 4 will update `executor.go` to use `SubprocessRuntime` instead of `WASMRunt
 
 Task 5 (Simplify Discovery) will remove RuntimeWasm references in discovery.go.
 Task 6 (Simplify Watcher) will remove WASMWatcher and update watcher.go.
+
+## Task 5: Update Discovery for New Runtimes (2026-01-25)
+
+### Changes Made
+
+1. **Updated `findEntryFile()` in `discovery.go`**:
+   - Added Deno entry files: `mod.ts`, `main.ts`
+   - Added Bun entry file: `index.tsx`
+   - Removed WASM candidates: `plugin.wasm`, `index.wasm`, `function.wasm`
+   - Added `hasDenoConfig()` helper to distinguish Deno from Node for `.ts` files
+   - Priority order: Deno-specific files → Node files → Bun files → Python → Go
+
+2. **Updated `detectRuntime()` in `discovery.go`**:
+   - Added `.tsx` → RuntimeBun
+   - Updated `.ts` → RuntimeNode (fallback, Deno detection happens in findEntryFile)
+   - Removed WASM runtime detection
+   - Kept existing: `.js`/`.mjs`/`.cjs` → RuntimeNode, `.py` → RuntimePython, `.go` → RuntimeGo
+
+### Runtime Detection Logic
+
+**Priority**: Manifest runtime > Entry file detection > Extension fallback
+
+**Entry File Detection**:
+1. Check for Deno-specific files: `mod.ts`, `main.ts`
+   - If found with `deno.json` or `deno.jsonc` → RuntimeDeno
+   - If found without Deno config → RuntimeNode (fallback)
+2. Check for Node files: `index.js`, `index.mjs`, `index.cjs`, `index.ts`, etc.
+3. Check for Bun file: `index.tsx`
+4. Check for Python file: `index.py`
+5. Check for Go files: `main.go`, `index.go`
+
+**Edge Cases Handled**:
+- `.ts` files are ambiguous (Deno or Node)
+- `mod.ts` / `main.ts` with `deno.json` → RuntimeDeno
+- `mod.ts` / `main.ts` without `deno.json` → RuntimeNode (graceful fallback)
+- `index.ts` → RuntimeNode (Node is default for generic TypeScript)
+- `.tsx` files → RuntimeBun (Bun-specific)
+
+### Helper Method Added
+
+```go
+func (r *Registry) hasDenoConfig(dirPath string) bool {
+    for _, name := range []string{"deno.json", "deno.jsonc"} {
+        if _, err := os.Stat(filepath.Join(dirPath, name)); err == nil {
+            return true
+        }
+    }
+    return false
+}
+```
+
+### Verification Status
+
+- ✅ `discovery.go` updated with Deno/Bun entry files
+- ✅ WASM candidates removed
+- ✅ Runtime detection updated for new extensions
+- ✅ Deno config detection implemented
+- ✅ Expected build errors in `watcher.go` (Task 6):
+  - `watcher.go:334,346`: Undefined WASMRuntime
+
+### Code Quality
+
+- ✅ No unnecessary comments (removed agent memo comments)
+- ✅ Self-documenting code with clear variable names
+- ✅ Existing godoc comment preserved for `detectRuntime()`
+
+### Runtime Detection Examples
+
+| File | Config | Detected Runtime |
+|------|--------|------------------|
+| `mod.ts` | `deno.json` exists | RuntimeDeno |
+| `mod.ts` | No `deno.json` | RuntimeNode (fallback) |
+| `main.ts` | `deno.jsonc` exists | RuntimeDeno |
+| `index.ts` | Any | RuntimeNode |
+| `index.tsx` | Any | RuntimeBun |
+| `index.js` | Any | RuntimeNode |
+| `index.py` | Any | RuntimePython |
+| `main.go` | Any | RuntimeGo |
+
+### Design Decisions
+
+1. **Deno detection via config files**: More reliable than file extension alone
+2. **Graceful fallback**: `.ts` files without Deno config default to Node (better UX)
+3. **Bun via `.tsx`**: Clear signal for Bun runtime (no ambiguity)
+4. **Manifest priority**: If manifest specifies runtime, it overrides file detection
+5. **No breaking changes**: Existing Node/Python/Go functions continue to work
+
+### Next Steps
+
+Task 6 will remove WASMRuntime references in `watcher.go` and complete the migration.
+

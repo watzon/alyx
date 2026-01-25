@@ -163,28 +163,43 @@ func (r *Registry) findEntryFile(dirPath string) (string, Runtime) {
 		name    string
 		runtime Runtime
 	}{
+		{"mod.ts", RuntimeDeno},
+		{"main.ts", RuntimeDeno},
 		{"index.js", RuntimeNode},
 		{"index.mjs", RuntimeNode},
 		{"index.cjs", RuntimeNode},
 		{"index.ts", RuntimeNode},
 		{"index.mts", RuntimeNode},
 		{"index.cts", RuntimeNode},
+		{"index.tsx", RuntimeBun},
 		{"index.py", RuntimePython},
 		{"main.go", RuntimeGo},
 		{"index.go", RuntimeGo},
-		{"plugin.wasm", RuntimeWasm},
-		{"index.wasm", RuntimeWasm},
-		{"function.wasm", RuntimeWasm},
 	}
 
 	for _, c := range candidates {
 		path := filepath.Join(dirPath, c.name)
 		if _, err := os.Stat(path); err == nil {
+			if c.runtime == RuntimeDeno && strings.HasSuffix(c.name, ".ts") {
+				if hasDenoCfg := r.hasDenoConfig(dirPath); hasDenoCfg {
+					return path, RuntimeDeno
+				}
+				return path, RuntimeNode
+			}
 			return path, c.runtime
 		}
 	}
 
 	return "", ""
+}
+
+func (r *Registry) hasDenoConfig(dirPath string) bool {
+	for _, name := range []string{"deno.json", "deno.jsonc"} {
+		if _, err := os.Stat(filepath.Join(dirPath, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // loadManifest loads a function manifest file.
@@ -269,7 +284,11 @@ func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error
 // detectRuntime detects the runtime from file extension.
 func detectRuntime(ext string) Runtime {
 	switch ext {
-	case ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts":
+	case ".tsx":
+		return RuntimeBun
+	case ".ts":
+		return RuntimeNode
+	case ".js", ".mjs", ".cjs", ".mts", ".cts":
 		return RuntimeNode
 	case ".py":
 		return RuntimePython
