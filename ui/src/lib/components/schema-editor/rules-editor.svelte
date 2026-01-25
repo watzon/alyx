@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { Input } from '$ui/input';
-	import { Label } from '$ui/label';
+	import CelInput from './cel-input.svelte';
 	import type { EditableRules } from './types';
 
 	interface Props {
 		rules: EditableRules;
 		onupdate: (rules: EditableRules) => void;
 		disabled?: boolean;
+		fieldNames?: string[];
 	}
 
-	let { rules, onupdate, disabled = false }: Props = $props();
+	let { rules, onupdate, disabled = false, fieldNames = [] }: Props = $props();
 
 	function updateRule(key: keyof EditableRules, value: string) {
 		const updated = { ...rules };
@@ -22,44 +22,40 @@
 	}
 </script>
 
-<div class="space-y-3">
-	<div class="space-y-1">
-		<Label class="text-xs text-muted-foreground">Create Rule (CEL expression)</Label>
-		<Input
-			placeholder='e.g., auth.isAdmin || auth.userId == doc.owner_id'
-			value={rules.create ?? ''}
-			onchange={(e) => updateRule('create', e.currentTarget.value)}
-			{disabled}
-		/>
-	</div>
+<div class="space-y-4">
+	<CelInput
+		label="Create Rule"
+		placeholder='e.g., auth.id != "" (require auth)'
+		value={rules.create ?? ''}
+		onchange={(v) => updateRule('create', v)}
+		{disabled}
+		{fieldNames}
+	/>
 
-	<div class="space-y-1">
-		<Label class="text-xs text-muted-foreground">Read Rule</Label>
-		<Input
-			placeholder='e.g., true (public) or auth.userId != ""'
-			value={rules.read ?? ''}
-			onchange={(e) => updateRule('read', e.currentTarget.value)}
-			{disabled}
-		/>
-	</div>
+	<CelInput
+		label="Read Rule"
+		placeholder="e.g., true (public access)"
+		value={rules.read ?? ''}
+		onchange={(v) => updateRule('read', v)}
+		{disabled}
+		{fieldNames}
+	/>
 
-	<div class="space-y-1">
-		<Label class="text-xs text-muted-foreground">Update Rule</Label>
-		<Input
-			placeholder="e.g., auth.userId == doc.owner_id"
-			value={rules.update ?? ''}
-			onchange={(e) => updateRule('update', e.currentTarget.value)}
-			{disabled}
-		/>
-	</div>
+	<CelInput
+		label="Update Rule"
+		placeholder="e.g., auth.id == doc.owner_id"
+		value={rules.update ?? ''}
+		onchange={(v) => updateRule('update', v)}
+		{disabled}
+		{fieldNames}
+	/>
 
-	<div class="space-y-1">
-		<Label class="text-xs text-muted-foreground">Delete Rule</Label>
-		<Input
-			placeholder="e.g., auth.isAdmin"
-			value={rules.delete ?? ''}
-			onchange={(e) => updateRule('delete', e.currentTarget.value)}
-			{disabled}
-		/>
-	</div>
+	<CelInput
+		label="Delete Rule"
+		placeholder='e.g., auth.role == "admin"'
+		value={rules.delete ?? ''}
+		onchange={(v) => updateRule('delete', v)}
+		{disabled}
+		{fieldNames}
+	/>
 </div>

@@ -13,9 +13,9 @@ function deepClone<T>(obj: T): T {
 	return JSON.parse(JSON.stringify(obj));
 }
 
-export function createHistory(initial: EditableSchema) {
+export function createHistory(getInitial: () => EditableSchema) {
 	let past = $state<EditableSchema[]>([]);
-	let present = $state<EditableSchema>(deepClone(initial));
+	let present = $state<EditableSchema>(deepClone(getInitial()));
 	let future = $state<EditableSchema[]>([]);
 
 	function push(newState: EditableSchema) {

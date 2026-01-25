@@ -23,8 +23,8 @@
   const queryClient = useQueryClient();
   const isEditMode = $derived(!!document);
 
-  // Generate Zod schema from collection fields
-  const schema = collectionToZod(collection);
+  // Generate Zod schema from collection fields (reactive to collection changes)
+  const schema = $derived(collectionToZod(collection));
 
   // Get the primary key field (usually 'id')
   const primaryKeyField = $derived((collection.fields || []).find((f) => f.primary));
@@ -32,13 +32,11 @@
   // Get editable fields (exclude primary keys for regular fields section)
   const editableFields = $derived((collection.fields || []).filter((f) => !f.primary));
 
-  // Initialize form data
-  let initialData = $state<Record<string, any>>({});
-  
-  $effect(() => {
+  // Compute initial form data (reactive to document/collection changes)
+  const initialData = $derived.by(() => {
     if (document) {
       // Edit mode: pre-populate with document data
-      initialData = { ...document };
+      return { ...document };
     } else {
       // Create mode: use default values
       const defaults: Record<string, any> = {};
@@ -57,15 +55,16 @@
           defaults[field.name] = field.nullable ? null : '';
         }
       }
-      initialData = defaults;
+      return defaults;
     }
   });
 
-  // Superform setup
-  const form = superForm(
-    { data: initialData },
+  // Superform setup - use empty object initially, reset with initialData via $effect
+  // Use getter function for validators to access current $derived schema value
+  const form = superForm<Record<string, any>, Record<string, any>>(
+    { data: {} as Record<string, any> },
     {
-      validators: zodClient(schema as any),
+      validators: () => zodClient(schema as any),
       SPA: true,
       dataType: 'json',
       resetForm: false,

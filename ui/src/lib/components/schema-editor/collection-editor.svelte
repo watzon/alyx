@@ -160,6 +160,7 @@
 	);
 
 	const hasPrimaryField = $derived(collection.fields.some((f) => f.primary));
+	const fieldNames = $derived(collection.fields.map((f) => f.name).filter(Boolean));
 </script>
 
 <Card.Root>
@@ -243,7 +244,7 @@
 				{/if}
 			</Collapsible.Trigger>
 			<Collapsible.Content class="pt-2">
-				<RulesEditor rules={collection.rules} onupdate={updateRules} {disabled} />
+				<RulesEditor rules={collection.rules} onupdate={updateRules} {disabled} {fieldNames} />
 			</Collapsible.Content>
 		</Collapsible.Root>
 

@@ -17,17 +17,25 @@
   const step = $derived(field.type === 'float' ? 0.01 : 1);
   const useSlider = $derived(field.validate?.slider === true && min !== undefined && max !== undefined);
   
-  let sliderValue = $state<number[]>(value !== null && value !== undefined ? [value] : [min ?? 0]);
+  // Initialize slider value - will be synced with value/min via $effect
+  let sliderValue = $state<number[]>([0]);
   
+  // Initialize and sync sliderValue based on value or min
+  $effect(() => {
+    const currentMin = min ?? 0;
+    if (value !== null && value !== undefined) {
+      if (sliderValue[0] !== value) {
+        sliderValue = [value];
+      }
+    } else if (sliderValue[0] !== currentMin) {
+      sliderValue = [currentMin];
+    }
+  });
+  
+  // Sync value from slider changes (when in slider mode)
   $effect(() => {
     if (useSlider && sliderValue[0] !== value) {
       value = sliderValue[0];
-    }
-  });
-
-  $effect(() => {
-    if (useSlider && value !== null && value !== undefined && sliderValue[0] !== value) {
-      sliderValue = [value];
     }
   });
 </script>

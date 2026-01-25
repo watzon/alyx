@@ -29,7 +29,19 @@
 	let activeCollection = $state<string>('');
 	let containerEl: HTMLDivElement | undefined = $state();
 
-	const history = createHistory(schema);
+	// Track schema identity to reset history when parent provides new schema
+	let lastSchemaId = $state<string | null>(null);
+	// Pass getter function to avoid capturing initial schema value
+	const history = createHistory(() => schema);
+	
+	// Reset history when schema prop changes from parent (not via our own edits)
+	$effect(() => {
+		const currentId = JSON.stringify(schema.collections.map(c => c._id));
+		if (lastSchemaId !== null && lastSchemaId !== currentId) {
+			history.reset(schema);
+		}
+		lastSchemaId = currentId;
+	});
 
 	function applyChange(newSchema: EditableSchema) {
 		history.push(newSchema);

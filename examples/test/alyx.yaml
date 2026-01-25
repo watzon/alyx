@@ -12,7 +12,7 @@ server:
     allowed_origins: ["*"]
 
 database:
-  path: ./alyx.db
+  path: ./data/alyx.db
   wal_mode: true
   foreign_keys: true
 
