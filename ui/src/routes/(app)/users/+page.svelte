@@ -170,7 +170,7 @@
 	}
 </script>
 
-<div class="space-y-6">
+<div class="max-w-screen-2xl mx-auto space-y-6">
 	<div class="flex items-center justify-between mb-6">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Users</h1>

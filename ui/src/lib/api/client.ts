@@ -236,6 +236,27 @@ export interface Collection {
 	rules?: Rules;
 }
 
+export type RichTextPreset = 'minimal' | 'basic' | 'standard' | 'full';
+export type RichTextFormat =
+	| 'bold'
+	| 'italic'
+	| 'underline'
+	| 'strike'
+	| 'code'
+	| 'link'
+	| 'heading'
+	| 'blockquote'
+	| 'codeblock'
+	| 'bulletlist'
+	| 'orderedlist'
+	| 'horizontalrule';
+
+export interface RichTextConfig {
+	preset?: RichTextPreset;
+	allow?: RichTextFormat[];
+	deny?: RichTextFormat[];
+}
+
 export interface Field {
 	name: string;
 	type: string;
@@ -247,6 +268,7 @@ export interface Field {
 	references?: string;
 	onDelete?: string;
 	validate?: Record<string, unknown>;
+	richtext?: RichTextConfig;
 }
 
 export interface Index {

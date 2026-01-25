@@ -40,7 +40,7 @@
 	}
 </script>
 
-<div class="space-y-6">
+<div class="max-w-screen-2xl mx-auto space-y-6">
 	<div>
 		<h1 class="text-2xl font-semibold tracking-tight">Schema</h1>
 		<p class="text-sm text-muted-foreground">View your database schema definitions</p>
@@ -74,7 +74,7 @@
 						</Card.Header>
 						<Card.Content>
 							<div class="space-y-2">
-								{#each collection.fields as field}
+								{#each collection.fields ?? [] as field}
 									<div
 										class="flex items-center justify-between rounded-md border border-border p-3"
 									>
@@ -123,12 +123,12 @@
 							</Card.Header>
 							<Card.Content>
 								<div class="space-y-2">
-									{#each collection.indexes as index}
+									{#each collection.indexes ?? [] as index}
 										<div class="flex items-center justify-between rounded-md border border-border p-3">
 											<span class="font-mono text-sm">{index.name}</span>
 											<div class="flex items-center gap-2">
 												<span class="text-sm text-muted-foreground">
-													{index.fields.join(', ')}
+													{index.fields?.join(', ') ?? ''}
 												</span>
 												{#if index.unique}
 													<Badge variant="outline">Unique</Badge>

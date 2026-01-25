@@ -46,7 +46,7 @@
 {:else if authStore.isAuthenticated}
 	<div class="min-h-screen bg-background">
 		<header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-			<div class="mx-auto max-w-6xl px-6">
+			<div class="px-4 sm:px-6 lg:px-8">
 				<div class="flex h-14 items-center justify-between">
 					<div class="flex items-center gap-4">
 						<a href="{base}/" class="flex items-center">
@@ -105,7 +105,7 @@
 			</div>
 		</header>
 
-		<main class="mx-auto max-w-6xl px-6 py-8">
+		<main class="px-4 sm:px-6 lg:px-8 py-6">
 			{@render children()}
 		</main>
 	</div>

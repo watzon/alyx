@@ -17,7 +17,7 @@
 	}));
 </script>
 
-<div class="space-y-6">
+<div class="max-w-screen-2xl mx-auto space-y-6">
 	<div>
 		<h1 class="text-2xl font-semibold tracking-tight">Collections</h1>
 		<p class="text-sm text-muted-foreground">Browse and manage your data collections</p>
@@ -64,9 +64,9 @@
 						</Card.Header>
 						<Card.Content>
 							<div class="flex items-center gap-1.5">
-								<Badge variant="secondary">{collection.fields.length} fields</Badge>
+								<Badge variant="secondary">{collection.fields?.length ?? 0} fields</Badge>
 								{#if collection.indexes?.length}
-									<Badge variant="outline">{collection.indexes.length} indexes</Badge>
+									<Badge variant="outline">{collection.indexes?.length ?? 0} indexes</Badge>
 								{/if}
 							</div>
 						</Card.Content>

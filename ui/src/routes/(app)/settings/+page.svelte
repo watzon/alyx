@@ -68,7 +68,7 @@
 	}
 </script>
 
-<div class="space-y-6">
+<div class="max-w-screen-2xl mx-auto space-y-6">
 	<div>
 		<h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
 		<p class="text-sm text-muted-foreground">Manage API tokens and configuration</p>
