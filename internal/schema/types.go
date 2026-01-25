@@ -11,6 +11,7 @@ const (
 	FieldTypeUUID      FieldType = "uuid"
 	FieldTypeString    FieldType = "string"
 	FieldTypeText      FieldType = "text"
+	FieldTypeRichText  FieldType = "richtext"
 	FieldTypeInt       FieldType = "int"
 	FieldTypeFloat     FieldType = "float"
 	FieldTypeBool      FieldType = "bool"
@@ -21,7 +22,7 @@ const (
 
 func (t FieldType) IsValid() bool {
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeInt,
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeInt,
 		FieldTypeFloat, FieldTypeBool, FieldTypeTimestamp, FieldTypeJSON, FieldTypeBlob:
 		return true
 	}
@@ -30,7 +31,7 @@ func (t FieldType) IsValid() bool {
 
 func (t FieldType) SQLiteType() string {
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeTimestamp, FieldTypeJSON:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp, FieldTypeJSON:
 		return "TEXT"
 	case FieldTypeInt, FieldTypeBool:
 		return "INTEGER"
@@ -38,9 +39,8 @@ func (t FieldType) SQLiteType() string {
 		return "REAL"
 	case FieldTypeBlob:
 		return "BLOB"
-	default:
-		return "TEXT"
 	}
+	return "TEXT"
 }
 
 func (t FieldType) GoType(nullable bool) string {
@@ -49,7 +49,7 @@ func (t FieldType) GoType(nullable bool) string {
 		prefix = "*"
 	}
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
 		return prefix + "string"
 	case FieldTypeInt:
 		return prefix + "int64"
@@ -71,7 +71,7 @@ func (t FieldType) GoType(nullable bool) string {
 func (t FieldType) TypeScriptType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
 		base = "string"
 	case FieldTypeInt, FieldTypeFloat:
 		base = "number"
@@ -95,7 +95,7 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 func (t FieldType) PythonType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText:
+	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText:
 		base = "str"
 	case FieldTypeInt:
 		base = "int"
@@ -206,6 +206,7 @@ type Field struct {
 	OnUpdate   string           `yaml:"onUpdate"`
 	Internal   bool             `yaml:"internal"`
 	Validate   *FieldValidation `yaml:"validate"`
+	RichText   *RichTextConfig  `yaml:"richtext"`
 
 	MinLength *int `yaml:"minLength"`
 	MaxLength *int `yaml:"maxLength"`
@@ -252,7 +253,7 @@ func (f *Field) SQLDefault() string {
 		return "(datetime('now'))"
 	default:
 		switch f.Type {
-		case FieldTypeString, FieldTypeText, FieldTypeUUID:
+		case FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeUUID:
 			return fmt.Sprintf("'%s'", strings.ReplaceAll(f.Default, "'", "''"))
 		case FieldTypeBool:
 			if f.Default == "true" {
@@ -273,6 +274,142 @@ type FieldValidation struct {
 	Format    string   `yaml:"format"`
 	Pattern   string   `yaml:"pattern"`
 	Enum      []string `yaml:"enum"`
+}
+
+type RichTextPreset string
+
+const (
+	RichTextPresetBasic    RichTextPreset = "basic"
+	RichTextPresetStandard RichTextPreset = "standard"
+	RichTextPresetFull     RichTextPreset = "full"
+	RichTextPresetMinimal  RichTextPreset = "minimal"
+)
+
+type RichTextFormat string
+
+const (
+	RichTextFormatBold           RichTextFormat = "bold"
+	RichTextFormatItalic         RichTextFormat = "italic"
+	RichTextFormatUnderline      RichTextFormat = "underline"
+	RichTextFormatStrike         RichTextFormat = "strike"
+	RichTextFormatCode           RichTextFormat = "code"
+	RichTextFormatLink           RichTextFormat = "link"
+	RichTextFormatHeading        RichTextFormat = "heading"
+	RichTextFormatBlockquote     RichTextFormat = "blockquote"
+	RichTextFormatCodeBlock      RichTextFormat = "codeblock"
+	RichTextFormatBulletList     RichTextFormat = "bulletlist"
+	RichTextFormatOrderedList    RichTextFormat = "orderedlist"
+	RichTextFormatHorizontalRule RichTextFormat = "horizontalrule"
+)
+
+var richTextPresetFormats = map[RichTextPreset][]RichTextFormat{
+	RichTextPresetMinimal: {
+		RichTextFormatBold,
+		RichTextFormatItalic,
+	},
+	RichTextPresetBasic: {
+		RichTextFormatBold,
+		RichTextFormatItalic,
+		RichTextFormatLink,
+		RichTextFormatBulletList,
+	},
+	RichTextPresetStandard: {
+		RichTextFormatBold,
+		RichTextFormatItalic,
+		RichTextFormatUnderline,
+		RichTextFormatStrike,
+		RichTextFormatLink,
+		RichTextFormatHeading,
+		RichTextFormatBulletList,
+		RichTextFormatOrderedList,
+		RichTextFormatBlockquote,
+	},
+	RichTextPresetFull: {
+		RichTextFormatBold,
+		RichTextFormatItalic,
+		RichTextFormatUnderline,
+		RichTextFormatStrike,
+		RichTextFormatCode,
+		RichTextFormatLink,
+		RichTextFormatHeading,
+		RichTextFormatBlockquote,
+		RichTextFormatCodeBlock,
+		RichTextFormatBulletList,
+		RichTextFormatOrderedList,
+		RichTextFormatHorizontalRule,
+	},
+}
+
+var validRichTextFormats = map[RichTextFormat]bool{
+	RichTextFormatBold:           true,
+	RichTextFormatItalic:         true,
+	RichTextFormatUnderline:      true,
+	RichTextFormatStrike:         true,
+	RichTextFormatCode:           true,
+	RichTextFormatLink:           true,
+	RichTextFormatHeading:        true,
+	RichTextFormatBlockquote:     true,
+	RichTextFormatCodeBlock:      true,
+	RichTextFormatBulletList:     true,
+	RichTextFormatOrderedList:    true,
+	RichTextFormatHorizontalRule: true,
+}
+
+type RichTextConfig struct {
+	Preset RichTextPreset   `yaml:"preset"`
+	Allow  []RichTextFormat `yaml:"allow"`
+	Deny   []RichTextFormat `yaml:"deny"`
+}
+
+func (c *RichTextConfig) GetAllowedFormats() []RichTextFormat {
+	if c == nil {
+		return richTextPresetFormats[RichTextPresetBasic]
+	}
+
+	var baseFormats []RichTextFormat
+	switch {
+	case c.Preset != "":
+		baseFormats = richTextPresetFormats[c.Preset]
+	default:
+		baseFormats = richTextPresetFormats[RichTextPresetBasic]
+	}
+
+	formatSet := make(map[RichTextFormat]bool)
+	for _, f := range baseFormats {
+		formatSet[f] = true
+	}
+
+	for _, f := range c.Allow {
+		formatSet[f] = true
+	}
+
+	for _, f := range c.Deny {
+		delete(formatSet, f)
+	}
+
+	result := make([]RichTextFormat, 0, len(formatSet))
+	for f := range formatSet {
+		result = append(result, f)
+	}
+	return result
+}
+
+func (c *RichTextConfig) IsFormatAllowed(format RichTextFormat) bool {
+	for _, f := range c.GetAllowedFormats() {
+		if f == format {
+			return true
+		}
+	}
+	return false
+}
+
+func IsValidRichTextFormat(format RichTextFormat) bool {
+	return validRichTextFormats[format]
+}
+
+func IsValidRichTextPreset(preset RichTextPreset) bool {
+	_, ok := richTextPresetFormats[preset]
+	return ok
 }
 
 type Index struct {

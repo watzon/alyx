@@ -293,7 +293,15 @@ func (c *Collection) processInput(data Row, isCreate bool) Row {
 			continue
 		}
 
-		result[fieldName] = c.convertValue(value, field)
+		converted := c.convertValue(value, field)
+
+		if field.Type == schema.FieldTypeRichText {
+			if str, ok := converted.(string); ok && str != "" {
+				converted = schema.SanitizeRichText(str, field.RichText)
+			}
+		}
+
+		result[fieldName] = converted
 	}
 
 	return result
@@ -329,7 +337,7 @@ func (c *Collection) processRow(row Row) Row {
 					row[fieldName] = t
 				}
 			}
-		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
+		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
 			// No conversion needed
 		}
 	}
@@ -379,7 +387,7 @@ func (c *Collection) convertValue(value any, field *schema.Field) any {
 		case string:
 			return v
 		}
-	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
+	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob:
 		// Return as-is
 	}
 

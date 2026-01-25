@@ -235,6 +235,7 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 	errs = append(errs, validateFieldReferences(path, f, s)...)
 	errs = append(errs, validateFieldTimestamps(path, f)...)
 	errs = append(errs, validateFieldLength(path, f)...)
+	errs = append(errs, validateFieldRichText(path, f)...)
 
 	if f.Validate != nil {
 		errs = append(errs, validateFieldValidation(path+".validate", f)...)
@@ -339,10 +340,10 @@ func validateFieldLength(path string, f *Field) ValidationErrors {
 		return errs
 	}
 
-	if f.Type != FieldTypeString && f.Type != FieldTypeText {
+	if f.Type != FieldTypeString && f.Type != FieldTypeText && f.Type != FieldTypeRichText {
 		errs = append(errs, &ValidationError{
 			Path:    path,
-			Message: "minLength/maxLength can only be used with string or text types",
+			Message: "minLength/maxLength can only be used with string, text, or richtext types",
 		})
 	}
 
@@ -365,6 +366,49 @@ func validateFieldLength(path string, f *Field) ValidationErrors {
 			Path:    path,
 			Message: "minLength cannot be greater than maxLength",
 		})
+	}
+
+	return errs
+}
+
+func validateFieldRichText(path string, f *Field) ValidationErrors {
+	var errs ValidationErrors
+
+	if f.RichText != nil && f.Type != FieldTypeRichText {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".richtext",
+			Message: "richtext config can only be used with richtext field type",
+		})
+		return errs
+	}
+
+	if f.RichText == nil {
+		return errs
+	}
+
+	if f.RichText.Preset != "" && !IsValidRichTextPreset(f.RichText.Preset) {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".richtext.preset",
+			Message: "must be one of: minimal, basic, standard, full",
+		})
+	}
+
+	for i, format := range f.RichText.Allow {
+		if !IsValidRichTextFormat(format) {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.richtext.allow[%d]", path, i),
+				Message: fmt.Sprintf("invalid format: %s", format),
+			})
+		}
+	}
+
+	for i, format := range f.RichText.Deny {
+		if !IsValidRichTextFormat(format) {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.richtext.deny[%d]", path, i),
+				Message: fmt.Sprintf("invalid format: %s", format),
+			})
+		}
 	}
 
 	return errs

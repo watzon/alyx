@@ -412,6 +412,27 @@ func serializeField(f *schema.Field) map[string]any {
 	if f.OnDelete != "" {
 		field["onDelete"] = string(f.OnDelete)
 	}
+	if f.RichText != nil {
+		richtext := map[string]any{}
+		if f.RichText.Preset != "" {
+			richtext["preset"] = string(f.RichText.Preset)
+		}
+		if len(f.RichText.Allow) > 0 {
+			allow := make([]string, len(f.RichText.Allow))
+			for i, a := range f.RichText.Allow {
+				allow[i] = string(a)
+			}
+			richtext["allow"] = allow
+		}
+		if len(f.RichText.Deny) > 0 {
+			deny := make([]string, len(f.RichText.Deny))
+			for i, d := range f.RichText.Deny {
+				deny[i] = string(d)
+			}
+			richtext["deny"] = deny
+		}
+		field["richtext"] = richtext
+	}
 	return field
 }
 

@@ -71,7 +71,7 @@ func ValidateInput(s *schema.Collection, data Row, isCreate bool) *ValidationErr
 
 func validateFieldValue(field *schema.Field, value any, errs *ValidationErrors) {
 	switch field.Type {
-	case schema.FieldTypeString, schema.FieldTypeText:
+	case schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText:
 		validateString(field, value, errs)
 	case schema.FieldTypeInt:
 		validateInt(field, value, errs)
