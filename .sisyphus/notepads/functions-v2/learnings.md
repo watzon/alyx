@@ -44,3 +44,43 @@ This file captures conventions, patterns, and best practices discovered during i
 - TriggerType/TriggerID fields: String types for flexible trigger identification (http, webhook, database, auth, schedule, custom)
 - Godoc pattern: All exported types have comments ending with period (godot compliance)
 
+
+## 2026-01-25 Task 2: Database Migrations
+
+### Migration File Pattern
+- Migrations are SQL files in `internal/database/migrations/sql/` with numeric prefixes (e.g., `002_event_system.sql`)
+- Files are loaded via `go:embed` and executed in alphabetical order
+- Each migration runs in its own transaction
+
+### Statement Splitting Gotcha
+- Migration system splits SQL by semicolons and executes statements sequentially
+- **CRITICAL**: Statements starting with `--` are skipped entirely
+- Header comments get bundled with the first CREATE TABLE statement
+- If first statement starts with `--`, the entire CREATE TABLE is skipped!
+- **Solution**: Remove header comments or ensure first CREATE TABLE is not bundled with comments
+
+### SQLite Conventions Followed
+- Use `TEXT` for datetime fields, not `DATETIME` (SQLite stores as TEXT anyway)
+- Use `INTEGER` for boolean fields (0/1)
+- Use `TEXT` for JSON fields
+- Use `TEXT` for UUID fields
+- Default timestamps: `DEFAULT (datetime('now'))`
+
+### Index Strategy
+- Events: Composite index on `(status, process_at)` for queue processing
+- Events: Composite index on `(type, source, action)` for event matching
+- Hooks: Composite index on `(event_type, event_source, event_action)` for event matching
+- Hooks: Index on `function_id` for function lookups
+- Schedules: Composite index on `(enabled, next_run)` for scheduler queries
+- Executions: Composite index on `(function_id, started_at DESC)` for function history
+- Executions: Index on `status` for filtering
+- Executions: Composite index on `(trigger_type, trigger_id)` for trigger lookups
+
+### Tables Created
+1. **events**: Event queue with status tracking
+2. **hooks**: Event-to-function mappings
+3. **webhook_endpoints**: HTTP webhook configurations
+4. **schedules**: Cron/interval schedules
+5. **executions**: Function execution logs
+
+All migrations execute successfully and tests pass.
