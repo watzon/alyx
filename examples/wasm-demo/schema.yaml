@@ -1,0 +1,13 @@
+collections:
+  - name: users
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: email
+        type: string
+        required: true
+        unique: true
+      - name: created_at
+        type: datetime
+        default: now
