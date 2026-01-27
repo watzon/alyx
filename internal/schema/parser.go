@@ -336,6 +336,7 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 	errs = append(errs, validateFieldRichText(path, f)...)
 	errs = append(errs, validateFieldSelect(path, f)...)
 	errs = append(errs, validateFieldRelation(path, f, s)...)
+	errs = append(errs, validateFieldFile(path, f, s)...)
 
 	if f.Validate != nil {
 		errs = append(errs, validateFieldValidation(path+".validate", f)...)
@@ -357,7 +358,7 @@ func validateFieldBasics(path, name string, f *Field) ValidationErrors {
 	if !f.Type.IsValid() {
 		errs = append(errs, &ValidationError{
 			Path:    path + ".type",
-			Message: fmt.Sprintf("invalid type %q; must be one of: uuid, string, text, richtext, int, float, bool, timestamp, json, blob, email, url, date, select, relation", f.Type),
+			Message: fmt.Sprintf("invalid type %q; must be one of: uuid, string, text, richtext, int, float, bool, timestamp, json, blob, email, url, date, select, relation, file", f.Type),
 		})
 	}
 
@@ -628,6 +629,65 @@ func validateFieldRelation(path string, f *Field, s *Schema) ValidationErrors {
 		errs = append(errs, &ValidationError{
 			Path:    path + ".relation.onDelete",
 			Message: "cannot use 'set null' on non-nullable field",
+		})
+	}
+
+	return errs
+}
+
+func validateFieldFile(path string, f *Field, s *Schema) ValidationErrors {
+	var errs ValidationErrors
+
+	if f.File != nil && f.Type != FieldTypeFile {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file",
+			Message: "file config can only be used with file field type",
+		})
+		return errs
+	}
+
+	if f.Type == FieldTypeFile && f.File == nil {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file",
+			Message: "file field type requires file config with bucket",
+		})
+		return errs
+	}
+
+	if f.File == nil {
+		return errs
+	}
+
+	if f.File.Bucket == "" {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file.bucket",
+			Message: "bucket is required",
+		})
+	} else if _, ok := s.Buckets[f.File.Bucket]; !ok {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file.bucket",
+			Message: fmt.Sprintf("referenced bucket %q does not exist", f.File.Bucket),
+		})
+	}
+
+	if !f.File.OnDelete.IsValid() {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file.on_delete",
+			Message: "must be one of: restrict, cascade, set null",
+		})
+	}
+
+	if f.File.OnDelete == OnDeleteSetNull && !f.Nullable {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file.on_delete",
+			Message: "cannot use 'set null' on non-nullable field",
+		})
+	}
+
+	if f.File.MaxSize < 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".file.max_size",
+			Message: "must be non-negative",
 		})
 	}
 

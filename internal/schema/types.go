@@ -23,13 +23,14 @@ const (
 	FieldTypeDate      FieldType = "date"
 	FieldTypeSelect    FieldType = "select"
 	FieldTypeRelation  FieldType = "relation"
+	FieldTypeFile      FieldType = "file"
 )
 
 func (t FieldType) IsValid() bool {
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeInt,
 		FieldTypeFloat, FieldTypeBool, FieldTypeTimestamp, FieldTypeJSON, FieldTypeBlob,
-		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation:
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation, FieldTypeFile:
 		return true
 	}
 	return false
@@ -38,7 +39,7 @@ func (t FieldType) IsValid() bool {
 func (t FieldType) SQLiteType() string {
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp,
-		FieldTypeJSON, FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation:
+		FieldTypeJSON, FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation, FieldTypeFile:
 		return "TEXT"
 	case FieldTypeInt, FieldTypeBool:
 		return "INTEGER"
@@ -57,7 +58,7 @@ func (t FieldType) GoType(nullable bool) string {
 	}
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
-		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation:
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation, FieldTypeFile:
 		return prefix + "string"
 	case FieldTypeInt:
 		return prefix + "int64"
@@ -84,7 +85,7 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 	var base string
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
-		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation:
+		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation, FieldTypeFile:
 		base = "string"
 	case FieldTypeInt, FieldTypeFloat:
 		base = "number"
@@ -111,7 +112,7 @@ func (t FieldType) PythonType(nullable bool) string {
 	var base string
 	switch t {
 	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
-		FieldTypeEmail, FieldTypeURL, FieldTypeRelation:
+		FieldTypeEmail, FieldTypeURL, FieldTypeRelation, FieldTypeFile:
 		base = "str"
 	case FieldTypeInt:
 		base = "int"
@@ -214,6 +215,14 @@ func (c *Collection) PrimaryKeyField() *Field {
 	return nil
 }
 
+// FileConfig defines options for file field type.
+type FileConfig struct {
+	Bucket       string         `yaml:"bucket"`
+	MaxSize      int64          `yaml:"max_size"`
+	AllowedTypes []string       `yaml:"allowed_types"`
+	OnDelete     OnDeleteAction `yaml:"on_delete"`
+}
+
 type Field struct {
 	Name       string           `yaml:"-"`
 	Type       FieldType        `yaml:"type"`
@@ -230,6 +239,7 @@ type Field struct {
 	RichText   *RichTextConfig  `yaml:"richtext"`
 	Select     *SelectConfig    `yaml:"select"`
 	Relation   *RelationConfig  `yaml:"relation"`
+	File       *FileConfig      `yaml:"file"`
 
 	MinLength *int `yaml:"minLength"`
 	MaxLength *int `yaml:"maxLength"`

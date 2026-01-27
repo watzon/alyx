@@ -179,7 +179,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 2. Add file field type
+- [x] 2. Add file field type
 
   **What to do**:
   - Add `FieldTypeFile = "file"` constant to `internal/schema/types.go`

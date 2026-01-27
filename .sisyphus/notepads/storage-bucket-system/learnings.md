@@ -70,3 +70,78 @@ This foundation enables:
 - File upload/download handlers (server layer)
 - Bucket management API endpoints
 
+
+## File Field Type Implementation
+
+**Date**: 2026-01-27
+**Task**: Add `file` field type to Alyx's schema system with bucket reference support
+
+### Patterns Followed
+
+1. **FieldType Constant Addition** (from existing field types in `types.go`):
+   - Added `FieldTypeFile = "file"` constant to FieldType enum
+   - Updated all type switch statements: `IsValid()`, `SQLiteType()`, `GoType()`, `TypeScriptType()`, `PythonType()`
+   - Followed TEXT storage pattern (stores UUID reference to file)
+
+2. **Config Struct Pattern** (from `SelectConfig` and `RelationConfig`):
+   - Created `FileConfig` struct with public API docstring
+   - Placed before `Field` struct to avoid forward reference errors
+   - Fields: `Bucket string`, `MaxSize int64`, `AllowedTypes []string`, `OnDelete OnDeleteAction`
+   - Added `File *FileConfig` pointer to `Field` struct
+
+3. **Validation Pattern** (from `validateFieldSelect()` and `validateFieldRelation()`):
+   - Created `validateFieldFile()` function with schema reference parameter
+   - Validates file config only used with file field type
+   - Validates file field type requires file config
+   - Validates bucket reference exists in schema
+   - Validates OnDelete action compatibility with nullable
+   - Validates MaxSize is non-negative
+
+4. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented types and validation (GREEN phase)
+   - All tests passing with clean build
+
+### Key Decisions
+
+1. **Storage as UUID Reference**: File field stores TEXT (UUID) in SQLite, not the actual file data. The UUID references a file in the storage backend.
+
+2. **Type Mapping**:
+   - SQLite: `TEXT` (UUID reference)
+   - Go: `string` (single), `*string` (nullable)
+   - TypeScript: `string` (single), `string | null` (nullable)
+   - Python: `str` (single), `Optional[str]` (nullable)
+
+3. **Bucket Reference Validation**: File field must reference an existing bucket in the schema. This ensures referential integrity at schema level.
+
+4. **OnDelete Behavior**: Supports `restrict` (prevent deletion), `cascade` (delete file), `set null` (orphan file). Follows same pattern as relation fields.
+
+5. **Zero Values for Unlimited**: `MaxSize` of 0 means unlimited file size (no restriction).
+
+### Test Coverage
+
+- ✅ File field SQLiteType returns TEXT
+- ✅ File field GoType returns string/nullable string
+- ✅ File field TypeScriptType returns string/nullable string
+- ✅ File config parsing with all fields (bucket, max_size, allowed_types, on_delete)
+- ✅ File config parsing with minimal config (only bucket)
+- ✅ Validation fails if file config missing
+- ✅ Validation fails if bucket not specified
+- ✅ Validation fails if bucket doesn't exist in schema
+- ✅ OnDelete action validation (restrict, cascade, set null)
+
+### Files Modified
+
+- `internal/schema/types.go`: Added `FieldTypeFile` constant, `FileConfig` struct, updated all type methods
+- `internal/schema/parser.go`: Added `validateFieldFile()`, updated `validateField()`, updated error message
+- `internal/schema/file_test.go`: Comprehensive test suite (new file)
+
+### Next Steps
+
+This foundation enables:
+- File upload/download API endpoints
+- File metadata storage in database
+- Storage backend integration (local, S3, etc.)
+- File validation (size, MIME type) at runtime
+- Cascade deletion of files when parent record deleted
+
