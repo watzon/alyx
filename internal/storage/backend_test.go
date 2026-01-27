@@ -124,10 +124,17 @@ func TestNewBackend(t *testing.T) {
 				Type: "filesystem",
 				Path: "/tmp/test",
 			},
+			wantErr: false,
+		},
+		{
+			name: "filesystem backend missing path",
+			cfg: BackendConfig{
+				Type: "filesystem",
+			},
 			wantErr: true,
 		},
 		{
-			name: "s3 backend",
+			name: "s3 backend missing credentials",
 			cfg: BackendConfig{
 				Type:     "s3",
 				Endpoint: "s3.amazonaws.com",
@@ -146,7 +153,7 @@ func TestNewBackend(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewBackend(tt.cfg)
+			_, err := NewBackend(context.Background(), tt.cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewBackend() error = %v, wantErr %v", err, tt.wantErr)
 			}

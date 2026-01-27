@@ -316,7 +316,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 6. Implement filesystem backend
+- [x] 6. Implement filesystem backend
 
   **What to do**:
   - Create `internal/storage/filesystem.go` implementing `Backend`

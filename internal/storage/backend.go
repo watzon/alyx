@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/watzon/alyx/internal/config"
 )
 
 var (
@@ -29,12 +31,22 @@ type BackendConfig struct {
 	SecretKey   string
 }
 
-func NewBackend(cfg BackendConfig) (Backend, error) {
+func NewBackend(ctx context.Context, cfg BackendConfig) (Backend, error) {
 	switch cfg.Type {
 	case "filesystem":
-		return nil, fmt.Errorf("%w: filesystem backend not implemented", ErrInvalidConfig)
+		if cfg.Path == "" {
+			return nil, fmt.Errorf("%w: filesystem backend requires path", ErrInvalidConfig)
+		}
+		return NewFilesystemBackend(cfg.Path), nil
 	case "s3":
-		return nil, fmt.Errorf("%w: s3 backend not implemented", ErrInvalidConfig)
+		s3Cfg := config.S3Config{
+			Endpoint:        cfg.Endpoint,
+			Region:          cfg.Region,
+			AccessKeyID:     cfg.AccessKeyID,
+			SecretAccessKey: cfg.SecretKey,
+			ForcePathStyle:  cfg.Endpoint != "",
+		}
+		return NewS3Backend(ctx, s3Cfg)
 	default:
 		return nil, fmt.Errorf("%w: unknown backend type %q", ErrInvalidConfig, cfg.Type)
 	}
