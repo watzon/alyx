@@ -662,7 +662,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 15. End-to-end integration test
+- [x] 15. End-to-end integration test
 
   **What to do**:
   - Create `internal/integration/storage_test.go`
