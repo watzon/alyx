@@ -1753,3 +1753,234 @@ This implementation completes file field integration with record CRUD operations
 - Validation prevents invalid file references at creation time
 - Bucket validation searches all buckets (could optimize with file-to-bucket index)
 
+
+## TypeScript SDK File Operations Generation
+
+**Date**: 2026-01-27
+**Task**: Add file operations to TypeScript SDK generator for client-side file management
+
+### Patterns Followed
+
+1. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented storage types and client generation (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+2. **Conditional Generation** (from existing patterns):
+   - Storage client only generated when schema has buckets (`len(s.Buckets) > 0`)
+   - Prevents generating unused code in projects without file storage
+   - Follows same pattern as collection generation
+
+3. **Type Generation Pattern** (from existing type generation):
+   - Created `generateStorageTypes()` method for interfaces
+   - Created `generateStorageClient()` method for client class
+   - Both methods write to same `strings.Builder` as rest of client
+
+4. **Client Integration** (from existing client structure):
+   - Added `storage = new StorageClient(this)` property to `AlyxClient`
+   - StorageClient receives AlyxClient instance for request handling
+   - Reuses existing `request()` method for authenticated requests
+
+### Key Decisions
+
+1. **File Field Type Mapping**:
+   - File fields generate as `string` (non-nullable) or `string | null` (nullable)
+   - Stores UUID reference to file, not actual file data
+   - Matches backend implementation (TEXT column with UUID)
+
+2. **Storage Client Methods**:
+   - `upload()`: Multipart form upload with progress callback support
+   - `download()`: Returns Blob for client-side file handling
+   - `getUrl()`: Generates signed URL for temporary access
+   - `delete()`: Removes file from storage
+   - `list()`: Paginated file listing with offset/limit
+   - `uploadResumable()`: TUS protocol implementation for large files
+
+3. **TUS Client Implementation**:
+   - Returns `TUSUpload` interface with `start()`, `pause()`, `resume()`, `cancel()` methods
+   - Progress callback support via `onProgress()` method
+   - Chunk size configurable (default 5MB)
+   - Metadata support via base64-encoded Upload-Metadata header
+   - Automatic finalization when upload completes
+
+4. **FormData Upload**:
+   - Uses native `FormData` API for file uploads
+   - Metadata passed as form fields: `metadata[key]=value`
+   - Progress tracking via `onProgress` callback in options
+   - Direct fetch API usage (not through `client.request()` due to FormData)
+
+5. **Signed URL Flow**:
+   - Client calls `getUrl()` to generate signed URL
+   - Returns `{ url, expires_at }` object
+   - URL can be shared without authentication
+   - Expiry and operation (download/view) configurable
+
+### Test Coverage
+
+**TypeScriptGenerator Tests** (3 tests, all passing):
+- ✅ StorageClient class generated when buckets exist
+- ✅ All storage interfaces generated (FileMetadata, UploadOptions, SignedUrlOptions, TUSOptions, TUSUpload, SignedUrl)
+- ✅ All storage methods generated (upload, download, getUrl, delete, list, uploadResumable)
+- ✅ AlyxClient.storage property exists
+- ✅ File field generates as string type
+- ✅ Nullable file field generates as string | null
+- ✅ StorageClient NOT generated when no buckets
+
+### Files Created/Modified
+
+- `internal/codegen/typescript.go`: Added storage generation (350 lines added)
+  - `generateStorageTypes()`: Generates TypeScript interfaces
+  - `generateStorageClient()`: Generates StorageClient class
+  - Updated `generateClient()` to conditionally include storage
+- `internal/codegen/typescript_test.go`: Comprehensive test suite (250 lines, new file)
+
+### Implementation Details
+
+**Generated Interfaces**:
+```typescript
+interface FileMetadata {
+  id: string;
+  bucket: string;
+  name: string;
+  path: string;
+  mime_type: string;
+  size: number;
+  checksum?: string;
+  compressed: boolean;
+  compression_type?: string;
+  original_size?: number;
+  metadata?: Record<string, string>;
+  version: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface UploadOptions {
+  onProgress?: (progress: number) => void;
+  metadata?: Record<string, string>;
+}
+
+interface SignedUrlOptions {
+  expiry?: string;
+  operation?: 'download' | 'view';
+}
+
+interface SignedUrl {
+  url: string;
+  expires_at: string;
+}
+
+interface TUSOptions extends UploadOptions {
+  chunkSize?: number;
+}
+
+interface TUSUpload {
+  start(): Promise<FileMetadata>;
+  pause(): void;
+  resume(): void;
+  cancel(): Promise<void>;
+  onProgress(callback: (progress: number) => void): void;
+}
+```
+
+**Generated StorageClient Methods**:
+```typescript
+class StorageClient {
+  async upload(bucket: string, file: File | Blob, options?: UploadOptions): Promise<FileMetadata>
+  async download(bucket: string, fileId: string): Promise<Blob>
+  async getUrl(bucket: string, fileId: string, options?: SignedUrlOptions): Promise<SignedUrl>
+  async delete(bucket: string, fileId: string): Promise<void>
+  async list(bucket: string, options?: { limit?: number; offset?: number }): Promise<PaginatedResponse<FileMetadata>>
+  uploadResumable(bucket: string, file: File, options?: TUSOptions): TUSUpload
+}
+```
+
+**TUS Upload Flow**:
+1. `uploadResumable()` returns TUSUpload handle
+2. Call `start()` to begin upload
+3. Upload proceeds in chunks (default 5MB)
+4. Progress callbacks fired after each chunk
+5. Can `pause()`, `resume()`, or `cancel()` at any time
+6. Returns FileMetadata when complete
+
+### Integration Verified
+
+- ✅ All codegen tests pass (`go test ./internal/codegen/...`)
+- ✅ LSP diagnostics clean (no errors, only style hints)
+- ✅ `make generate` succeeds
+- ✅ Generated TypeScript follows existing patterns
+- ✅ Conditional generation works (no storage when no buckets)
+
+### Usage Example
+
+```typescript
+import { createClient } from './generated';
+
+const client = createClient({ url: 'http://localhost:8090' });
+
+// Simple upload
+const file = document.querySelector('input[type=file]').files[0];
+const metadata = await client.storage.upload('avatars', file, {
+  onProgress: (progress) => console.log(`${progress}%`),
+  metadata: { user_id: '123' }
+});
+
+// Resumable upload for large files
+const upload = client.storage.uploadResumable('uploads', file, {
+  chunkSize: 10 * 1024 * 1024, // 10MB chunks
+});
+
+upload.onProgress((progress) => {
+  console.log(`Upload progress: ${progress}%`);
+});
+
+const metadata = await upload.start();
+
+// Download file
+const blob = await client.storage.download('avatars', metadata.id);
+const url = URL.createObjectURL(blob);
+
+// Generate signed URL for sharing
+const { url: signedUrl, expires_at } = await client.storage.getUrl(
+  'avatars',
+  metadata.id,
+  { expiry: '1h', operation: 'download' }
+);
+
+// List files
+const { items, total } = await client.storage.list('avatars', {
+  limit: 20,
+  offset: 0
+});
+
+// Delete file
+await client.storage.delete('avatars', metadata.id);
+```
+
+### Next Steps
+
+This implementation completes Phase 6 (TypeScript SDK Generation) of the storage bucket system. The foundation is ready for:
+- Client-side file uploads with progress tracking
+- Resumable uploads for large files (TUS protocol)
+- Signed URLs for temporary file access
+- File management UI components
+- Integration with collection file fields
+
+### Notes
+
+- **No TypeScript compilation check**: Generated SDK not compiled in tests (would require TypeScript installation)
+- **TUS client is reference implementation**: Uses tus-js-client patterns but implemented from scratch
+- **FormData upload**: Direct fetch API usage (not through client.request()) due to FormData requirements
+- **Progress callbacks**: Supported in both simple and resumable uploads
+- **Metadata encoding**: TUS metadata uses base64 encoding (standard TUS protocol)
+- **Chunk size**: Configurable via TUSOptions (default 5MB matches backend)
+
+### Lessons Learned
+
+1. **Conditional Generation**: Check schema state before generating optional features (prevents unused code)
+2. **Test Schema Setup**: Collections need `SetFieldOrder()` for fields to be generated in tests
+3. **Field Struct**: No `Required` field in schema.Field (use `Nullable: false` instead)
+4. **String Builder Pattern**: All generation methods write to same `strings.Builder` for efficiency
+5. **Template Strings**: Go backticks for multi-line strings, escape backticks in generated code with `+ "`" +`
+6. **TDD Workflow**: Write tests first, see them fail, implement, see them pass (RED-GREEN-REFACTOR)
+

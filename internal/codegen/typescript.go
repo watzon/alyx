@@ -212,6 +212,11 @@ func (g *TypeScriptGenerator) generateClient(s *schema.Schema) string {
 	}
 	b.WriteString("} from './types';\n\n")
 
+	if len(s.Buckets) > 0 {
+		g.generateStorageTypes(&b)
+		g.generateStorageClient(&b)
+	}
+
 	// Filter operators type
 	b.WriteString(`/** Filter operators for queries. */
 export type FilterOperator = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'in' | 'contains';
@@ -511,7 +516,7 @@ export class AlyxClient {
     },
   };
 
-  // Collection accessors
+	// Collection accessors
 `)
 
 	// Generate collection properties
@@ -520,6 +525,10 @@ export class AlyxClient {
 		propName := toCamelCase(name)
 		b.WriteString(fmt.Sprintf("  %s = new Collection<%s, %sCreateInput, %sUpdateInput>(this, '%s');\n",
 			propName, typeName, typeName, typeName, name))
+	}
+
+	if len(s.Buckets) > 0 {
+		b.WriteString("\n  storage = new StorageClient(this);\n")
 	}
 
 	b.WriteString("}\n\n")
@@ -543,4 +552,306 @@ func (g *TypeScriptGenerator) generateIndex() string {
 export * from './types';
 export * from './client';
 `
+}
+
+func (g *TypeScriptGenerator) generateStorageTypes(b *strings.Builder) {
+	b.WriteString(`/** File metadata from storage. */
+export interface FileMetadata {
+  id: string;
+  bucket: string;
+  name: string;
+  path: string;
+  mime_type: string;
+  size: number;
+  checksum?: string;
+  compressed: boolean;
+  compression_type?: string;
+  original_size?: number;
+  metadata?: Record<string, string>;
+  version: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** Options for file upload. */
+export interface UploadOptions {
+  onProgress?: (progress: number) => void;
+  metadata?: Record<string, string>;
+}
+
+/** Options for signed URL generation. */
+export interface SignedUrlOptions {
+  expiry?: string;
+  operation?: 'download' | 'view';
+}
+
+/** Signed URL response. */
+export interface SignedUrl {
+  url: string;
+  expires_at: string;
+}
+
+/** Options for TUS resumable upload. */
+export interface TUSOptions extends UploadOptions {
+  chunkSize?: number;
+}
+
+/** TUS resumable upload handle. */
+export interface TUSUpload {
+  start(): Promise<FileMetadata>;
+  pause(): void;
+  resume(): void;
+  cancel(): Promise<void>;
+  onProgress(callback: (progress: number) => void): void;
+}
+
+`)
+}
+
+func (g *TypeScriptGenerator) generateStorageClient(b *strings.Builder) {
+	b.WriteString(`/** Storage client for file operations. */
+export class StorageClient {
+  constructor(private client: AlyxClient) {}
+
+  async upload(
+    bucket: string,
+    file: File | Blob,
+    options?: UploadOptions,
+  ): Promise<FileMetadata> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    if (options?.metadata) {
+      for (const [key, value] of Object.entries(options.metadata)) {
+        formData.append(` + "`" + `metadata[${key}]` + "`" + `, value);
+      }
+    }
+
+    const response = await fetch(` + "`" + `${this.client['url']}/api/files/${bucket}` + "`" + `, {
+      method: 'POST',
+      headers: this.client['token'] ? {
+        'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+      } : {},
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || ` + "`" + `HTTP ${response.status}` + "`" + `);
+    }
+
+    return response.json();
+  }
+
+  async download(bucket: string, fileId: string): Promise<Blob> {
+    const response = await fetch(
+      ` + "`" + `${this.client['url']}/api/files/${bucket}/${fileId}/download` + "`" + `,
+      {
+        headers: this.client['token'] ? {
+          'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+        } : {},
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || ` + "`" + `HTTP ${response.status}` + "`" + `);
+    }
+
+    return response.blob();
+  }
+
+  async getUrl(
+    bucket: string,
+    fileId: string,
+    options?: SignedUrlOptions,
+  ): Promise<SignedUrl> {
+    const params = new URLSearchParams();
+    if (options?.expiry) params.set('expiry', options.expiry);
+    if (options?.operation) params.set('operation', options.operation);
+
+    const query = params.toString() ? ` + "`" + `?${params}` + "`" + ` : '';
+    return this.client.request<SignedUrl>(
+      ` + "`" + `GET /api/files/${bucket}/${fileId}/sign${query}` + "`" + `,
+    );
+  }
+
+  async delete(bucket: string, fileId: string): Promise<void> {
+    return this.client.request<void>(` + "`" + `DELETE /api/files/${bucket}/${fileId}` + "`" + `);
+  }
+
+  async list(
+    bucket: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<PaginatedResponse<FileMetadata>> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+
+    const query = params.toString() ? ` + "`" + `?${params}` + "`" + ` : '';
+    return this.client.request<PaginatedResponse<FileMetadata>>(
+      ` + "`" + `GET /api/files/${bucket}${query}` + "`" + `,
+    );
+  }
+
+  uploadResumable(
+    bucket: string,
+    file: File,
+    options?: TUSOptions,
+  ): TUSUpload {
+    const chunkSize = options?.chunkSize || 5 * 1024 * 1024;
+    let uploadId: string | null = null;
+    let offset = 0;
+    let paused = false;
+    let cancelled = false;
+    let progressCallback: ((progress: number) => void) | undefined = options?.onProgress;
+
+    const createUpload = async (): Promise<string> => {
+      const metadata: Record<string, string> = {
+        filename: file.name,
+        filetype: file.type,
+        ...options?.metadata,
+      };
+
+      const metadataHeader = Object.entries(metadata)
+        .map(([k, v]) => ` + "`" + `${k} ${btoa(v)}` + "`" + `)
+        .join(',');
+
+      const response = await fetch(
+        ` + "`" + `${this.client['url']}/api/files/${bucket}/tus` + "`" + `,
+        {
+          method: 'POST',
+          headers: {
+            'Upload-Length': String(file.size),
+            'Upload-Metadata': metadataHeader,
+            'Tus-Resumable': '1.0.0',
+            ...(this.client['token'] ? {
+              'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+            } : {}),
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(` + "`" + `Failed to create upload: ${response.status}` + "`" + `);
+      }
+
+      const location = response.headers.get('Location');
+      if (!location) {
+        throw new Error('No Location header in response');
+      }
+
+      return location.split('/').pop()!;
+    };
+
+    const uploadChunk = async (): Promise<void> => {
+      if (!uploadId || paused || cancelled) return;
+
+      const chunk = file.slice(offset, offset + chunkSize);
+      const response = await fetch(
+        ` + "`" + `${this.client['url']}/api/files/${bucket}/tus/${uploadId}` + "`" + `,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/offset+octet-stream',
+            'Upload-Offset': String(offset),
+            'Tus-Resumable': '1.0.0',
+            ...(this.client['token'] ? {
+              'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+            } : {}),
+          },
+          body: chunk,
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(` + "`" + `Failed to upload chunk: ${response.status}` + "`" + `);
+      }
+
+      const newOffset = parseInt(response.headers.get('Upload-Offset') || '0', 10);
+      offset = newOffset;
+
+      if (progressCallback) {
+        progressCallback((offset / file.size) * 100);
+      }
+
+      if (offset < file.size && !paused && !cancelled) {
+        await uploadChunk();
+      }
+    };
+
+    const getMetadata = async (): Promise<FileMetadata> => {
+      if (!uploadId) {
+        throw new Error('Upload not started');
+      }
+
+      const response = await fetch(
+        ` + "`" + `${this.client['url']}/api/files/${bucket}/tus/${uploadId}` + "`" + `,
+        {
+          method: 'HEAD',
+          headers: {
+            'Tus-Resumable': '1.0.0',
+            ...(this.client['token'] ? {
+              'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+            } : {}),
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(` + "`" + `Failed to get upload status: ${response.status}` + "`" + `);
+      }
+
+      offset = parseInt(response.headers.get('Upload-Offset') || '0', 10);
+
+      if (offset >= file.size) {
+        const listResponse = await this.list(bucket, { limit: 1 });
+        return listResponse.items[0];
+      }
+
+      throw new Error('Upload not complete');
+    };
+
+    return {
+      async start(): Promise<FileMetadata> {
+        uploadId = await createUpload();
+        await uploadChunk();
+        return getMetadata();
+      },
+
+      pause(): void {
+        paused = true;
+      },
+
+      resume(): void {
+        paused = false;
+        uploadChunk().catch(console.error);
+      },
+
+      async cancel(): Promise<void> {
+        if (!uploadId) return;
+        cancelled = true;
+
+        await fetch(
+          ` + "`" + `${this.client['url']}/api/files/${bucket}/tus/${uploadId}` + "`" + `,
+          {
+            method: 'DELETE',
+            headers: {
+              'Tus-Resumable': '1.0.0',
+              ...(this.client['token'] ? {
+                'Authorization': ` + "`" + `Bearer ${this.client['token']}` + "`" + `,
+              } : {}),
+            },
+          },
+        );
+      },
+
+      onProgress(callback: (progress: number) => void): void {
+        progressCallback = callback;
+      },
+    };
+  }
+}
+
+`)
 }

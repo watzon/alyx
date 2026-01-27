@@ -592,7 +592,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 13. Add file operations to TypeScript SDK generator
+- [x] 13. Add file operations to TypeScript SDK generator
 
   **What to do**:
   - Update SDK generator to include file operations
