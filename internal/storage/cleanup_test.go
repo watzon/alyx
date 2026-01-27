@@ -13,8 +13,6 @@ import (
 	"github.com/watzon/alyx/internal/schema"
 )
 
-const updateExpireQuery = "UPDATE _alyx_uploads SET expires_at = ? WHERE id = ?"
-
 func setupCleanupTest(t *testing.T) (*CleanupService, *TUSService, *database.DB, string) {
 	t.Helper()
 
@@ -91,7 +89,7 @@ func TestCleanupServiceRunOnce(t *testing.T) {
 	}
 
 	// Expire the upload
-	query := updateExpireQuery
+	query := `UPDATE _alyx_uploads SET expires_at = ? WHERE id = ?`
 	expiredTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 	_, err = db.ExecContext(ctx, query, expiredTime, upload.ID)
 	if err != nil {
@@ -154,14 +152,14 @@ func TestCleanupServiceActiveUploadsNotDeleted(t *testing.T) {
 	}
 
 	// Verify temp file still exists
-	if _, scanErr := os.Stat(tempPath); os.IsNotExist(scanErr) {
+	if _, err := os.Stat(tempPath); os.IsNotExist(err) {
 		t.Error("temp file should still exist for active upload")
 	}
 
 	// Verify upload record still exists
-	offset, scanErr := tusService.GetUploadOffset(ctx, "uploads", upload.ID)
-	if scanErr != nil {
-		t.Errorf("expected upload to still exist, got error: %v", scanErr)
+	offset, err := tusService.GetUploadOffset(ctx, "uploads", upload.ID)
+	if err != nil {
+		t.Errorf("expected upload to still exist, got error: %v", err)
 	}
 	if offset != 5 {
 		t.Errorf("expected offset 5, got %d", offset)
@@ -189,7 +187,7 @@ func TestCleanupServiceMultipleExpiredUploads(t *testing.T) {
 		}
 
 		// Expire the upload
-		query := updateExpireQuery
+		query := `UPDATE _alyx_uploads SET expires_at = ? WHERE id = ?`
 		expiredTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 		_, err = db.ExecContext(ctx, query, expiredTime, upload.ID)
 		if err != nil {
@@ -210,7 +208,7 @@ func TestCleanupServiceMultipleExpiredUploads(t *testing.T) {
 	// Verify all temp files are deleted
 	for i, uploadID := range uploadIDs {
 		tempPath := filepath.Join(tempDir, "tus", uploadID)
-		if _, scanErr := os.Stat(tempPath); !os.IsNotExist(scanErr) {
+		if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
 			t.Errorf("temp file %d should be deleted after cleanup", i)
 		}
 	}
@@ -235,7 +233,7 @@ func TestCleanupServiceBackgroundExecution(t *testing.T) {
 	}
 
 	// Expire the upload
-	query := updateExpireQuery
+	query := `UPDATE _alyx_uploads SET expires_at = ? WHERE id = ?`
 	expiredTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 	_, err = db.ExecContext(ctx, query, expiredTime, upload.ID)
 	if err != nil {
@@ -254,13 +252,38 @@ func TestCleanupServiceBackgroundExecution(t *testing.T) {
 	// Verify temp file is deleted
 	tempPath := filepath.Join(tempDir, "tus", upload.ID)
 	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
-		t.Error("temp file should be deleted after cleanup")
+		t.Error("temp file should be deleted after background cleanup")
 	}
 
 	// Verify upload record is deleted
 	_, err = tusService.GetUploadOffset(ctx, "uploads", upload.ID)
 	if err == nil {
 		t.Error("expected error for deleted upload, got nil")
+	}
+}
+
+func TestCleanupServiceContextCancellation(t *testing.T) {
+	cleanupService, _, _, _ := setupCleanupTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start cleanup service
+	cleanupService.Start(ctx)
+
+	// Cancel context immediately
+	cancel()
+
+	// Stop should complete quickly
+	done := make(chan struct{})
+	go func() {
+		cleanupService.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success - cleanup stopped
+	case <-time.After(1 * time.Second):
+		t.Error("cleanup service did not stop within 1 second after context cancellation")
 	}
 }
 
@@ -293,7 +316,7 @@ func TestCleanupServicePartialFileRemoval(t *testing.T) {
 	}
 
 	// Expire the upload
-	query := updateExpireQuery
+	query := `UPDATE _alyx_uploads SET expires_at = ? WHERE id = ?`
 	expiredTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 	_, err = db.ExecContext(ctx, query, expiredTime, upload.ID)
 	if err != nil {
@@ -311,7 +334,7 @@ func TestCleanupServicePartialFileRemoval(t *testing.T) {
 	}
 
 	// Verify file is completely removed
-	if _, scanErr := os.Stat(tempPath); !os.IsNotExist(scanErr) {
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
 		t.Error("temp file should be completely removed")
 	}
 }

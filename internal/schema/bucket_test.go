@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-const (
-	testBucketName  = "avatars"
-	testBackendName = "local"
-)
-
 func TestParseBucket_Valid(t *testing.T) {
 	yaml := `
 version: 1
@@ -47,11 +42,11 @@ buckets:
 		t.Fatal("avatars bucket not found")
 	}
 
-	if bucket.Name != testBucketName {
+	if bucket.Name != "avatars" {
 		t.Errorf("expected name 'avatars', got %q", bucket.Name)
 	}
 
-	if bucket.Backend != testBackendName {
+	if bucket.Backend != "local" {
 		t.Errorf("expected backend 'local', got %q", bucket.Backend)
 	}
 

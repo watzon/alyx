@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,7 +125,7 @@ func TestFilesystemBackend_GetNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := backend.Get(ctx, "test-bucket", "nonexistent")
-	if !errors.Is(err, ErrNotFound) {
+	if err != ErrNotFound {
 		t.Errorf("Get should return ErrNotFound for nonexistent file, got: %v", err)
 	}
 }

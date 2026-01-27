@@ -3,15 +3,12 @@ package storage
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"testing"
 
 	"github.com/watzon/alyx/internal/config"
 )
-
-const testBucketName = "test-bucket"
 
 func TestS3Backend(t *testing.T) {
 	endpoint := os.Getenv("S3_ENDPOINT")
@@ -34,7 +31,7 @@ func TestS3Backend(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	bucket := testBucketName
+	bucket := "test-bucket"
 	key := "test-file.txt"
 	content := []byte("Hello, S3!")
 
@@ -89,7 +86,7 @@ func TestS3Backend(t *testing.T) {
 
 	t.Run("GetNotFound", func(t *testing.T) {
 		_, err := backend.Get(ctx, bucket, "nonexistent.txt")
-		if !errors.Is(err, ErrNotFound) {
+		if err != ErrNotFound {
 			t.Errorf("Expected ErrNotFound, got %v", err)
 		}
 	})
@@ -211,12 +208,12 @@ func TestS3BackendContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	bucket := testBucketName
+	bucket := "test-bucket"
 	key := "test-file.txt"
 	content := []byte("Hello, S3!")
 
 	err = backend.Put(ctx, bucket, key, bytes.NewReader(content), int64(len(content)))
 	if err == nil {
-		t.Error("Expected error with canceled context")
+		t.Error("Expected error with cancelled context")
 	}
 }

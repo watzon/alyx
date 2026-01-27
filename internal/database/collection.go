@@ -395,7 +395,7 @@ func (c *Collection) processRow(row Row) Row {
 			}
 		case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText,
 			schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob,
-			schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation, schema.FieldTypeFile:
+			schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation:
 		}
 	}
 
@@ -412,7 +412,7 @@ func (c *Collection) getSearchableFields() []string {
 		case schema.FieldTypeRichText, schema.FieldTypeInt, schema.FieldTypeFloat,
 			schema.FieldTypeBool, schema.FieldTypeTimestamp, schema.FieldTypeJSON,
 			schema.FieldTypeBlob, schema.FieldTypeDate, schema.FieldTypeSelect,
-			schema.FieldTypeRelation, schema.FieldTypeFile:
+			schema.FieldTypeRelation:
 		}
 	}
 	return fields
@@ -465,7 +465,7 @@ func (c *Collection) convertValue(value any, field *schema.Field) any {
 		}
 	case schema.FieldTypeUUID, schema.FieldTypeString, schema.FieldTypeText, schema.FieldTypeRichText,
 		schema.FieldTypeInt, schema.FieldTypeFloat, schema.FieldTypeBlob,
-		schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation, schema.FieldTypeFile:
+		schema.FieldTypeEmail, schema.FieldTypeURL, schema.FieldTypeDate, schema.FieldTypeRelation:
 	}
 
 	return value

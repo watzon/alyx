@@ -293,7 +293,7 @@ func (s *Store) scanFiles(rows *sql.Rows) ([]*File, error) {
 	return files, nil
 }
 
-// Helper functions for nullable fields.
+// Helper functions for nullable fields
 func nullString(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}

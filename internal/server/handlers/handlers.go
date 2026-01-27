@@ -372,8 +372,7 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validationErr := h.validateFileFields(r.Context(), col.Schema(), data)
-	if validationErr != nil {
+	if err := h.validateFileFields(r.Context(), col.Schema(), data); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			Error(w, http.StatusBadRequest, "FILE_NOT_FOUND", "Referenced file does not exist")
 			return
@@ -443,8 +442,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validationErr := h.validateFileFields(r.Context(), col.Schema(), data)
-	if validationErr != nil {
+	if err := h.validateFileFields(r.Context(), col.Schema(), data); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			Error(w, http.StatusBadRequest, "FILE_NOT_FOUND", "Referenced file does not exist")
 			return
@@ -458,9 +456,8 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileUpdateErr := h.handleFileFieldUpdates(r.Context(), col.Schema(), existingDoc, data)
-	if fileUpdateErr != nil {
-		log.Error().Err(fileUpdateErr).Str("collection", collectionName).Msg("Failed to handle file field updates")
+	if err := h.handleFileFieldUpdates(r.Context(), col.Schema(), existingDoc, data); err != nil {
+		log.Error().Err(err).Str("collection", collectionName).Msg("Failed to handle file field updates")
 		Error(w, http.StatusInternalServerError, "UPDATE_ERROR", "Failed to handle file field updates")
 		return
 	}

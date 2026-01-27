@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,12 +17,7 @@ import (
 	"github.com/watzon/alyx/internal/storage"
 )
 
-// Test constants for repeated strings.
-const (
-	testPNGHeader = "\x89PNG\r\n\x1a\n"
-)
-
-func setupFileFieldHandlers(t *testing.T) (*Handlers, *storage.Service) {
+func setupFileFieldHandlers(t *testing.T) (*Handlers, *storage.Service, *database.DB) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -96,7 +90,7 @@ collections:
       created_at:
         type: timestamp
         default: now
- `
+`
 	s, err := schema.Parse([]byte(schemaYAML))
 	if err != nil {
 		t.Fatalf("parse schema: %v", err)
@@ -124,7 +118,7 @@ collections:
 		db.Close()
 	})
 
-	return h, storageService
+	return h, storageService, db
 }
 
 func createTestFile(t *testing.T, service *storage.Service, bucket, filename, content string) string {
@@ -139,9 +133,9 @@ func createTestFile(t *testing.T, service *storage.Service, bucket, filename, co
 }
 
 func TestCreateDocument_WithValidFileID(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
-	pngHeader := testPNGHeader
+	pngHeader := "\x89PNG\r\n\x1a\n"
 	fileID := createTestFile(t, storageService, "avatars", "test.png", pngHeader+"fake-png-data")
 
 	body := bytes.NewBufferString(`{"name":"Alice","email":"alice@example.com","avatar":"` + fileID + `"}`)
@@ -166,7 +160,7 @@ func TestCreateDocument_WithValidFileID(t *testing.T) {
 }
 
 func TestCreateDocument_WithInvalidFileID(t *testing.T) {
-	h, _ := setupFileFieldHandlers(t)
+	h, _, _ := setupFileFieldHandlers(t)
 
 	fakeFileID := "00000000-0000-0000-0000-000000000000"
 	body := bytes.NewBufferString(`{"name":"Bob","email":"bob@example.com","avatar":"` + fakeFileID + `"}`)
@@ -191,7 +185,7 @@ func TestCreateDocument_WithInvalidFileID(t *testing.T) {
 }
 
 func TestCreateDocument_WithWrongBucketFile(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
 	fileID := createTestFile(t, storageService, "documents", "test.pdf", "fake-pdf-data")
 
@@ -217,9 +211,9 @@ func TestCreateDocument_WithWrongBucketFile(t *testing.T) {
 }
 
 func TestExpandFileField(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
-	pngHeader := testPNGHeader
+	pngHeader := "\x89PNG\r\n\x1a\n"
 	fileID := createTestFile(t, storageService, "avatars", "avatar.png", pngHeader+"fake-png-data")
 
 	body := bytes.NewBufferString(`{"name":"Dave","email":"dave@example.com","avatar":"` + fileID + `"}`)
@@ -273,9 +267,9 @@ func TestExpandFileField(t *testing.T) {
 }
 
 func TestDeleteDocument_CascadeDeletesFile(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
-	pngHeader := testPNGHeader
+	pngHeader := "\x89PNG\r\n\x1a\n"
 	fileID := createTestFile(t, storageService, "avatars", "avatar.png", pngHeader+"fake-png-data")
 
 	body := bytes.NewBufferString(`{"name":"Eve","email":"eve@example.com","avatar":"` + fileID + `"}`)
@@ -314,13 +308,13 @@ func TestDeleteDocument_CascadeDeletesFile(t *testing.T) {
 	if err == nil {
 		t.Error("file should be deleted after cascade delete")
 	}
-	if !errors.Is(err, storage.ErrNotFound) {
+	if err != storage.ErrNotFound {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
 func TestDeleteDocument_KeepOrphansFile(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
 	fileID := createTestFile(t, storageService, "documents", "doc.pdf", "fake-pdf-data")
 
@@ -363,9 +357,9 @@ func TestDeleteDocument_KeepOrphansFile(t *testing.T) {
 }
 
 func TestUpdateDocument_ChangesFileField(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
-	pngHeader := testPNGHeader
+	pngHeader := "\x89PNG\r\n\x1a\n"
 	oldFileID := createTestFile(t, storageService, "avatars", "old.png", pngHeader+"old-data")
 	newFileID := createTestFile(t, storageService, "avatars", "new.png", pngHeader+"new-data")
 
@@ -401,7 +395,7 @@ func TestUpdateDocument_ChangesFileField(t *testing.T) {
 	if err == nil {
 		t.Error("old file should be deleted after update with cascade")
 	}
-	if !errors.Is(err, storage.ErrNotFound) {
+	if err != storage.ErrNotFound {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 
@@ -412,7 +406,7 @@ func TestUpdateDocument_ChangesFileField(t *testing.T) {
 }
 
 func TestUpdateDocument_KeepsOldFileOnKeepDelete(t *testing.T) {
-	h, storageService := setupFileFieldHandlers(t)
+	h, storageService, _ := setupFileFieldHandlers(t)
 
 	oldFileID := createTestFile(t, storageService, "documents", "old.pdf", "old-data")
 	newFileID := createTestFile(t, storageService, "documents", "new.pdf", "new-data")

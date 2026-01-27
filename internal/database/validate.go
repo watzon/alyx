@@ -87,8 +87,11 @@ func validateFieldValue(field *schema.Field, value any, errs *ValidationErrors) 
 		validateDate(field, value, errs)
 	case schema.FieldTypeSelect:
 		validateSelect(field, value, errs)
-	case schema.FieldTypeBool, schema.FieldTypeTimestamp, schema.FieldTypeJSON, schema.FieldTypeBlob, schema.FieldTypeFile:
-		// No validation needed
+	case schema.FieldTypeBool, schema.FieldTypeTimestamp, schema.FieldTypeJSON, schema.FieldTypeBlob:
+	}
+
+	if field.Validate != nil {
+		validateWithRules(field, value, errs)
 	}
 }
 
@@ -122,8 +125,6 @@ func validateFloat(field *schema.Field, value any, errs *ValidationErrors) {
 }
 
 var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
-var urlRegex = regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
 
 func validateUUID(field *schema.Field, value any, errs *ValidationErrors) {
 	str, ok := toString(value)
@@ -229,6 +230,108 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func validateWithRules(field *schema.Field, value any, errs *ValidationErrors) {
+	v := field.Validate
+	validateStringLength(field, value, v, errs)
+	validateNumericRange(field, value, v, errs)
+	validatePattern(field, value, v, errs)
+	validateEnum(field, value, v, errs)
+
+	if v.Format != "" {
+		validateFormat(field, value, v.Format, errs)
+	}
+}
+
+func validateStringLength(field *schema.Field, value any, v *schema.FieldValidation, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		return
+	}
+
+	if v.MinLength != nil && len(str) < *v.MinLength {
+		errs.Add(field.Name, "min_length", fmt.Sprintf("Field '%s' must be at least %d characters", field.Name, *v.MinLength))
+	}
+
+	if v.MaxLength != nil && len(str) > *v.MaxLength {
+		errs.Add(field.Name, "max_length", fmt.Sprintf("Field '%s' must be at most %d characters", field.Name, *v.MaxLength))
+	}
+}
+
+func validateNumericRange(field *schema.Field, value any, v *schema.FieldValidation, errs *ValidationErrors) {
+	num, ok := toFloat(value)
+	if !ok {
+		return
+	}
+
+	if v.Min != nil && num < *v.Min {
+		errs.Add(field.Name, "min_value", fmt.Sprintf("Field '%s' must be at least %v", field.Name, *v.Min))
+	}
+
+	if v.Max != nil && num > *v.Max {
+		errs.Add(field.Name, "max_value", fmt.Sprintf("Field '%s' must be at most %v", field.Name, *v.Max))
+	}
+}
+
+func validatePattern(field *schema.Field, value any, v *schema.FieldValidation, errs *ValidationErrors) {
+	if v.Pattern == "" {
+		return
+	}
+
+	str, ok := toString(value)
+	if !ok {
+		return
+	}
+
+	re, err := regexp.Compile(v.Pattern)
+	if err == nil && !re.MatchString(str) {
+		errs.Add(field.Name, "pattern", fmt.Sprintf("Field '%s' does not match required pattern", field.Name))
+	}
+}
+
+func validateEnum(field *schema.Field, value any, v *schema.FieldValidation, errs *ValidationErrors) {
+	if len(v.Enum) == 0 {
+		return
+	}
+
+	str, ok := toString(value)
+	if !ok {
+		return
+	}
+
+	for _, e := range v.Enum {
+		if str == e {
+			return
+		}
+	}
+
+	errs.Add(field.Name, "enum", fmt.Sprintf("Field '%s' must be one of: %s", field.Name, strings.Join(v.Enum, ", ")))
+}
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+var urlRegex = regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
+
+func validateFormat(field *schema.Field, value any, format string, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		return
+	}
+
+	switch format {
+	case "email":
+		if !emailRegex.MatchString(str) {
+			errs.Add(field.Name, "format_email", fmt.Sprintf("Field '%s' must be a valid email address", field.Name))
+		}
+	case "url", "uri":
+		if !urlRegex.MatchString(str) {
+			errs.Add(field.Name, "format_url", fmt.Sprintf("Field '%s' must be a valid URL", field.Name))
+		}
+	case "uuid":
+		if !uuidRegex.MatchString(str) {
+			errs.Add(field.Name, "format_uuid", fmt.Sprintf("Field '%s' must be a valid UUID", field.Name))
+		}
+	}
 }
 
 func toString(v any) (string, bool) {

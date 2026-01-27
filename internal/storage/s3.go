@@ -110,34 +110,34 @@ func (b *S3Backend) putMultipart(ctx context.Context, bucket, key string, r io.R
 
 	buf := make([]byte, partSize)
 	for {
-		n, readErr := io.ReadFull(r, buf)
-		if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
-			_, _ = b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		n, err := io.ReadFull(r, buf)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 				Bucket:   aws.String(bucket),
 				Key:      aws.String(key),
 				UploadId: uploadID,
 			})
-			return fmt.Errorf("reading part: %w", readErr)
+			return fmt.Errorf("reading part: %w", err)
 		}
 
 		if n == 0 {
 			break
 		}
 
-		uploadResp, uploadErr := b.client.UploadPart(ctx, &s3.UploadPartInput{
+		uploadResp, err := b.client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     aws.String(bucket),
 			Key:        aws.String(key),
 			UploadId:   uploadID,
 			PartNumber: aws.Int32(partNumber),
 			Body:       &readerAt{data: buf[:n]},
 		})
-		if uploadErr != nil {
-			_, _ = b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		if err != nil {
+			b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 				Bucket:   aws.String(bucket),
 				Key:      aws.String(key),
 				UploadId: uploadID,
 			})
-			return fmt.Errorf("uploading part %d: %w", partNumber, uploadErr)
+			return fmt.Errorf("uploading part %d: %w", partNumber, err)
 		}
 
 		completedParts = append(completedParts, types.CompletedPart{
@@ -147,7 +147,7 @@ func (b *S3Backend) putMultipart(ctx context.Context, bucket, key string, r io.R
 
 		partNumber++
 
-		if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
 		}
 	}
