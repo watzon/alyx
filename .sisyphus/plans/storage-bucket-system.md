@@ -628,7 +628,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 14. Add upload abandoned cleanup job
+- [x] 14. Add upload abandoned cleanup job
 
   **What to do**:
   - Create `internal/storage/cleanup.go` with cleanup service

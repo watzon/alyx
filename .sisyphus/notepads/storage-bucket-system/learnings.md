@@ -1984,3 +1984,152 @@ This implementation completes Phase 6 (TypeScript SDK Generation) of the storage
 5. **Template Strings**: Go backticks for multi-line strings, escape backticks in generated code with `+ "`" +`
 6. **TDD Workflow**: Write tests first, see them fail, implement, see them pass (RED-GREEN-REFACTOR)
 
+
+## TUS Upload Cleanup Background Job
+
+**Date**: 2026-01-27
+**Task**: Add background cleanup job for abandoned TUS uploads
+
+### Patterns Followed
+
+1. **Background Service Pattern** (from `internal/scheduler/scheduler.go`):
+   - Created `CleanupService` struct with `store`, `tempDir`, `interval` fields
+   - Constructor `NewCleanupService(store, tempDir, interval)` with default interval (1 hour)
+   - Methods: `Start(ctx)`, `Stop()`, `RunOnce(ctx)`
+   - Service runs in background goroutine with ticker loop
+   - Respects context cancellation for graceful shutdown
+
+2. **Lifecycle Management** (from scheduler pattern):
+   - `Start()` spawns goroutine and increments `sync.WaitGroup`
+   - `Stop()` cancels context and waits for goroutine to finish
+   - `cleanupLoop()` uses ticker for periodic execution
+   - Proper cleanup on shutdown (ticker.Stop(), wg.Done())
+
+3. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented CleanupService (GREEN phase)
+   - All tests passing with clean build
+
+### Key Decisions
+
+1. **Service Structure**:
+   - Stores TUSStore reference (not TUSService) to avoid circular dependency
+   - Stores tempDir for deleting partial files
+   - Default interval: 1 hour (configurable via constructor)
+   - Internal context for lifecycle management (separate from caller context)
+
+2. **Cleanup Logic**:
+   - Query `_alyx_uploads` for expired entries (`expires_at < now`)
+   - For each expired upload:
+     - Delete partial file from `{tempDir}/tus/{upload_id}`
+     - Delete entry from `_alyx_uploads` table
+     - Log deletion with upload details
+   - Continue on errors (don't stop cleanup for single failure)
+   - Return count of successfully deleted uploads
+
+3. **Error Handling**:
+   - Partial failures logged as warnings (don't stop cleanup)
+   - Final error returned if any failures occurred
+   - Error message includes count of failures and successes
+   - Missing temp files treated as success (already cleaned up)
+
+4. **Logging Strategy**:
+   - Info: Service start/stop, cleanup statistics (when deletions occur)
+   - Debug: Individual upload deletions with details
+   - Warn: Failures to delete temp files or database records
+   - Error: Failures to list expired uploads (logged by caller)
+
+5. **Context Handling**:
+   - Service has internal context (`s.ctx`) for lifecycle management
+   - `Start()` accepts caller context for cleanup operations
+   - Both contexts checked in loop (shutdown on either cancellation)
+   - Allows graceful shutdown from either service or caller
+
+### Test Coverage
+
+- ✅ RunOnce deletes expired uploads (temp file + DB record)
+- ✅ RunOnce skips active uploads (not expired)
+- ✅ RunOnce handles multiple expired uploads
+- ✅ Background execution via Start/Stop
+- ✅ Context cancellation stops cleanup loop
+- ✅ Partial file removal (verifies file content deleted)
+
+### Files Created
+
+- `internal/storage/cleanup.go`: CleanupService implementation (125 lines)
+- `internal/storage/cleanup_test.go`: Comprehensive test suite (340 lines)
+
+### Implementation Details
+
+**CleanupService Methods**:
+```go
+NewCleanupService(store *TUSStore, tempDir string, interval time.Duration) *CleanupService
+Start(ctx context.Context)
+Stop()
+RunOnce(ctx context.Context) (int, error)
+```
+
+**Cleanup Flow**:
+1. Query expired uploads via `store.ListExpired(ctx)`
+2. For each upload:
+   - Delete temp file: `os.Remove(tempDir/tus/{upload_id})`
+   - Delete DB record: `store.Delete(ctx, bucket, upload_id)`
+   - Log deletion details
+3. Return count of deleted uploads
+
+**Default Configuration**:
+- Interval: 1 hour (configurable)
+- No startup delay (waits for first interval)
+- Runs until context cancelled
+
+### Integration Notes
+
+**Not Yet Integrated**:
+- Service not added to `Server` struct
+- No automatic startup on server initialization
+- No configuration for cleanup interval
+
+**Next Steps for Integration**:
+1. Add `cleanupService *storage.CleanupService` field to `Server` struct
+2. Initialize cleanup service in `New()` with TUSStore and tempDir
+3. Start cleanup service in `Start()` method
+4. Stop cleanup service in `Stop()` method
+5. Add configuration option for cleanup interval (default: 1 hour)
+
+### Performance Considerations
+
+- **Query Efficiency**: Uses index on `expires_at` for fast expired upload queries
+- **Batch Processing**: Processes all expired uploads in single query
+- **Error Isolation**: Single failure doesn't stop cleanup of other uploads
+- **Interval Tuning**: 1 hour default balances cleanup frequency vs DB load
+
+### Security Considerations
+
+- **Temp File Deletion**: Ensures partial uploads don't consume disk space indefinitely
+- **Database Cleanup**: Prevents `_alyx_uploads` table from growing unbounded
+- **No Data Loss**: Only deletes uploads past expiry (active uploads preserved)
+
+### Lessons Learned
+
+1. **Context Handling**: Need both internal context (lifecycle) and caller context (operations)
+2. **Error Isolation**: Continue cleanup on partial failures (don't stop entire batch)
+3. **Logging Levels**: Debug for individual deletions, Info for statistics, Warn for failures
+4. **Test Intervals**: Use short intervals (100ms) in tests for fast execution
+5. **Idempotent Cleanup**: Missing temp files treated as success (already cleaned up)
+
+### Next Phase
+
+This implementation completes Task 10 (Background Cleanup Job) of the storage bucket system. The foundation is ready for:
+- Server integration (add to Server struct)
+- Configuration (cleanup interval setting)
+- Monitoring (cleanup statistics logging)
+- Production deployment (automatic cleanup of abandoned uploads)
+
+### Notes
+
+- Cleanup runs in background (non-blocking)
+- Respects context cancellation (graceful shutdown)
+- Logs cleanup statistics (count of deleted uploads)
+- Default interval: 1 hour (configurable)
+- No startup delay (waits for first interval)
+- Idempotent (safe to run multiple times)
