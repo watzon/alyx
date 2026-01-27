@@ -438,7 +438,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 9. Implement TUS protocol endpoints
+- [x] 9. Implement TUS protocol endpoints
 
   **What to do**:
   - Add TUS 1.0.0 protocol support to file handlers

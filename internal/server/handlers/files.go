@@ -12,12 +12,14 @@ import (
 )
 
 type FileHandlers struct {
-	service *storage.Service
+	service    *storage.Service
+	tusService *storage.TUSService
 }
 
-func NewFileHandlers(service *storage.Service) *FileHandlers {
+func NewFileHandlers(service *storage.Service, tusService *storage.TUSService) *FileHandlers {
 	return &FileHandlers{
-		service: service,
+		service:    service,
+		tusService: tusService,
 	}
 }
 
@@ -213,6 +215,160 @@ func (h *FileHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Error().Err(err).Str("bucket", bucket).Str("file_id", fileID).Msg("Failed to delete file")
 		Error(w, http.StatusInternalServerError, "DELETE_ERROR", "Failed to delete file")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FileHandlers) TUSCreate(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+
+	uploadLengthStr := r.Header.Get("Upload-Length")
+	if uploadLengthStr == "" {
+		Error(w, http.StatusBadRequest, "UPLOAD_LENGTH_REQUIRED", "Upload-Length header is required")
+		return
+	}
+
+	uploadLength, err := strconv.ParseInt(uploadLengthStr, 10, 64)
+	if err != nil || uploadLength < 0 {
+		Error(w, http.StatusBadRequest, "INVALID_UPLOAD_LENGTH", "Invalid Upload-Length header")
+		return
+	}
+
+	metadata := storage.ParseTUSMetadata(r.Header.Get("Upload-Metadata"))
+
+	upload, err := h.tusService.CreateUpload(r.Context(), bucket, uploadLength, metadata)
+	if err != nil {
+		log.Error().Err(err).Str("bucket", bucket).Int64("size", uploadLength).Msg("Failed to create TUS upload")
+		Error(w, http.StatusInternalServerError, "CREATE_UPLOAD_ERROR", "Failed to create upload")
+		return
+	}
+
+	uploadURL := r.URL.Scheme + "://" + r.Host + "/api/files/" + bucket + "/tus/" + upload.ID
+	if r.URL.Scheme == "" {
+		uploadURL = "http://" + r.Host + "/api/files/" + bucket + "/tus/" + upload.ID
+	}
+
+	w.Header().Set("Location", uploadURL)
+	w.Header().Set("Tus-Resumable", storage.TUSResumableSupported)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *FileHandlers) TUSHead(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	uploadID := r.PathValue("upload_id")
+
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+	if uploadID == "" {
+		Error(w, http.StatusBadRequest, "UPLOAD_ID_REQUIRED", "Upload ID is required")
+		return
+	}
+
+	offset, err := h.tusService.GetUploadOffset(r.Context(), bucket, uploadID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusNotFound, "UPLOAD_NOT_FOUND", "Upload not found")
+			return
+		}
+		log.Error().Err(err).Str("bucket", bucket).Str("upload_id", uploadID).Msg("Failed to get upload offset")
+		Error(w, http.StatusInternalServerError, "OFFSET_ERROR", "Failed to get upload offset")
+		return
+	}
+
+	w.Header().Set("Upload-Offset", strconv.FormatInt(offset, 10))
+	w.Header().Set("Tus-Resumable", storage.TUSResumableSupported)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *FileHandlers) TUSPatch(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	uploadID := r.PathValue("upload_id")
+
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+	if uploadID == "" {
+		Error(w, http.StatusBadRequest, "UPLOAD_ID_REQUIRED", "Upload ID is required")
+		return
+	}
+
+	uploadOffsetStr := r.Header.Get("Upload-Offset")
+	if uploadOffsetStr == "" {
+		Error(w, http.StatusBadRequest, "UPLOAD_OFFSET_REQUIRED", "Upload-Offset header is required")
+		return
+	}
+
+	uploadOffset, err := strconv.ParseInt(uploadOffsetStr, 10, 64)
+	if err != nil || uploadOffset < 0 {
+		Error(w, http.StatusBadRequest, "INVALID_UPLOAD_OFFSET", "Invalid Upload-Offset header")
+		return
+	}
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/offset+octet-stream" {
+		Error(w, http.StatusBadRequest, "INVALID_CONTENT_TYPE", "Content-Type must be application/offset+octet-stream")
+		return
+	}
+
+	contentLengthStr := r.Header.Get("Content-Length")
+	if contentLengthStr == "" {
+		Error(w, http.StatusBadRequest, "CONTENT_LENGTH_REQUIRED", "Content-Length header is required")
+		return
+	}
+
+	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
+	if err != nil || contentLength < 0 {
+		Error(w, http.StatusBadRequest, "INVALID_CONTENT_LENGTH", "Invalid Content-Length header")
+		return
+	}
+
+	newOffset, err := h.tusService.UploadChunk(r.Context(), bucket, uploadID, uploadOffset, r.Body, contentLength)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusNotFound, "UPLOAD_NOT_FOUND", "Upload not found")
+			return
+		}
+		log.Error().Err(err).Str("bucket", bucket).Str("upload_id", uploadID).Msg("Failed to upload chunk")
+		Error(w, http.StatusInternalServerError, "UPLOAD_CHUNK_ERROR", "Failed to upload chunk")
+		return
+	}
+
+	w.Header().Set("Upload-Offset", strconv.FormatInt(newOffset, 10))
+	w.Header().Set("Tus-Resumable", storage.TUSResumableSupported)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FileHandlers) TUSDelete(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	uploadID := r.PathValue("upload_id")
+
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+	if uploadID == "" {
+		Error(w, http.StatusBadRequest, "UPLOAD_ID_REQUIRED", "Upload ID is required")
+		return
+	}
+
+	err := h.tusService.CancelUpload(r.Context(), bucket, uploadID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusNotFound, "UPLOAD_NOT_FOUND", "Upload not found")
+			return
+		}
+		log.Error().Err(err).Str("bucket", bucket).Str("upload_id", uploadID).Msg("Failed to cancel upload")
+		Error(w, http.StatusInternalServerError, "CANCEL_ERROR", "Failed to cancel upload")
 		return
 	}
 

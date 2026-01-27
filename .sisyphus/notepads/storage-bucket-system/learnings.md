@@ -885,3 +885,204 @@ This implementation completes Phase 3 (File Service and CRUD Handlers) of the st
 - File field integration with collections (Phase 6)
 - Server integration and configuration (Phase 7)
 
+## TUS 1.0.0 Resumable Upload Protocol Implementation
+
+**Date**: 2026-01-27
+**Task**: Implement TUS 1.0.0 protocol endpoints for resumable file uploads
+
+### Patterns Followed
+
+1. **Store Pattern** (from existing store patterns):
+   - Created `TUSStore` struct with `db *database.DB` field
+   - Implemented CRUD methods: `Create`, `Get`, `UpdateOffset`, `Delete`, `ListExpired`
+   - All methods accept `context.Context` as first parameter
+   - Proper error wrapping with context
+
+2. **Service Pattern** (from existing service patterns):
+   - Created `TUSService` struct with dependencies: `db`, `store`, `backends`, `schema`, `cfg`, `tempDir`
+   - Constructor `NewTUSService()` with dependency injection
+   - Business logic methods: `CreateUpload`, `GetUploadOffset`, `UploadChunk`, `CancelUpload`, `CleanupExpiredUploads`
+   - Service orchestrates store + backend + temp file operations
+
+3. **Handler Pattern** (from existing handler patterns):
+   - Extended `FileHandlers` struct with `tusService *storage.TUSService`
+   - Updated constructor `NewFileHandlers(service, tusService)` for dependency injection
+   - Each handler: parse headers → validate → call service → return headers/status
+   - Proper error handling with typed errors (`storage.ErrNotFound`)
+   - HTTP status codes: 200 OK, 201 Created, 204 No Content, 400 Bad Request, 404 Not Found, 500 Internal Server Error
+
+4. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented functionality (GREEN phase)
+   - All tests passing with race detector
+
+### Key Decisions
+
+1. **Upload Struct Design**:
+   - Stores upload state in `_alyx_uploads` table
+   - Fields: ID (UUID), Bucket, Filename, Size, Offset, Metadata (JSON), ExpiresAt, CreatedAt
+   - Metadata stored as `map[string]string` (JSON serialized in DB)
+   - Default expiry: 24 hours (configurable)
+
+2. **Upload Flow**:
+   - `POST /api/files/{bucket}/tus` - Create upload, return `Location` header with upload URL
+   - `HEAD /api/files/{bucket}/tus/{upload_id}` - Return `Upload-Offset` header with current offset
+   - `PATCH /api/files/{bucket}/tus/{upload_id}` - Append chunk, update offset, return new `Upload-Offset`
+   - `DELETE /api/files/{bucket}/tus/{upload_id}` - Cancel upload, delete temp file and record
+
+3. **Chunk Upload Process**:
+   - Validate offset matches current upload offset (prevent out-of-order chunks)
+   - Store chunks in temp directory: `{tempDir}/tus/{upload_id}`
+   - Append chunk to temp file using `os.O_APPEND`
+   - Update offset in database
+   - On final chunk (offset + chunk_size == upload_length):
+     - Read temp file, detect MIME type, validate against bucket config
+     - Calculate SHA256 checksum
+     - Move to permanent storage via backend
+     - Create entry in `_alyx_files`
+     - Delete from `_alyx_uploads`
+     - Delete temp file
+
+4. **TUS Protocol Headers**:
+   - `Tus-Resumable: 1.0.0` - Protocol version (sent in all responses)
+   - `Upload-Length` - Total file size (required in POST)
+   - `Upload-Offset` - Current offset (required in PATCH, returned in HEAD/PATCH)
+   - `Upload-Metadata` - Base64-encoded key-value pairs (optional in POST)
+   - `Content-Type: application/offset+octet-stream` - Required in PATCH
+   - `Location` - Upload URL (returned in POST)
+
+5. **Metadata Parsing**:
+   - TUS metadata format: `key1 base64value1,key2 base64value2`
+   - Created `ParseTUSMetadata()` helper function
+   - Decodes base64 values and returns `map[string]string`
+   - Handles empty strings and malformed pairs gracefully
+
+6. **Cleanup Strategy**:
+   - `CleanupExpiredUploads()` method queries `_alyx_uploads` where `expires_at < now()`
+   - Deletes temp files and database records
+   - Returns count of deleted uploads
+   - Can be called periodically via cron job or scheduler
+
+### Test Coverage
+
+**TUSStore Tests** (not explicitly written, but covered via service tests):
+- ✅ Create with auto-generated timestamps and expiry
+- ✅ Get by bucket and upload ID
+- ✅ UpdateOffset updates offset field
+- ✅ Delete removes upload record
+- ✅ ListExpired returns uploads past expiry time
+
+**TUSService Tests** (9 tests, all passing):
+- ✅ CreateUpload returns valid upload with ID and expiry
+- ✅ GetUploadOffset returns current offset
+- ✅ UploadChunk appends data and updates offset
+- ✅ UploadChunk validates offset (rejects mismatched offset)
+- ✅ UploadChunk finalizes upload on last chunk (moves to _alyx_files)
+- ✅ CancelUpload deletes temp file and record
+- ✅ ResumeUpload allows continuing after disconnect
+- ✅ CleanupExpiredUploads deletes expired uploads
+- ✅ LargeFileUpload handles 10MB file in multiple chunks
+- ✅ ParseTUSMetadata decodes base64 metadata
+
+**TUSHandler Tests** (not yet written, but handlers implemented):
+- Handlers follow same pattern as existing file handlers
+- Will be tested via integration tests or manual testing
+
+### Files Created/Modified
+
+- `internal/storage/tus_store.go`: TUSStore with CRUD operations (235 lines)
+- `internal/storage/tus.go`: TUSService with business logic (280 lines)
+- `internal/storage/tus_test.go`: Comprehensive test suite (410 lines)
+- `internal/server/handlers/files.go`: Added TUS endpoints (4 new handlers, 170 lines added)
+- `internal/server/handlers/files_test.go`: Updated to include TUSService in setup
+
+### Implementation Details
+
+**TUSService Methods**:
+```go
+CreateUpload(ctx, bucket, size, metadata) (*Upload, error)
+GetUploadOffset(ctx, bucket, uploadID) (int64, error)
+UploadChunk(ctx, bucket, uploadID, offset, r, chunkSize) (int64, error)
+CancelUpload(ctx, bucket, uploadID) error
+CleanupExpiredUploads(ctx) (int, error)
+```
+
+**TUS Protocol Constants**:
+```go
+DefaultChunkSize      = 5 * 1024 * 1024  // 5MB
+DefaultUploadExpiry   = 24 * 60 * 60     // 24 hours
+TUSVersion            = "1.0.0"
+TUSResumableSupported = "1.0.0"
+```
+
+**Temp File Organization**:
+- Temp directory: `{tempDir}/tus/`
+- Temp file path: `{tempDir}/tus/{upload_id}`
+- Files created with mode 0644, directories with mode 0755
+
+### Integration Notes
+
+**Not Yet Integrated**:
+- Routes not registered (need to add to `router.go`)
+- TUSService not added to `Server` struct (requires server refactoring)
+- No cleanup scheduler (need to add periodic cleanup job)
+
+**Next Steps for Integration**:
+1. Add `tusService *storage.TUSService` field to `Server` struct
+2. Initialize TUS service in `New()` with temp directory from config
+3. Add TUS endpoints to `router.go`:
+   - `POST /api/files/{bucket}/tus` → `fileHandlers.TUSCreate`
+   - `HEAD /api/files/{bucket}/tus/{upload_id}` → `fileHandlers.TUSHead`
+   - `PATCH /api/files/{bucket}/tus/{upload_id}` → `fileHandlers.TUSPatch`
+   - `DELETE /api/files/{bucket}/tus/{upload_id}` → `fileHandlers.TUSDelete`
+4. Add periodic cleanup job to scheduler (e.g., every hour)
+
+### Performance Considerations
+
+- **Streaming**: Uses `io.Copy()` for memory-efficient chunk appending
+- **Checksums**: Calculated during finalization (single pass over temp file)
+- **MIME Detection**: Only reads first 512 bytes (HTTP standard)
+- **Temp Files**: Stored on local filesystem (fast append operations)
+- **Offset Validation**: Prevents out-of-order chunks and data corruption
+
+### Security Considerations
+
+- **Offset Validation**: Prevents malicious clients from corrupting uploads
+- **Size Limits**: Enforced at upload creation (before writing any data)
+- **MIME Validation**: Enforced at finalization (prevents uploading disallowed types)
+- **Expiry**: Prevents abandoned uploads from consuming disk space
+- **Temp File Isolation**: Each upload has unique temp file (no collision risk)
+
+### Lessons Learned
+
+1. **TUS Protocol Simplicity**: Core protocol is straightforward (4 endpoints, 5 headers)
+2. **Offset Validation Critical**: Must validate offset on every PATCH to prevent corruption
+3. **Finalization Complexity**: Moving from temp to permanent storage requires careful error handling
+4. **Metadata Encoding**: Base64 encoding allows arbitrary metadata without escaping issues
+5. **Cleanup Strategy**: Expiry-based cleanup is simple and effective (no complex state tracking)
+6. **Test Coverage**: Comprehensive tests caught several edge cases (offset mismatch, expiry, resume)
+
+### TUS Protocol Compliance
+
+**Implemented (Core Protocol)**:
+- ✅ Creation (POST with Upload-Length)
+- ✅ Head (HEAD returns Upload-Offset)
+- ✅ Patch (PATCH appends chunk)
+- ✅ Termination (DELETE cancels upload)
+- ✅ Metadata (Upload-Metadata header)
+- ✅ Resumable (Tus-Resumable header)
+
+**Not Implemented (Extensions)**:
+- ❌ Checksum (checksum verification during upload)
+- ❌ Concatenation (parallel uploads, then concatenate)
+- ❌ Creation With Upload (POST with data)
+- ❌ Expiration (explicit expiration header)
+
+### Next Phase
+
+This implementation completes Phase 4 (TUS Resumable Upload Protocol) of the storage bucket system. The foundation is ready for:
+- Signed URLs for direct uploads/downloads (Phase 5)
+- File field integration with collections (Phase 6)
+- Server integration and configuration (Phase 7)
+- Cleanup scheduler integration (Phase 8)
+

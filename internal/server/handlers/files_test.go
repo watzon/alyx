@@ -68,7 +68,8 @@ func testFileHandlers(t *testing.T) (*FileHandlers, *storage.Service) {
 	appCfg := &config.Config{}
 
 	service := storage.NewService(db, backends, s, appCfg)
-	handlers := NewFileHandlers(service)
+	tusService := storage.NewTUSService(db, backends, s, appCfg, tmpDir)
+	handlers := NewFileHandlers(service, tusService)
 
 	return handlers, service
 }
