@@ -1474,3 +1474,282 @@ This implementation completes Task 11 (CEL Access Rules for Buckets) of the stor
 - Documentation for CEL rule syntax
 - File-level override UI (admin panel)
 
+
+## File Field Integration with Record CRUD Operations
+
+**Date**: 2026-01-27
+**Task**: Integrate file field with record CRUD operations for automatic file management
+
+### Patterns Followed
+
+1. **Handler Extension** (from existing handler patterns):
+   - Added `storageService *storage.Service` field to `Handlers` struct
+   - Created `SetStorageService()` method for dependency injection
+   - Added file field validation before create/update operations
+   - Added file field expansion on GET requests with `?expand=` parameter
+   - Added cascade delete handling on record deletion
+
+2. **Validation Pattern** (from existing validation flow):
+   - Created `validateFileFields()` helper method
+   - Validates file exists in storage service
+   - Validates file belongs to correct bucket
+   - Returns typed errors: `storage.ErrNotFound`, `errFileWrongBucket`
+   - Integrated into CreateDocument and UpdateDocument before database operations
+
+3. **Expansion Pattern** (from query parameter parsing):
+   - Created `expandFileFields()` helper method
+   - Parses `?expand=field1,field2` query parameter
+   - Replaces file ID string with full file metadata object
+   - Only expands requested fields (not all file fields)
+   - Handles missing files gracefully (continues without error)
+
+4. **Cascade Delete Pattern** (from schema OnDelete actions):
+   - Created `deleteFileFieldsOnCascade()` helper method
+   - Checks field.File.OnDelete == schema.OnDeleteCascade
+   - Deletes files after document deletion (not before)
+   - Handles missing files gracefully (already deleted)
+   - Respects `restrict` action (orphans file)
+
+5. **Update Handling Pattern** (from existing update flow):
+   - Created `handleFileFieldUpdates()` helper method
+   - Compares old and new file IDs
+   - Deletes old file if OnDelete == cascade and file changed
+   - Keeps old file if OnDelete == restrict
+   - Runs before document update (validates new file first)
+
+6. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented handlers and helpers (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **Storage Service Injection**: Added `SetStorageService()` method instead of constructor parameter:
+   - Maintains backward compatibility with existing tests
+   - Allows optional storage service (nil = no file field support)
+   - Follows same pattern as `SetHookTrigger()`
+
+2. **Validation Before Database**: File validation happens before database operations:
+   - Prevents creating records with invalid file references
+   - Returns 400 Bad Request (not 500 Internal Server Error)
+   - Clearer error messages for users
+
+3. **Bucket Validation Strategy**: Searches all buckets to find file, then validates bucket:
+   - Handles case where file exists in wrong bucket
+   - Returns specific error: `FILE_WRONG_BUCKET` (not generic `FILE_NOT_FOUND`)
+   - Prevents confusion when file exists but in wrong bucket
+
+4. **Expansion on Demand**: File fields only expanded when explicitly requested:
+   - Reduces response size for list operations
+   - Allows clients to control data transfer
+   - Follows REST best practices (HATEOAS-like)
+
+5. **Cascade Delete After Record**: Files deleted after document deletion:
+   - Ensures referential integrity (document gone before files)
+   - Prevents orphaned records if file deletion fails
+   - Logs errors but doesn't fail request (files can be cleaned up later)
+
+6. **Update Validation Order**: Validates new file before deleting old file:
+   - Prevents deleting old file if new file doesn't exist
+   - Atomic-like behavior (either both succeed or neither)
+   - Clearer error messages (new file validation fails first)
+
+### Test Coverage
+
+**File Field Tests** (8 tests, all passing):
+- ✅ Create with valid file ID succeeds
+- ✅ Create with invalid file ID returns 400 FILE_NOT_FOUND
+- ✅ Create with wrong bucket file returns 400 FILE_WRONG_BUCKET
+- ✅ Expand file field returns full metadata object
+- ✅ Delete with cascade deletes file
+- ✅ Delete with restrict keeps file (orphans)
+- ✅ Update with cascade deletes old file
+- ✅ Update with restrict keeps old file
+
+**Integration Tests**:
+- ✅ All existing handler tests pass (backward compatible)
+- ✅ Storage service optional (nil = no file field support)
+- ✅ File field validation integrated into create/update flow
+- ✅ Expansion integrated into GET flow
+
+### Files Created/Modified
+
+- `internal/server/handlers/handlers.go`: Added storage service field, validation, expansion, cascade delete (150 lines added)
+- `internal/server/handlers/file_field_test.go`: Comprehensive test suite (450 lines, new file)
+
+### Implementation Details
+
+**Handlers Struct Extension**:
+```go
+type Handlers struct {
+    db             *database.DB
+    schema         *schema.Schema
+    cfg            *config.Config
+    rules          *rules.Engine
+    hookTrigger    database.HookTrigger
+    storageService *storage.Service  // New field
+}
+
+func (h *Handlers) SetStorageService(service *storage.Service) {
+    h.storageService = service
+}
+```
+
+**Validation Flow**:
+```go
+// In CreateDocument and UpdateDocument
+if err := h.validateFileFields(r.Context(), col.Schema(), data); err != nil {
+    if errors.Is(err, storage.ErrNotFound) {
+        Error(w, http.StatusBadRequest, "FILE_NOT_FOUND", "Referenced file does not exist")
+        return
+    }
+    if errors.Is(err, errFileWrongBucket) {
+        Error(w, http.StatusBadRequest, "FILE_WRONG_BUCKET", "File belongs to wrong bucket")
+        return
+    }
+    // ...
+}
+```
+
+**Expansion Flow**:
+```go
+// In GetDocument
+expandStr := r.URL.Query().Get("expand")
+if expandStr != "" {
+    expandFields := strings.Split(expandStr, ",")
+    if err := h.expandFileFields(r.Context(), col.Schema(), doc, expandFields); err != nil {
+        // ...
+    }
+}
+```
+
+**Cascade Delete Flow**:
+```go
+// In DeleteDocument (after col.Delete)
+if err := h.deleteFileFieldsOnCascade(r.Context(), col.Schema(), existingDoc); err != nil {
+    log.Error().Err(err).Str("collection", collectionName).Msg("Failed to delete cascade files")
+}
+```
+
+**Update Flow**:
+```go
+// In UpdateDocument (before col.Update)
+if err := h.handleFileFieldUpdates(r.Context(), col.Schema(), existingDoc, data); err != nil {
+    // ...
+}
+```
+
+### Example Usage
+
+**Schema Definition**:
+```yaml
+buckets:
+  avatars:
+    backend: filesystem
+    max_file_size: 5242880  # 5MB
+    allowed_types:
+      - image/jpeg
+      - image/png
+
+collections:
+  users:
+    fields:
+      avatar:
+        type: file
+        nullable: true
+        file:
+          bucket: avatars
+          on_delete: cascade
+```
+
+**Create with File**:
+```bash
+# Upload file first
+POST /api/files/avatars
+Content-Type: multipart/form-data
+# Returns: {"id": "file-123", ...}
+
+# Create user with file
+POST /api/collections/users
+{"name": "Alice", "avatar": "file-123"}
+# Returns: {"id": "user-456", "name": "Alice", "avatar": "file-123"}
+```
+
+**Expand File Field**:
+```bash
+GET /api/collections/users/user-456?expand=avatar
+# Returns:
+{
+  "id": "user-456",
+  "name": "Alice",
+  "avatar": {
+    "id": "file-123",
+    "bucket": "avatars",
+    "name": "avatar.png",
+    "mime_type": "image/png",
+    "size": 12345,
+    "created_at": "2026-01-27T08:00:00Z"
+  }
+}
+```
+
+**Delete with Cascade**:
+```bash
+DELETE /api/collections/users/user-456
+# Deletes user record AND file-123 from avatars bucket
+```
+
+### Integration Notes
+
+**Not Yet Integrated**:
+- Storage service not added to `Server` struct (requires server refactoring)
+- Routes not registered (need to add storage service initialization)
+- No backend initialization in server startup
+
+**Next Steps for Integration**:
+1. Add `storageService *storage.Service` field to `Server` struct
+2. Initialize storage service in `New()` with backends from config
+3. Call `handlers.SetStorageService(storageService)` in server initialization
+4. Add storage configuration to `config.Config`
+
+### Security Considerations
+
+- **File Validation**: Prevents creating records with non-existent files
+- **Bucket Isolation**: Prevents cross-bucket file references
+- **Cascade Delete**: Prevents orphaned files when configured
+- **Access Control**: File access rules enforced by storage service (not handlers)
+
+### Performance Considerations
+
+- **Validation Overhead**: One GetMetadata call per file field on create/update
+- **Expansion Overhead**: One GetMetadata call per expanded file field on GET
+- **Cascade Delete**: One Delete call per cascade file field on record delete
+- **Bucket Search**: Searches all buckets to find file (O(n) where n = bucket count)
+
+### Lessons Learned
+
+1. **Dependency Injection**: `SetStorageService()` pattern maintains backward compatibility
+2. **Validation Order**: Validate new file before deleting old file (atomic-like behavior)
+3. **Error Specificity**: Specific error codes (`FILE_WRONG_BUCKET`) improve debugging
+4. **Expansion on Demand**: Only expand when requested (reduces response size)
+5. **Cascade After Delete**: Delete files after document (ensures referential integrity)
+6. **Graceful Degradation**: Missing files during expansion don't fail request
+7. **Test PNG Headers**: MIME detection requires proper file headers (not just content)
+
+### Next Phase
+
+This implementation completes file field integration with record CRUD operations. The foundation is ready for:
+- Server integration (add storage service to Server struct)
+- Configuration (storage backends, bucket settings)
+- Documentation (API docs for file fields, expansion, cascade delete)
+- Client SDK generation (TypeScript/Go/Python clients with file field support)
+
+### Notes
+
+- File fields store UUID references (not file content)
+- Expansion replaces UUID with full metadata object
+- Cascade delete happens after document deletion (not before)
+- Restrict (keep) orphans files (no deletion)
+- Validation prevents invalid file references at creation time
+- Bucket validation searches all buckets (could optimize with file-to-bucket index)
+

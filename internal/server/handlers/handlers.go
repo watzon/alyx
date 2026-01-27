@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,16 +15,20 @@ import (
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
+	"github.com/watzon/alyx/internal/storage"
 )
 
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
+var errFileWrongBucket = errors.New("file belongs to wrong bucket")
+
 type Handlers struct {
-	db          *database.DB
-	schema      *schema.Schema
-	cfg         *config.Config
-	rules       *rules.Engine
-	hookTrigger database.HookTrigger
+	db             *database.DB
+	schema         *schema.Schema
+	cfg            *config.Config
+	rules          *rules.Engine
+	hookTrigger    database.HookTrigger
+	storageService *storage.Service
 }
 
 func New(db *database.DB, s *schema.Schema, cfg *config.Config, rulesEngine *rules.Engine) *Handlers {
@@ -33,6 +38,10 @@ func New(db *database.DB, s *schema.Schema, cfg *config.Config, rulesEngine *rul
 		cfg:    cfg,
 		rules:  rulesEngine,
 	}
+}
+
+func (h *Handlers) SetStorageService(service *storage.Service) {
+	h.storageService = service
 }
 
 func (h *Handlers) SetHookTrigger(trigger database.HookTrigger) {
@@ -85,6 +94,178 @@ func (h *Handlers) getCollection(name string) (*database.Collection, error) {
 		coll.SetHookTrigger(h.hookTrigger)
 	}
 	return coll, nil
+}
+
+func (h *Handlers) validateFileFields(ctx context.Context, collSchema *schema.Collection, data database.Row) error {
+	if h.storageService == nil {
+		return nil
+	}
+
+	for _, field := range collSchema.OrderedFields() {
+		if field.Type != schema.FieldTypeFile || field.File == nil {
+			continue
+		}
+
+		fileIDVal, ok := data[field.Name]
+		if !ok || fileIDVal == nil {
+			continue
+		}
+
+		fileID, ok := fileIDVal.(string)
+		if !ok {
+			continue
+		}
+
+		for bucketName := range h.schema.Buckets {
+			file, err := h.storageService.GetMetadata(ctx, bucketName, fileID)
+			if err == nil {
+				if file.Bucket != field.File.Bucket {
+					return errFileWrongBucket
+				}
+				break
+			}
+			if !errors.Is(err, storage.ErrNotFound) {
+				return err
+			}
+		}
+
+		_, err := h.storageService.GetMetadata(ctx, field.File.Bucket, fileID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *Handlers) expandFileFields(ctx context.Context, collSchema *schema.Collection, doc database.Row, expandFields []string) error {
+	if h.storageService == nil {
+		return nil
+	}
+
+	expandMap := make(map[string]bool)
+	for _, field := range expandFields {
+		expandMap[strings.TrimSpace(field)] = true
+	}
+
+	for _, field := range collSchema.OrderedFields() {
+		if field.Type != schema.FieldTypeFile || field.File == nil {
+			continue
+		}
+
+		if !expandMap[field.Name] {
+			continue
+		}
+
+		fileIDVal, ok := doc[field.Name]
+		if !ok || fileIDVal == nil {
+			continue
+		}
+
+		fileID, ok := fileIDVal.(string)
+		if !ok {
+			continue
+		}
+
+		file, err := h.storageService.GetMetadata(ctx, field.File.Bucket, fileID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				continue
+			}
+			return err
+		}
+
+		doc[field.Name] = map[string]any{
+			"id":         file.ID,
+			"bucket":     file.Bucket,
+			"name":       file.Name,
+			"path":       file.Path,
+			"mime_type":  file.MimeType,
+			"size":       file.Size,
+			"checksum":   file.Checksum,
+			"created_at": file.CreatedAt,
+			"updated_at": file.UpdatedAt,
+		}
+	}
+
+	return nil
+}
+
+func (h *Handlers) deleteFileFieldsOnCascade(ctx context.Context, collSchema *schema.Collection, doc database.Row) error {
+	if h.storageService == nil {
+		return nil
+	}
+
+	for _, field := range collSchema.OrderedFields() {
+		if field.Type != schema.FieldTypeFile || field.File == nil {
+			continue
+		}
+
+		if field.File.OnDelete != schema.OnDeleteCascade {
+			continue
+		}
+
+		fileIDVal, ok := doc[field.Name]
+		if !ok || fileIDVal == nil {
+			continue
+		}
+
+		fileID, ok := fileIDVal.(string)
+		if !ok {
+			continue
+		}
+
+		if err := h.storageService.Delete(ctx, field.File.Bucket, fileID); err != nil {
+			if !errors.Is(err, storage.ErrNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (h *Handlers) handleFileFieldUpdates(ctx context.Context, collSchema *schema.Collection, oldDoc, newData database.Row) error {
+	if h.storageService == nil {
+		return nil
+	}
+
+	for _, field := range collSchema.OrderedFields() {
+		if field.Type != schema.FieldTypeFile || field.File == nil {
+			continue
+		}
+
+		newFileIDVal, newExists := newData[field.Name]
+		oldFileIDVal, oldExists := oldDoc[field.Name]
+
+		if !newExists || newFileIDVal == nil {
+			continue
+		}
+
+		newFileID, ok := newFileIDVal.(string)
+		if !ok {
+			continue
+		}
+
+		if !oldExists || oldFileIDVal == nil {
+			continue
+		}
+
+		oldFileID, ok := oldFileIDVal.(string)
+		if !ok || oldFileID == newFileID {
+			continue
+		}
+
+		if field.File.OnDelete == schema.OnDeleteCascade {
+			if err := h.storageService.Delete(ctx, field.File.Bucket, oldFileID); err != nil {
+				if !errors.Is(err, storage.ErrNotFound) {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +329,16 @@ func (h *Handlers) GetDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	expandStr := r.URL.Query().Get("expand")
+	if expandStr != "" {
+		expandFields := strings.Split(expandStr, ",")
+		if err := h.expandFileFields(r.Context(), col.Schema(), doc, expandFields); err != nil {
+			log.Error().Err(err).Str("collection", collectionName).Msg("Failed to expand file fields")
+			Error(w, http.StatusInternalServerError, "EXPAND_ERROR", "Failed to expand file fields")
+			return
+		}
+	}
+
 	JSON(w, http.StatusOK, doc)
 }
 
@@ -178,6 +369,20 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	if verrs := database.ValidateInput(col.Schema(), data, true); verrs.HasErrors() {
 		ErrorWithDetails(w, http.StatusBadRequest, "VALIDATION_ERROR", verrs.Errors[0].Message, verrs.Errors)
+		return
+	}
+
+	if err := h.validateFileFields(r.Context(), col.Schema(), data); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusBadRequest, "FILE_NOT_FOUND", "Referenced file does not exist")
+			return
+		}
+		if errors.Is(err, errFileWrongBucket) {
+			Error(w, http.StatusBadRequest, "FILE_WRONG_BUCKET", "File belongs to wrong bucket")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("File field validation failed")
+		Error(w, http.StatusInternalServerError, "VALIDATION_ERROR", "Failed to validate file fields")
 		return
 	}
 
@@ -234,6 +439,26 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 
 	if verrs := database.ValidateInput(col.Schema(), data, false); verrs.HasErrors() {
 		ErrorWithDetails(w, http.StatusBadRequest, "VALIDATION_ERROR", verrs.Errors[0].Message, verrs.Errors)
+		return
+	}
+
+	if err := h.validateFileFields(r.Context(), col.Schema(), data); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusBadRequest, "FILE_NOT_FOUND", "Referenced file does not exist")
+			return
+		}
+		if errors.Is(err, errFileWrongBucket) {
+			Error(w, http.StatusBadRequest, "FILE_WRONG_BUCKET", "File belongs to wrong bucket")
+			return
+		}
+		log.Error().Err(err).Str("collection", collectionName).Msg("File field validation failed")
+		Error(w, http.StatusInternalServerError, "VALIDATION_ERROR", "Failed to validate file fields")
+		return
+	}
+
+	if err := h.handleFileFieldUpdates(r.Context(), col.Schema(), existingDoc, data); err != nil {
+		log.Error().Err(err).Str("collection", collectionName).Msg("Failed to handle file field updates")
+		Error(w, http.StatusInternalServerError, "UPDATE_ERROR", "Failed to handle file field updates")
 		return
 	}
 
@@ -295,6 +520,10 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Str("collection", collectionName).Str("id", id).Msg("Failed to delete document")
 		Error(w, http.StatusInternalServerError, "DELETE_ERROR", "Failed to delete document")
 		return
+	}
+
+	if err := h.deleteFileFieldsOnCascade(r.Context(), col.Schema(), existingDoc); err != nil {
+		log.Error().Err(err).Str("collection", collectionName).Msg("Failed to delete cascade files")
 	}
 
 	w.WriteHeader(http.StatusNoContent)
