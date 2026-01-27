@@ -134,16 +134,28 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("GET /api/admin/logs/stats", r.wrap(logsHandlers.Stats))
 	r.mux.HandleFunc("POST /api/admin/logs/clear", r.wrap(logsHandlers.Clear))
 
-	// TODO: File storage routes will be enabled when storage service is initialized in server
-	// if storageService := r.server.StorageService(); storageService != nil {
-	// 	fileHandlers := handlers.NewFileHandlers(storageService)
-	// 	r.mux.HandleFunc("POST /api/files/{bucket}", r.wrap(fileHandlers.Upload))
-	// 	r.mux.HandleFunc("GET /api/files/{bucket}", r.wrap(fileHandlers.List))
-	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}", r.wrap(fileHandlers.GetMetadata))
-	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}/download", r.wrap(fileHandlers.Download))
-	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}/view", r.wrap(fileHandlers.View))
-	// 	r.mux.HandleFunc("DELETE /api/files/{bucket}/{id}", r.wrap(fileHandlers.Delete))
-	// }
+	if r.server.StorageService() != nil {
+		fileHandlers := handlers.NewFileHandlers(
+			r.server.StorageService(),
+			r.server.TUSService(),
+			r.server.SignedService(),
+		)
+		// TUS resumable upload endpoints (must come before file CRUD to avoid conflicts)
+		r.mux.HandleFunc("POST /api/tus/{bucket}", r.wrap(fileHandlers.TUSCreate))
+		r.mux.HandleFunc("HEAD /api/tus/{bucket}/{upload_id}", r.wrap(fileHandlers.TUSHead))
+		r.mux.HandleFunc("PATCH /api/tus/{bucket}/{upload_id}", r.wrap(fileHandlers.TUSPatch))
+		r.mux.HandleFunc("DELETE /api/tus/{bucket}/{upload_id}", r.wrap(fileHandlers.TUSDelete))
+
+		// File CRUD endpoints
+		r.mux.HandleFunc("POST /api/files/{bucket}", r.wrap(fileHandlers.Upload))
+		r.mux.HandleFunc("GET /api/files/{bucket}", r.wrap(fileHandlers.List))
+		r.mux.HandleFunc("GET /api/files/{bucket}/{id}", r.wrap(fileHandlers.GetMetadata))
+		r.mux.HandleFunc("GET /api/files/{bucket}/{id}/download", r.wrap(fileHandlers.Download))
+		r.mux.HandleFunc("GET /api/files/{bucket}/{id}/view", r.wrap(fileHandlers.View))
+		r.mux.HandleFunc("DELETE /api/files/{bucket}/{id}", r.wrap(fileHandlers.Delete))
+		r.mux.HandleFunc("DELETE /api/files/{bucket}/batch", r.wrap(fileHandlers.BatchDelete))
+		r.mux.HandleFunc("GET /api/files/{bucket}/{id}/sign", r.wrap(fileHandlers.Sign))
+	}
 
 	// TODO: Event system routes will be enabled when components are initialized in server
 	// if hookRegistry := r.server.HookRegistry(); hookRegistry != nil {
@@ -208,6 +220,12 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("GET /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawGet))
 		r.mux.HandleFunc("PUT /api/admin/schema/raw", r.wrap(adminHandlers.SchemaRawUpdate))
 		r.mux.HandleFunc("POST /api/admin/schema/validate-rule", r.wrap(adminHandlers.ValidateRule))
+		r.mux.HandleFunc("GET /api/admin/schema/pending-changes", r.wrap(adminHandlers.SchemaPendingChanges))
+		r.mux.HandleFunc("POST /api/admin/schema/confirm-changes", r.wrap(adminHandlers.SchemaConfirmChanges))
+		r.mux.HandleFunc("POST /api/admin/schema/cancel-changes", r.wrap(adminHandlers.SchemaCancelChanges))
+		r.mux.HandleFunc("PUT /api/admin/schema", r.wrap(adminHandlers.SchemaDraftPreview))
+		r.mux.HandleFunc("POST /api/admin/schema/apply", r.wrap(adminHandlers.SchemaDraftApply))
+		r.mux.HandleFunc("DELETE /api/admin/schema/draft", r.wrap(adminHandlers.SchemaDraftCancel))
 		r.mux.HandleFunc("GET /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawGet))
 		r.mux.HandleFunc("PUT /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawUpdate))
 		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
