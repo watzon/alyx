@@ -299,3 +299,119 @@ This foundation enables:
 - Statement splitting handles semicolons correctly (even in strings)
 - Version tracking prevents duplicate application
 - System tables use `_alyx_` prefix (reserved namespace)
+
+## Storage Backend Interface and Compression Wrapper
+
+**Date**: 2026-01-27
+**Task**: Create storage backend interface with compression wrapper for pluggable storage implementations
+
+### Patterns Followed
+
+1. **Interface Design** (from `database.DB` pattern):
+   - Created `Backend` interface with 4 methods: `Put`, `Get`, `Delete`, `Exists`
+   - All methods take `context.Context` as first parameter for cancellation support
+   - Used `io.Reader` for Put (streaming input), `io.ReadCloser` for Get (caller must close)
+   - Size parameter in Put allows backend to optimize allocation (-1 for unknown size)
+
+2. **Config Struct Pattern** (from `config.DatabaseConfig`):
+   - Created `BackendConfig` struct with common fields across all backend types
+   - Fields: `Type`, `Path` (filesystem), `Endpoint`/`Bucket`/`Region` (S3), `AccessKeyID`/`SecretKey` (credentials)
+   - Factory function `NewBackend(cfg BackendConfig)` returns appropriate backend based on type
+
+3. **Wrapper Pattern** (decorator pattern):
+   - Created `CompressedBackend` struct that wraps any `Backend` implementation
+   - Implements same `Backend` interface (transparent to callers)
+   - Uses `io.Pipe()` for streaming compression/decompression (no buffering entire file in memory)
+   - Supports gzip (stdlib) and zstd (klauspost/compress) compression
+
+4. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented interface and wrapper (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **Streaming Interface**: Used `io.Reader`/`io.ReadCloser` instead of `[]byte` to support large files without loading entire file into memory. This is critical for file uploads/downloads.
+
+2. **Context Cancellation**: All methods accept `context.Context` to support request cancellation, timeouts, and deadlines. Real implementations should check `ctx.Done()` during long operations.
+
+3. **Size Parameter**: Put method accepts size parameter. Backends can use this to:
+   - Pre-allocate storage space
+   - Validate against quotas before writing
+   - Set Content-Length headers (S3)
+   - Pass -1 if size is unknown (e.g., compressed data)
+
+4. **Compression Transparency**: CompressedBackend handles compression/decompression transparently:
+   - Callers write/read uncompressed data
+   - Backend stores compressed data
+   - No changes needed to calling code when enabling compression
+
+5. **Pipe-based Compression**: Used `io.Pipe()` for streaming compression:
+   - Goroutine compresses data and writes to pipe
+   - Backend reads from pipe and stores
+   - No intermediate buffering (memory efficient)
+   - Errors propagated via `CloseWithError()`
+
+6. **Error Handling**: Defined standard errors:
+   - `ErrNotFound`: File doesn't exist (returned by Get)
+   - `ErrInvalidConfig`: Invalid backend configuration
+
+### Test Coverage
+
+- ✅ Backend interface compiles with mock implementation
+- ✅ Put stores data correctly
+- ✅ Get retrieves stored data
+- ✅ Delete removes data
+- ✅ Exists checks file existence
+- ✅ Context cancellation (mock doesn't check, but real implementations should)
+- ✅ NewBackend factory function (returns errors for unimplemented backends)
+- ✅ CompressedBackend with gzip compression
+- ✅ CompressedBackend with zstd compression
+- ✅ CompressedBackend with no compression (passthrough)
+- ✅ Compression transparency (data compressed in backend, decompressed on read)
+
+### Files Created
+
+- `internal/storage/backend.go`: Backend interface, BackendConfig, factory function, errors
+- `internal/storage/compression.go`: CompressedBackend wrapper with gzip/zstd support
+- `internal/storage/backend_test.go`: Comprehensive test suite with mock backend
+
+### Implementation Details
+
+**Backend Interface**:
+```go
+type Backend interface {
+    Put(ctx context.Context, bucket, key string, r io.Reader, size int64) error
+    Get(ctx context.Context, bucket, key string) (io.ReadCloser, error)
+    Delete(ctx context.Context, bucket, key string) error
+    Exists(ctx context.Context, bucket, key string) (bool, error)
+}
+```
+
+**CompressedBackend**:
+- Wraps any Backend implementation
+- Compression types: "gzip", "zstd", "" (no compression)
+- Uses goroutines + io.Pipe for streaming
+- Compression happens during Put, decompression during Get
+- Delete and Exists pass through to wrapped backend
+
+### Dependencies Added
+
+- `github.com/klauspost/compress/zstd`: High-performance zstd compression (upgraded from v1.18.0 to v1.18.3)
+
+### Next Steps
+
+This foundation enables:
+- Filesystem backend implementation (local storage)
+- S3 backend implementation (AWS S3, MinIO, etc.)
+- Storage service that uses backends
+- File upload/download handlers
+- Automatic compression based on bucket configuration
+
+### Notes
+
+- Backend implementations are NOT included (separate tasks)
+- Factory function returns errors for unimplemented backends
+- Mock backend used for testing (in-memory map)
+- Compression wrapper is production-ready and can be used with any backend
+- Size parameter in Put is optional (-1 for unknown), but recommended for efficiency
