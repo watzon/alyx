@@ -145,3 +145,83 @@ This foundation enables:
 - File validation (size, MIME type) at runtime
 - Cascade deletion of files when parent record deleted
 
+
+## System Tables for File Metadata and TUS Upload State
+
+**Date**: 2026-01-27
+**Task**: Define system tables for file metadata and TUS upload state
+
+### Patterns Followed
+
+1. **Table Definition Pattern** (from `internal/database/migrations/sql/*.sql`):
+   - Created `internal/storage/tables.go` with SQL generation functions
+   - Followed existing migration SQL patterns (CREATE TABLE IF NOT EXISTS, TEXT timestamps, INTEGER sizes)
+   - Used `_alyx_` prefix for system tables (reserved namespace)
+   - Separated table creation from index creation (different functions)
+
+2. **Function Organization** (from existing store patterns):
+   - Individual functions for each table: `FilesTableSQL()`, `UploadsTableSQL()`
+   - Individual functions for each index set: `FilesTableIndexes()`, `UploadsTableIndexes()`
+   - Aggregate functions: `AllStorageTables()`, `AllStorageIndexes()`
+   - All functions return strings or string slices (ready for migration execution)
+
+3. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented table SQL generation (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **Table Structure**:
+   - `_alyx_files`: Stores permanent file metadata (id, bucket, name, path, mime_type, size, checksum, compression info, metadata JSON, version, timestamps)
+   - `_alyx_uploads`: Stores temporary TUS upload state (id, bucket, filename, size, offset, metadata, expires_at, created_at)
+
+2. **Constraints and Indexes**:
+   - UNIQUE constraint on `(bucket, path)` in `_alyx_files` prevents duplicate files in same location
+   - Index on `bucket` in `_alyx_files` for efficient bucket-scoped queries
+   - Index on `expires_at` in `_alyx_uploads` for efficient cleanup queries (delete expired uploads)
+
+3. **Data Types**:
+   - TEXT for all string fields (id, bucket, name, path, mime_type, checksum, compression_type, metadata, timestamps)
+   - INTEGER for numeric fields (size, offset, original_size, version)
+   - BOOLEAN for flags (compressed) - stored as INTEGER in SQLite (0/1)
+   - TEXT for timestamps (ISO 8601 format via time.RFC3339)
+   - TEXT for metadata (JSON serialized)
+
+4. **Nullable Fields**:
+   - Required: id, bucket, name, path, mime_type, size (files); id, bucket, size, offset (uploads)
+   - Optional: checksum, compression_type, original_size, metadata, filename, expires_at
+   - Defaults: compressed=FALSE, offset=0, version=1
+
+### Test Coverage
+
+- ✅ FilesTableSQL generates correct table structure
+- ✅ FilesTableSQL includes all required fields with correct types
+- ✅ FilesTableSQL includes UNIQUE constraint on (bucket, path)
+- ✅ FilesTableIndexes includes bucket index
+- ✅ UploadsTableSQL generates correct table structure
+- ✅ UploadsTableSQL includes all required fields with correct types
+- ✅ UploadsTableIndexes includes expires_at index
+- ✅ AllStorageTables returns both tables
+- ✅ AllStorageIndexes returns all indexes
+
+### Files Created
+
+- `internal/storage/tables.go`: Table SQL generation functions
+- `internal/storage/tables_test.go`: Comprehensive test suite
+
+### Next Steps
+
+This foundation enables:
+- Migration creation (add SQL to `internal/database/migrations/sql/`)
+- Store implementation (CRUD operations for files and uploads)
+- TUS protocol implementation (resumable uploads)
+- File cleanup service (delete expired uploads)
+- Storage backend integration (local, S3, etc.)
+
+### Notes
+
+- Tables are NOT created yet (that's a separate migration task)
+- No CRUD operations implemented (that's a separate store task)
+- Follows exact specification from plan (all fields, constraints, indexes)
+- Ready for integration into migration system

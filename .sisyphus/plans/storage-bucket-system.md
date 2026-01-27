@@ -218,7 +218,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 3. Define system tables for files and uploads
+- [x] 3. Define system tables for files and uploads
 
   **What to do**:
   - Create `internal/storage/tables.go` with table definitions
