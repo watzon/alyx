@@ -353,7 +353,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 7. Implement S3 backend
+- [x] 7. Implement S3 backend
 
   **What to do**:
   - Create `internal/storage/s3.go` implementing `Backend`

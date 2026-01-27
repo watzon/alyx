@@ -16,6 +16,7 @@ type Config struct {
 	Dev       DevConfig       `mapstructure:"dev"`
 	Docs      DocsConfig      `mapstructure:"docs"`
 	AdminUI   AdminUIConfig   `mapstructure:"admin_ui"`
+	Storage   StorageConfig   `mapstructure:"storage"`
 }
 
 type DocsConfig struct {
@@ -317,6 +318,36 @@ type RealtimeConfig struct {
 	ChangeBufferSize          int           `mapstructure:"change_buffer_size"`
 	CleanupInterval           time.Duration `mapstructure:"cleanup_interval"`
 	CleanupAge                time.Duration `mapstructure:"cleanup_age"`
+}
+
+// StorageConfig holds storage backend settings.
+type StorageConfig struct {
+	// S3 backend configuration
+	S3 S3Config `mapstructure:"s3"`
+}
+
+// S3Config holds S3-compatible storage settings.
+type S3Config struct {
+	// Custom endpoint for S3-compatible services (MinIO, R2, etc.)
+	// Leave empty for AWS S3
+	Endpoint string `mapstructure:"endpoint"`
+
+	// AWS region (e.g., "us-east-1")
+	Region string `mapstructure:"region"`
+
+	// Access key ID
+	AccessKeyID string `mapstructure:"access_key_id"`
+
+	// Secret access key
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+
+	// Bucket prefix for all buckets (optional)
+	// If set, all bucket names will be prefixed with this value
+	BucketPrefix string `mapstructure:"bucket_prefix"`
+
+	// Force path-style addressing (required for MinIO)
+	// AWS S3 uses virtual-hosted-style by default
+	ForcePathStyle bool `mapstructure:"force_path_style"`
 }
 
 // Address returns the server address in host:port format.
