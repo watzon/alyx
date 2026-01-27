@@ -89,7 +89,7 @@ func (s *Service) Upload(ctx context.Context, bucket, filename string, r io.Read
 	}
 
 	fileID := uuid.New().String()
-	path := filename
+	path := fileID + "/" + filename
 
 	hasher := sha256.New()
 	teeReader := io.TeeReader(io.MultiReader(strings.NewReader(string(buf)), r), hasher)
@@ -196,9 +196,9 @@ func (s *Service) Delete(ctx context.Context, bucket, fileID string) error {
 	return nil
 }
 
-func (s *Service) List(ctx context.Context, bucket string, offset, limit int) ([]*File, error) {
+func (s *Service) List(ctx context.Context, bucket, search, mimeType string, offset, limit int) ([]*File, int, error) {
 	if _, ok := s.schema.Buckets[bucket]; !ok {
-		return nil, fmt.Errorf("bucket not found: %s", bucket)
+		return nil, 0, fmt.Errorf("bucket not found: %s", bucket)
 	}
 
 	if s.rules != nil {
@@ -210,11 +210,11 @@ func (s *Service) List(ctx context.Context, bucket string, offset, limit int) ([
 		}
 
 		if err := s.rules.CheckAccess(bucket, rules.OpRead, evalCtx); err != nil {
-			return nil, fmt.Errorf("access denied: %w", err)
+			return nil, 0, fmt.Errorf("access denied: %w", err)
 		}
 	}
 
-	return s.store.List(ctx, bucket, offset, limit)
+	return s.store.List(ctx, bucket, search, mimeType, offset, limit)
 }
 
 func (s *Service) checkFileAccess(ctx context.Context, bucket string, file *File, op rules.Operation) error {

@@ -115,25 +115,51 @@ func (s *Store) Get(ctx context.Context, bucket, fileID string) (*File, error) {
 	return file, nil
 }
 
-// List retrieves file metadata records for a bucket with pagination.
-func (s *Store) List(ctx context.Context, bucket string, offset, limit int) ([]*File, error) {
+// List retrieves file metadata records for a bucket with pagination and filters.
+func (s *Store) List(ctx context.Context, bucket, search, mimeType string, offset, limit int) ([]*File, int, error) {
+	// Build WHERE clause with optional filters
+	whereClause := `WHERE bucket = ?`
+	args := []interface{}{bucket}
+
+	if search != "" {
+		whereClause += ` AND name LIKE ?`
+		args = append(args, "%"+search+"%")
+	}
+
+	if mimeType != "" {
+		whereClause += ` AND mime_type LIKE ?`
+		args = append(args, mimeType+"%")
+	}
+
+	// Count total matching files
+	countQuery := `SELECT COUNT(*) FROM _alyx_files ` + whereClause
+	var total int
+	countRow := s.db.QueryRowContext(ctx, countQuery, args...)
+	if err := countRow.Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting files: %w", err)
+	}
+
+	// Query with pagination
 	query := `
 		SELECT id, bucket, name, path, mime_type, size, checksum,
 		       compressed, compression_type, original_size, metadata,
 		       version, created_at, updated_at
 		FROM _alyx_files
-		WHERE bucket = ?
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
+		` + whereClause + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
 
-	rows, err := s.db.QueryContext(ctx, query, bucket, limit, offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("querying file metadata: %w", err)
+		return nil, 0, fmt.Errorf("querying file metadata: %w", err)
 	}
 	defer rows.Close()
 
-	return s.scanFiles(rows)
+	files, err := s.scanFiles(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return files, total, nil
 }
 
 // Delete removes a file metadata record.

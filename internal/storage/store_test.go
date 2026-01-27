@@ -143,13 +143,17 @@ func TestStoreList(t *testing.T) {
 		}
 	}
 
-	files, err := store.List(ctx, "uploads", 0, 10)
+	files, total, err := store.List(ctx, "uploads", "", "", 0, 10)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
 
 	if len(files) != 5 {
 		t.Errorf("List returned %d files, want 5", len(files))
+	}
+
+	if total != 5 {
+		t.Errorf("List returned total %d, want 5", total)
 	}
 
 	if files[0].ID != "e" {
@@ -178,13 +182,17 @@ func TestStoreListPagination(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	files, err := store.List(ctx, "uploads", 2, 3)
+	files, total, err := store.List(ctx, "uploads", "", "", 2, 3)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
 
 	if len(files) != 3 {
 		t.Errorf("List returned %d files, want 3", len(files))
+	}
+
+	if total != 10 {
+		t.Errorf("List returned total %d, want 10", total)
 	}
 }
 

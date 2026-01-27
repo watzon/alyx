@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -90,7 +91,10 @@ func (h *FileHandlers) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	files, err := h.service.List(r.Context(), bucket, offset, limit)
+	search := r.URL.Query().Get("search")
+	mimeType := r.URL.Query().Get("mime_type")
+
+	files, total, err := h.service.List(r.Context(), bucket, search, mimeType, offset, limit)
 	if err != nil {
 		log.Error().Err(err).Str("bucket", bucket).Msg("Failed to list files")
 		Error(w, http.StatusInternalServerError, "LIST_ERROR", "Failed to list files")
@@ -99,6 +103,7 @@ func (h *FileHandlers) List(w http.ResponseWriter, r *http.Request) {
 
 	JSON(w, http.StatusOK, map[string]any{
 		"files":  files,
+		"total":  total,
 		"offset": offset,
 		"limit":  limit,
 	})
@@ -311,6 +316,44 @@ func (h *FileHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FileHandlers) BatchDelete(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		Error(w, http.StatusBadRequest, "IDS_REQUIRED", "At least one file ID is required")
+		return
+	}
+
+	deleted := 0
+	var failed []map[string]string
+
+	for _, id := range req.IDs {
+		if err := h.service.Delete(r.Context(), bucket, id); err != nil {
+			failed = append(failed, map[string]string{"id": id, "error": err.Error()})
+		} else {
+			deleted++
+		}
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"deleted": deleted,
+		"failed":  failed,
+	})
 }
 
 func (h *FileHandlers) validateToken(token, fileID, bucket, operation string) error {
