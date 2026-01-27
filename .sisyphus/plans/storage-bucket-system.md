@@ -251,7 +251,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 4. Add storage table migrations
+- [x] 4. Add storage table migrations
 
   **What to do**:
   - Add migration to create `_alyx_files` and `_alyx_uploads` tables

@@ -225,3 +225,77 @@ This foundation enables:
 - No CRUD operations implemented (that's a separate store task)
 - Follows exact specification from plan (all fields, constraints, indexes)
 - Ready for integration into migration system
+
+## Storage Table Migrations
+
+**Date**: 2026-01-27
+**Task**: Add migrations to create storage system tables on database initialization
+
+### Patterns Followed
+
+1. **Migration File Pattern** (from existing migrations in `internal/database/migrations/sql/`):
+   - Created `003_storage_tables.sql` following sequential numbering convention
+   - Used `CREATE TABLE IF NOT EXISTS` for idempotency
+   - Used `CREATE INDEX IF NOT EXISTS` for idempotency
+   - Placed indexes immediately after their corresponding tables
+   - No header comments (removed to match existing pattern)
+
+2. **Migration System** (from `internal/database/migrations/migrations.go`):
+   - Migrations are embedded via `//go:embed sql/*.sql`
+   - Loaded alphabetically by filename (001, 002, 003, ...)
+   - Each migration runs in its own transaction
+   - Applied migrations tracked in `_alyx_internal_versions` table
+   - Idempotent: running twice doesn't fail or duplicate
+
+3. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Created migration SQL file (GREEN phase)
+   - All tests passing with clean build
+
+### Key Decisions
+
+1. **Migration Content**: Used SQL from `internal/storage/tables.go` functions directly. This ensures consistency between table definitions and migrations.
+
+2. **File Naming**: `003_storage_tables.sql` follows sequential numbering after existing migrations (001_initial_tables, 002_event_system).
+
+3. **Automatic Execution**: Migrations run automatically during `database.Open()` via `migrations.Run()` call (line 53 in `database.go`).
+
+4. **Idempotency**: All statements use `IF NOT EXISTS` clause, allowing safe re-execution.
+
+### Test Coverage
+
+- ✅ Fresh database has `_alyx_files` table
+- ✅ Fresh database has `_alyx_uploads` table
+- ✅ `_alyx_files` has all required columns (id, bucket, name, path, mime_type, size, checksum, compressed, compression_type, original_size, metadata, version, created_at, updated_at)
+- ✅ `_alyx_uploads` has all required columns (id, bucket, filename, size, offset, metadata, expires_at, created_at)
+- ✅ `idx_files_bucket` index exists
+- ✅ `idx_uploads_expires_at` index exists
+- ✅ Migration is idempotent (running twice doesn't fail)
+- ✅ All database package tests pass with new migration
+
+### Files Created/Modified
+
+- `internal/database/migrations/sql/003_storage_tables.sql`: New migration file
+- `internal/database/migrations/migrations_test.go`: New test file with comprehensive migration tests
+
+### Integration Verified
+
+- ✅ Migration runs automatically on `database.Open()`
+- ✅ All existing database tests pass with new migration
+- ✅ Tables created in correct order (files before indexes)
+- ✅ No circular dependencies or import issues
+
+### Next Steps
+
+This foundation enables:
+- Store implementation (CRUD operations for files and uploads)
+- TUS protocol implementation (resumable uploads)
+- File cleanup service (delete expired uploads)
+- Storage backend integration (local, S3, etc.)
+
+### Notes
+
+- Migration system uses transaction per migration (rollback on failure)
+- Statement splitting handles semicolons correctly (even in strings)
+- Version tracking prevents duplicate application
+- System tables use `_alyx_` prefix (reserved namespace)
