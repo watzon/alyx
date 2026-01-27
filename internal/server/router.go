@@ -133,6 +133,18 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("GET /api/admin/logs", r.wrap(logsHandlers.List))
 	r.mux.HandleFunc("GET /api/admin/logs/stats", r.wrap(logsHandlers.Stats))
 	r.mux.HandleFunc("POST /api/admin/logs/clear", r.wrap(logsHandlers.Clear))
+
+	// TODO: File storage routes will be enabled when storage service is initialized in server
+	// if storageService := r.server.StorageService(); storageService != nil {
+	// 	fileHandlers := handlers.NewFileHandlers(storageService)
+	// 	r.mux.HandleFunc("POST /api/files/{bucket}", r.wrap(fileHandlers.Upload))
+	// 	r.mux.HandleFunc("GET /api/files/{bucket}", r.wrap(fileHandlers.List))
+	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}", r.wrap(fileHandlers.GetMetadata))
+	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}/download", r.wrap(fileHandlers.Download))
+	// 	r.mux.HandleFunc("GET /api/files/{bucket}/{id}/view", r.wrap(fileHandlers.View))
+	// 	r.mux.HandleFunc("DELETE /api/files/{bucket}/{id}", r.wrap(fileHandlers.Delete))
+	// }
+
 	// TODO: Event system routes will be enabled when components are initialized in server
 	// if hookRegistry := r.server.HookRegistry(); hookRegistry != nil {
 	// 	hookHandlers := handlers.NewHookHandlers(hookRegistry)

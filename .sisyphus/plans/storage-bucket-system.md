@@ -389,7 +389,7 @@ Phase 4: Integration
 
 ### Phase 3: API Endpoints
 
-- [ ] 8. Implement file service and CRUD handlers
+- [x] 8. Implement file service and CRUD handlers
 
   **What to do**:
   - Create `internal/storage/service.go` with `Service` struct

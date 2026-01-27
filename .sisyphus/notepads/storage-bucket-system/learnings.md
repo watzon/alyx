@@ -727,3 +727,161 @@ This foundation enables:
 - ✅ Wasabi (S3-compatible)
 - ✅ Backblaze B2 (S3-compatible API)
 
+
+## File Service and CRUD HTTP Handlers Implementation
+
+**Date**: 2026-01-27
+**Task**: Implement file service and CRUD HTTP handlers for file operations
+
+### Patterns Followed
+
+1. **Store Pattern** (from `internal/webhooks/store.go`):
+   - Created `Store` struct with `db *database.DB` field
+   - Implemented CRUD methods: `Create`, `Get`, `List`, `Delete`
+   - Used `NewStore(db)` constructor pattern
+   - All methods accept `context.Context` as first parameter
+   - Proper error wrapping with context
+
+2. **Service Pattern** (from existing service patterns):
+   - Created `Service` struct with dependencies: `db`, `store`, `backends`, `schema`, `cfg`
+   - Constructor `NewService()` with dependency injection
+   - Business logic methods: `Upload`, `Download`, `GetMetadata`, `Delete`, `List`
+   - Service orchestrates store + backend operations
+
+3. **Handler Pattern** (from `internal/server/handlers/auth.go`):
+   - Created `FileHandlers` struct with `service *storage.Service`
+   - Constructor `NewFileHandlers(service)` for dependency injection
+   - Each handler: parse params → validate → call service → return JSON/stream
+   - Proper error handling with typed errors (`storage.ErrNotFound`)
+   - HTTP status codes: 200 OK, 201 Created, 204 No Content, 400 Bad Request, 404 Not Found, 500 Internal Server Error
+
+4. **Test-Driven Development**:
+   - Wrote tests FIRST for each layer (RED phase)
+   - Implemented functionality (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **File Struct Design**:
+   - Stores metadata in `_alyx_files` table (not actual file content)
+   - Fields: ID (UUID), Bucket, Name, Path, MimeType, Size, Checksum (SHA256), Compression info, Metadata (JSON), Version, Timestamps
+   - Metadata stored as `map[string]string` (JSON serialized in DB)
+
+2. **Upload Flow**:
+   - Read first 512 bytes for MIME type detection (`http.DetectContentType`)
+   - Validate MIME type against bucket's `AllowedTypes` (supports wildcards like `image/*`)
+   - Validate file size against bucket's `MaxFileSize`
+   - Generate UUID for file ID
+   - Calculate SHA256 checksum during upload (using `io.TeeReader`)
+   - Store file in backend, then metadata in database
+   - Rollback backend storage if metadata insert fails
+
+3. **MIME Type Matching**:
+   - Strip charset from detected MIME type (e.g., `text/plain; charset=utf-8` → `text/plain`)
+   - Support wildcards: `image/*` matches `image/png`, `image/jpeg`, etc.
+   - Support `*/*` or `*` for no restrictions
+
+4. **Download vs View**:
+   - Download: Sets `Content-Disposition: attachment; filename="..."` (forces download)
+   - View: No `Content-Disposition` header (browser displays inline)
+   - Both stream file content using `io.Copy(w, rc)`
+
+5. **Error Handling**:
+   - Service returns `storage.ErrNotFound` for missing files/buckets
+   - Handlers map service errors to HTTP status codes
+   - Backend errors wrapped with context for debugging
+
+6. **Route Registration**:
+   - Added TODO comment in `router.go` with exact route registration code
+   - Routes will be enabled when storage service is added to server struct
+   - Pattern: `POST /api/files/{bucket}`, `GET /api/files/{bucket}`, `GET /api/files/{bucket}/{id}`, etc.
+
+### Test Coverage
+
+**Store Tests** (9 tests, all passing):
+- ✅ Create with auto-generated timestamps and version
+- ✅ Get by bucket and file ID
+- ✅ Get returns ErrNotFound for nonexistent file
+- ✅ List with pagination (DESC order by created_at)
+- ✅ Delete removes file metadata
+- ✅ Delete returns ErrNotFound for nonexistent file
+- ✅ Metadata serialization/deserialization
+- ✅ Compression fields (compressed, compression_type, original_size)
+
+**Service Tests** (11 tests, all passing):
+- ✅ Upload with MIME detection and checksum calculation
+- ✅ Upload rejects files exceeding size limit
+- ✅ Upload rejects disallowed MIME types
+- ✅ Upload allows wildcard MIME types (`image/*`)
+- ✅ Upload allows any MIME type when no restrictions
+- ✅ Download returns same content as uploaded
+- ✅ GetMetadata returns file metadata
+- ✅ Delete removes file from backend and database
+- ✅ List returns files for bucket
+- ✅ List pagination works correctly
+- ✅ Operations fail for nonexistent bucket
+
+**Handler Tests** (7 tests, all passing):
+- ✅ Upload via multipart form
+- ✅ List files in bucket
+- ✅ Get file metadata
+- ✅ Download file with Content-Disposition header
+- ✅ View file without Content-Disposition header
+- ✅ Delete file
+- ✅ 404 for nonexistent file
+
+### Files Created/Modified
+
+- `internal/storage/store.go`: Store with CRUD operations (310 lines)
+- `internal/storage/store_test.go`: Store tests (290 lines)
+- `internal/storage/service.go`: Service with business logic (190 lines)
+- `internal/storage/service_test.go`: Service tests (320 lines)
+- `internal/server/handlers/files.go`: HTTP handlers (230 lines)
+- `internal/server/handlers/files_test.go`: Handler tests (310 lines)
+- `internal/server/router.go`: Added TODO comment for route registration
+
+### Integration Notes
+
+**Not Yet Integrated**:
+- Storage service not added to `Server` struct (requires server refactoring)
+- Routes not registered (commented out in `router.go`)
+- No backend initialization in server startup
+
+**Next Steps for Integration**:
+1. Add `storageService *storage.Service` field to `Server` struct
+2. Initialize storage service in `New()` with backends from config
+3. Add `StorageService()` getter method
+4. Uncomment route registration in `router.go`
+5. Add storage configuration to `config.Config`
+
+### Performance Considerations
+
+- **Streaming**: Uses `io.Reader`/`io.ReadCloser` for memory-efficient file handling
+- **Checksums**: Calculated during upload using `io.TeeReader` (single pass)
+- **MIME Detection**: Only reads first 512 bytes (HTTP standard)
+- **Pagination**: Supports offset/limit for large file lists
+
+### Security Considerations
+
+- **MIME Validation**: Prevents uploading disallowed file types
+- **Size Limits**: Enforced at upload start (before writing to backend)
+- **Path Traversal**: Backend layer handles path validation (filesystem backend)
+- **Checksums**: SHA256 for integrity verification
+
+### Lessons Learned
+
+1. **Context Cancellation**: Always pass `context.Context` to service methods for cancellation support
+2. **UNIQUE Constraints**: `(bucket, path)` constraint requires unique filenames per bucket in tests
+3. **MIME Type Charset**: `http.DetectContentType` includes charset, must strip for matching
+4. **Test Timeouts**: Handler tests can hang without proper context (use `httptest.NewRequest().Context()`)
+5. **Multipart Forms**: Use `r.ParseMultipartForm()` before `r.FormFile()` for file uploads
+6. **Streaming Responses**: Use `io.Copy(w, rc)` for efficient file streaming (no buffering)
+
+### Next Phase
+
+This implementation completes Phase 3 (File Service and CRUD Handlers) of the storage bucket system. The foundation is ready for:
+- TUS resumable upload protocol (Phase 4)
+- Signed URLs for direct uploads/downloads (Phase 5)
+- File field integration with collections (Phase 6)
+- Server integration and configuration (Phase 7)
+
