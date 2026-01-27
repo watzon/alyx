@@ -175,6 +175,7 @@ const (
 type Schema struct {
 	Version     int                    `yaml:"version"`
 	Collections map[string]*Collection `yaml:"collections"`
+	Buckets     map[string]*Bucket     `yaml:"buckets"`
 }
 
 type Collection struct {
@@ -489,4 +490,21 @@ type Rules struct {
 
 func (r *Rules) HasRules() bool {
 	return r != nil && (r.Create != "" || r.Read != "" || r.Update != "" || r.Delete != "")
+}
+
+type Bucket struct {
+	Name         string   `yaml:"-"`
+	Backend      string   `yaml:"backend"`
+	MaxFileSize  int64    `yaml:"max_file_size"`
+	MaxTotalSize int64    `yaml:"max_total_size"`
+	AllowedTypes []string `yaml:"allowed_types"`
+	Compression  bool     `yaml:"compression"`
+	Rules        *Rules   `yaml:"rules"`
+}
+
+type BucketRules struct {
+	Create string `yaml:"create"`
+	Read   string `yaml:"read"`
+	Update string `yaml:"update"`
+	Delete string `yaml:"delete"`
 }

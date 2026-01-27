@@ -30,6 +30,7 @@ func Parse(data []byte) (*Schema, error) {
 	schema := &Schema{
 		Version:     raw.Version,
 		Collections: make(map[string]*Collection),
+		Buckets:     make(map[string]*Bucket),
 	}
 
 	for name, rawCol := range raw.Collections {
@@ -38,6 +39,14 @@ func Parse(data []byte) (*Schema, error) {
 			return nil, fmt.Errorf("collection %q: %w", name, err)
 		}
 		schema.Collections[name] = col
+	}
+
+	for name, rawBkt := range raw.Buckets {
+		bkt, err := parseBucket(name, rawBkt)
+		if err != nil {
+			return nil, fmt.Errorf("bucket %q: %w", name, err)
+		}
+		schema.Buckets[name] = bkt
 	}
 
 	if err := Validate(schema); err != nil {
@@ -50,12 +59,22 @@ func Parse(data []byte) (*Schema, error) {
 type rawSchema struct {
 	Version     int                       `yaml:"version"`
 	Collections map[string]*rawCollection `yaml:"collections"`
+	Buckets     map[string]*rawBucket     `yaml:"buckets"`
 }
 
 type rawCollection struct {
 	Fields  yaml.Node `yaml:"fields"`
 	Indexes []*Index  `yaml:"indexes"`
 	Rules   *Rules    `yaml:"rules"`
+}
+
+type rawBucket struct {
+	Backend      string   `yaml:"backend"`
+	MaxFileSize  int64    `yaml:"max_file_size"`
+	MaxTotalSize int64    `yaml:"max_total_size"`
+	AllowedTypes []string `yaml:"allowed_types"`
+	Compression  bool     `yaml:"compression"`
+	Rules        *Rules   `yaml:"rules"`
 }
 
 func parseCollection(name string, raw *rawCollection) (*Collection, error) {
@@ -98,6 +117,20 @@ func parseCollection(name string, raw *rawCollection) (*Collection, error) {
 
 	col.SetFieldOrder(fieldOrder)
 	return col, nil
+}
+
+func parseBucket(name string, raw *rawBucket) (*Bucket, error) {
+	bucket := &Bucket{
+		Name:         name,
+		Backend:      raw.Backend,
+		MaxFileSize:  raw.MaxFileSize,
+		MaxTotalSize: raw.MaxTotalSize,
+		AllowedTypes: raw.AllowedTypes,
+		Compression:  raw.Compression,
+		Rules:        raw.Rules,
+	}
+
+	return bucket, nil
 }
 
 type ValidationError struct {
@@ -147,10 +180,75 @@ func Validate(s *Schema) error {
 		errs = append(errs, colErrs...)
 	}
 
+	for name, bucket := range s.Buckets {
+		bucketErrs := validateBucket(name, bucket)
+		errs = append(errs, bucketErrs...)
+	}
+
 	if len(errs) > 0 {
 		return errs
 	}
 	return nil
+}
+
+func validateBucket(name string, b *Bucket) ValidationErrors {
+	var errs ValidationErrors
+	path := fmt.Sprintf("buckets.%s", name)
+
+	if !identifierRegex.MatchString(name) {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",
+		})
+	}
+
+	if strings.HasPrefix(name, "_alyx") {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "bucket names starting with '_alyx' are reserved",
+		})
+	}
+
+	if b.Backend == "" {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".backend",
+			Message: "backend is required",
+		})
+	}
+
+	if b.MaxFileSize < 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".max_file_size",
+			Message: "must be non-negative",
+		})
+	}
+
+	if b.MaxTotalSize < 0 {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".max_total_size",
+			Message: "must be non-negative",
+		})
+	}
+
+	for i, mimeType := range b.AllowedTypes {
+		if mimeType == "" {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.allowed_types[%d]", path, i),
+				Message: "mime type cannot be empty",
+			})
+			continue
+		}
+
+		parts := strings.Split(mimeType, "/")
+		if len(parts) != 2 {
+			errs = append(errs, &ValidationError{
+				Path:    fmt.Sprintf("%s.allowed_types[%d]", path, i),
+				Message: fmt.Sprintf("invalid mime type format %q; must be in format 'type/subtype' (e.g., 'image/jpeg', 'image/*')", mimeType),
+			})
+		}
+	}
+
+	return errs
 }
 
 func validateCollection(name string, col *Collection, s *Schema) ValidationErrors {
