@@ -90,8 +90,8 @@ func (f *FilesystemBackend) Put(ctx context.Context, bucket, key string, r io.Re
 
 	// Create parent directories
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating directory: %w", err)
+	if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+		return fmt.Errorf("creating directory: %w", mkdirErr)
 	}
 
 	// Create file

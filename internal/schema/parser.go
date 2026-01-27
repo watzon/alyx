@@ -42,10 +42,7 @@ func Parse(data []byte) (*Schema, error) {
 	}
 
 	for name, rawBkt := range raw.Buckets {
-		bkt, err := parseBucket(name, rawBkt)
-		if err != nil {
-			return nil, fmt.Errorf("bucket %q: %w", name, err)
-		}
+		bkt := parseBucket(name, rawBkt)
 		schema.Buckets[name] = bkt
 	}
 
@@ -119,7 +116,7 @@ func parseCollection(name string, raw *rawCollection) (*Collection, error) {
 	return col, nil
 }
 
-func parseBucket(name string, raw *rawBucket) (*Bucket, error) {
+func parseBucket(name string, raw *rawBucket) *Bucket {
 	bucket := &Bucket{
 		Name:         name,
 		Backend:      raw.Backend,
@@ -130,7 +127,7 @@ func parseBucket(name string, raw *rawBucket) (*Bucket, error) {
 		Rules:        raw.Rules,
 	}
 
-	return bucket, nil
+	return bucket
 }
 
 type ValidationError struct {

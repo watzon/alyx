@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+const (
+	defaultTrueString = "true"
+)
+
 type FieldType string
 
 const (
@@ -308,7 +312,7 @@ func (f *Field) SQLDefault() string {
 		case FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeUUID:
 			return fmt.Sprintf("'%s'", strings.ReplaceAll(f.Default, "'", "''"))
 		case FieldTypeBool:
-			if f.Default == "true" {
+			if f.Default == defaultTrueString {
 				return "1"
 			}
 			return "0"

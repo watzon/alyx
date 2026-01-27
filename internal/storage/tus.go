@@ -26,6 +26,12 @@ const (
 	TUSResumableSupported = "1.0.0"
 )
 
+const (
+	defaultFilePerm   = 0644
+	headerReadSize    = 512
+	uploadExpiryHours = 24
+)
+
 type TUSService struct {
 	db       *database.DB
 	store    *TUSStore
@@ -101,7 +107,7 @@ func (s *TUSService) UploadChunk(ctx context.Context, bucket, uploadID string, o
 		return 0, fmt.Errorf("creating temp directory: %w", err)
 	}
 
-	f, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, defaultFilePerm)
 	if err != nil {
 		return 0, fmt.Errorf("opening temp file: %w", err)
 	}
@@ -178,10 +184,10 @@ func (s *TUSService) finalizeUpload(ctx context.Context, upload *Upload, tempPat
 	}
 	defer f.Close()
 
-	buf := make([]byte, 512)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return fmt.Errorf("reading file header: %w", err)
+	buf := make([]byte, headerReadSize)
+	n, readErr := io.ReadFull(f, buf)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return fmt.Errorf("reading file header: %w", readErr)
 	}
 	buf = buf[:n]
 

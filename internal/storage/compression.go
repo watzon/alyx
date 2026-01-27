@@ -9,6 +9,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
+const compressionGzip = "gzip"
+
 type CompressedBackend struct {
 	backend     Backend
 	compression string
@@ -31,7 +33,7 @@ func (c *CompressedBackend) Put(ctx context.Context, bucket, key string, r io.Re
 	go func() {
 		var err error
 		switch c.compression {
-		case "gzip":
+		case compressionGzip:
 			err = c.compressGzip(pw, r)
 		case "zstd":
 			err = c.compressZstd(pw, r)
@@ -59,7 +61,7 @@ func (c *CompressedBackend) Get(ctx context.Context, bucket, key string) (io.Rea
 	go func() {
 		var err error
 		switch c.compression {
-		case "gzip":
+		case compressionGzip:
 			err = c.decompressGzip(pw, rc)
 		case "zstd":
 			err = c.decompressZstd(pw, rc)

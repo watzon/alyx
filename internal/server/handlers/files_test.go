@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -271,7 +272,7 @@ func TestFileHandlersDelete(t *testing.T) {
 	}
 
 	_, err = service.GetMetadata(httptest.NewRequest(http.MethodGet, "/", nil).Context(), "uploads", file.ID)
-	if err != storage.ErrNotFound {
+	if !errors.Is(err, storage.ErrNotFound) {
 		t.Errorf("GetMetadata after Delete error = %v, want ErrNotFound", err)
 	}
 }

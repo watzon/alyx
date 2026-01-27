@@ -703,7 +703,7 @@ export class StorageClient {
     let uploadId: string | null = null;
     let offset = 0;
     let paused = false;
-    let cancelled = false;
+    let canceled = false;
     let progressCallback: ((progress: number) => void) | undefined = options?.onProgress;
 
     const createUpload = async (): Promise<string> => {
@@ -745,7 +745,7 @@ export class StorageClient {
     };
 
     const uploadChunk = async (): Promise<void> => {
-      if (!uploadId || paused || cancelled) return;
+      if (!uploadId || paused || canceled) return;
 
       const chunk = file.slice(offset, offset + chunkSize);
       const response = await fetch(
@@ -775,7 +775,7 @@ export class StorageClient {
         progressCallback((offset / file.size) * 100);
       }
 
-      if (offset < file.size && !paused && !cancelled) {
+      if (offset < file.size && !paused && !canceled) {
         await uploadChunk();
       }
     };
@@ -830,7 +830,7 @@ export class StorageClient {
 
       async cancel(): Promise<void> {
         if (!uploadId) return;
-        cancelled = true;
+        canceled = true;
 
         await fetch(
           ` + "`" + `${this.client['url']}/api/files/${bucket}/tus/${uploadId}` + "`" + `,

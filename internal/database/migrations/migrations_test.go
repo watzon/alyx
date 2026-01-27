@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
@@ -128,11 +129,12 @@ func TestStorageTablesMigration(t *testing.T) {
 		var name, typ string
 		var notnull, pk int
 		var dfltValue sql.NullString
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
-			t.Fatalf("scanning column info: %v", err)
+		if scanErr := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); scanErr != nil {
+			t.Fatalf("scanning column info: %v", scanErr)
 		}
 		columns[name] = true
 	}
+	require.NoError(t, rows.Err())
 
 	requiredColumns := []string{
 		"id", "bucket", "name", "path", "mime_type", "size",
@@ -158,11 +160,12 @@ func TestStorageTablesMigration(t *testing.T) {
 		var name, typ string
 		var notnull, pk int
 		var dfltValue sql.NullString
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
-			t.Fatalf("scanning column info: %v", err)
+		if scanErr := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); scanErr != nil {
+			t.Fatalf("scanning column info: %v", scanErr)
 		}
 		columns[name] = true
 	}
+	require.NoError(t, rows.Err())
 
 	requiredUploadsColumns := []string{
 		"id", "bucket", "filename", "size", "offset",

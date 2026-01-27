@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/schema"
 )
+
+const uploadsBucketName = "uploads"
 
 func testService(t *testing.T) (*Service, Backend) {
 	t.Helper()
@@ -80,7 +83,7 @@ func TestServiceUpload(t *testing.T) {
 	content := []byte("Hello, World!")
 	r := bytes.NewReader(content)
 
-	file, err := service.Upload(ctx, "uploads", "test.txt", r, int64(len(content)))
+	file, err := service.Upload(ctx, uploadsBucketName, "test.txt", r, int64(len(content)))
 	if err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
@@ -88,7 +91,7 @@ func TestServiceUpload(t *testing.T) {
 	if file.ID == "" {
 		t.Error("File ID not set")
 	}
-	if file.Bucket != "uploads" {
+	if file.Bucket != uploadsBucketName {
 		t.Errorf("Bucket = %s, want uploads", file.Bucket)
 	}
 	if file.Name != "test.txt" {
@@ -248,12 +251,12 @@ func TestServiceDelete(t *testing.T) {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
-	_, err = service.GetMetadata(ctx, "uploads", file.ID)
-	if err != ErrNotFound {
+	_, err = service.GetMetadata(ctx, uploadsBucketName, file.ID)
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetMetadata after Delete error = %v, want ErrNotFound", err)
 	}
 
-	exists, err := backend.Exists(ctx, "uploads", file.ID)
+	exists, err := backend.Exists(ctx, uploadsBucketName, file.ID)
 	if err != nil {
 		t.Fatalf("Exists check failed: %v", err)
 	}

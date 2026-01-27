@@ -35,7 +35,7 @@ func (s *TUSStore) Create(ctx context.Context, upload *Upload) error {
 		upload.CreatedAt = time.Now().UTC()
 	}
 	if upload.ExpiresAt.IsZero() {
-		upload.ExpiresAt = upload.CreatedAt.Add(24 * time.Hour)
+		upload.ExpiresAt = upload.CreatedAt.Add(uploadExpiryHours * time.Hour)
 	}
 
 	var metadataJSON []byte

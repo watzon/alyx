@@ -3,11 +3,12 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 )
 
-// mockBackend implements Backend interface for testing
+// mockBackend implements Backend interface for testing.
 type mockBackend struct {
 	files map[string][]byte // bucket:key -> data
 }
@@ -99,16 +100,16 @@ func TestBackendInterface(t *testing.T) {
 func TestBackendContextCancellation(t *testing.T) {
 	backend := newMockBackend()
 
-	// Create cancelled context
+	// Create canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	// Operations should respect context cancellation
 	data := []byte("test data")
 	err := backend.Put(ctx, "test-bucket", "test-key", bytes.NewReader(data), int64(len(data)))
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		// Mock backend doesn't check context, but real implementations should
-		t.Logf("Put with cancelled context: %v", err)
+		t.Logf("Put with canceled context: %v", err)
 	}
 }
 

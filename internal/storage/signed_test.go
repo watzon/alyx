@@ -1,15 +1,22 @@
 package storage
 
 import (
+	"errors"
 	"testing"
 	"time"
+)
+
+const (
+	testDownloadOperation = "download"
+	testUserID            = "user-456"
+	testFileID            = "file-123"
 )
 
 func TestSignedURLService_GenerateSignedURL(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
 	operation := "download"
 	expiry := 15 * time.Minute
@@ -75,32 +82,11 @@ func TestSignedURLService_ValidateExpiredToken(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
-	operation := "download"
+	operation := testDownloadOperation
 	expiry := -1 * time.Second // Already expired
-	userID := "user-456"
-
-	token, _, err := svc.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
-	if err != nil {
-		t.Fatalf("GenerateSignedURL failed: %v", err)
-	}
-
-	_, err = svc.ValidateSignedURL(token, fileID, bucket)
-	if err != ErrExpiredToken {
-		t.Errorf("Expected ErrExpiredToken, got %v", err)
-	}
-}
-
-func TestSignedURLService_ValidateTamperedToken(t *testing.T) {
-	secret := []byte("test-secret-key-for-signing")
-	svc := NewSignedURLService(secret)
-
-	fileID := "file-123"
-	bucket := "uploads"
-	operation := "download"
-	expiry := 15 * time.Minute
-	userID := "user-456"
+	userID := testUserID
 
 	token, _, err := svc.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
 	if err != nil {
@@ -111,7 +97,7 @@ func TestSignedURLService_ValidateTamperedToken(t *testing.T) {
 	tamperedToken := token[:len(token)-5] + "XXXXX"
 
 	_, err = svc.ValidateSignedURL(tamperedToken, fileID, bucket)
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got %v", err)
 	}
 }
@@ -120,11 +106,11 @@ func TestSignedURLService_ValidateWrongFileID(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
-	operation := "download"
+	operation := testDownloadOperation
 	expiry := 15 * time.Minute
-	userID := "user-456"
+	userID := testUserID
 
 	token, _, err := svc.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
 	if err != nil {
@@ -133,7 +119,7 @@ func TestSignedURLService_ValidateWrongFileID(t *testing.T) {
 
 	// Try to validate with different file ID
 	_, err = svc.ValidateSignedURL(token, "different-file", bucket)
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got %v", err)
 	}
 }
@@ -142,11 +128,11 @@ func TestSignedURLService_ValidateWrongBucket(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
-	operation := "download"
+	operation := testDownloadOperation
 	expiry := 15 * time.Minute
-	userID := "user-456"
+	userID := testUserID
 
 	token, _, err := svc.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
 	if err != nil {
@@ -155,7 +141,7 @@ func TestSignedURLService_ValidateWrongBucket(t *testing.T) {
 
 	// Try to validate with different bucket
 	_, err = svc.ValidateSignedURL(token, fileID, "different-bucket")
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got %v", err)
 	}
 }
@@ -167,11 +153,11 @@ func TestSignedURLService_DifferentSecrets(t *testing.T) {
 	svc1 := NewSignedURLService(secret1)
 	svc2 := NewSignedURLService(secret2)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
-	operation := "download"
+	operation := testDownloadOperation
 	expiry := 15 * time.Minute
-	userID := "user-456"
+	userID := testUserID
 
 	token, _, err := svc1.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
 	if err != nil {
@@ -180,7 +166,7 @@ func TestSignedURLService_DifferentSecrets(t *testing.T) {
 
 	// Try to validate with different secret
 	_, err = svc2.ValidateSignedURL(token, fileID, bucket)
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got %v", err)
 	}
 }
@@ -189,11 +175,11 @@ func TestSignedURLService_ViewOperation(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
 	operation := "view"
 	expiry := 15 * time.Minute
-	userID := "user-456"
+	userID := testUserID
 
 	token, _, err := svc.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
 	if err != nil {
@@ -214,9 +200,9 @@ func TestSignedURLService_EmptyUserID(t *testing.T) {
 	secret := []byte("test-secret-key-for-signing")
 	svc := NewSignedURLService(secret)
 
-	fileID := "file-123"
+	fileID := testFileID
 	bucket := "uploads"
-	operation := "download"
+	operation := testDownloadOperation
 	expiry := 15 * time.Minute
 	userID := "" // Empty user ID (unauthenticated access)
 

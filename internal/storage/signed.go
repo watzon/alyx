@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const signedURLPartCount = 6
+
 var (
 	ErrExpiredToken     = errors.New("token has expired")
 	ErrInvalidSignature = errors.New("invalid token signature")
@@ -54,7 +56,7 @@ func (s *SignedURLService) ValidateSignedURL(token, fileID, bucket string) (*Sig
 	}
 
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 6 {
+	if len(parts) != signedURLPartCount {
 		return nil, ErrInvalidToken
 	}
 
