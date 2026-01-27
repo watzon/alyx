@@ -1086,3 +1086,173 @@ This implementation completes Phase 4 (TUS Resumable Upload Protocol) of the sto
 - Server integration and configuration (Phase 7)
 - Cleanup scheduler integration (Phase 8)
 
+
+## Signed URLs for Temporary File Access
+
+**Date**: 2026-01-27
+**Task**: Implement signed URLs with HMAC-SHA256 for temporary file access without authentication
+
+### Patterns Followed
+
+1. **Service Pattern** (from existing service patterns):
+   - Created `SignedURLService` struct with `secret []byte` field
+   - Constructor `NewSignedURLService(secret)` for dependency injection
+   - Methods: `GenerateSignedURL()`, `ValidateSignedURL()`
+   - Service handles all signing and validation logic
+
+2. **HMAC-SHA256 Signing** (simpler than JWT):
+   - Token format: `base64(fileID|bucket|operation|expiresAt|userID|signature)`
+   - Signature: `HMAC-SHA256(secret, fileID|bucket|operation|expiresAt|userID)`
+   - No external dependencies (stdlib only)
+   - Constant-time comparison via `hmac.Equal()` prevents timing attacks
+
+3. **Handler Integration** (from existing handler patterns):
+   - Added `signedService *storage.SignedURLService` to `FileHandlers` struct
+   - Updated constructor to accept signed service
+   - Added `Sign()` handler for generating signed URLs
+   - Updated `Download()` and `View()` handlers to accept `?token=` query parameter
+   - Created `validateToken()` helper method for DRY validation
+
+4. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented service and handlers (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **HMAC-SHA256 vs JWT**: Used HMAC-SHA256 instead of JWT for simplicity:
+   - No external dependencies (stdlib only)
+   - Simpler token format (no header/payload/signature structure)
+   - Smaller token size (no base64 overhead for header)
+   - Same security guarantees (HMAC-SHA256 is cryptographically secure)
+
+2. **Token Format**:
+   - Pipe-delimited payload: `fileID|bucket|operation|expiresAt|userID`
+   - Signature appended: `payload|signature`
+   - Base64 URL encoding for safe URL transmission
+   - Validation checks: signature, expiry, file ID, bucket
+
+3. **Expiry Handling**:
+   - Default expiry: 15 minutes (configurable via `?expiry=` query param)
+   - Expiry stored in token as RFC3339 timestamp
+   - Validation rejects expired tokens with `ErrExpiredToken`
+   - No indefinite expiry allowed (security best practice)
+
+4. **Operation Validation**:
+   - Token includes operation (`download` or `view`)
+   - Validation ensures token used for correct operation
+   - Prevents download token from being used for view (and vice versa)
+
+5. **Error Handling**:
+   - Expired token: 401 Unauthorized with `TOKEN_EXPIRED` code
+   - Invalid/tampered token: 401 Unauthorized with `INVALID_TOKEN` code
+   - Deleted file with valid token: 404 Not Found (not 403 Forbidden)
+   - This prevents leaking information about file existence
+
+6. **Unauthenticated Access**:
+   - Signed URLs work without authentication (no JWT required)
+   - UserID can be empty for unauthenticated access
+   - Token validation doesn't check authentication state
+   - Enables public file sharing via signed URLs
+
+### Test Coverage
+
+**SignedURLService Tests** (9 tests, all passing):
+- ✅ GenerateSignedURL returns valid token and expiry
+- ✅ ValidateSignedURL returns correct claims
+- ✅ Expired token returns ErrExpiredToken
+- ✅ Tampered token returns ErrInvalidSignature
+- ✅ Wrong file ID returns ErrInvalidSignature
+- ✅ Wrong bucket returns ErrInvalidSignature
+- ✅ Different secrets return ErrInvalidSignature
+- ✅ View operation works correctly
+- ✅ Empty user ID (unauthenticated) works correctly
+
+**FileHandlers Tests** (6 new tests, all passing):
+- ✅ Sign endpoint generates valid signed URL
+- ✅ Download with valid token works
+- ✅ View with valid token works
+- ✅ Expired token returns 401
+- ✅ Tampered token returns 401
+- ✅ Deleted file with valid token returns 404 (not 403)
+
+### Files Created/Modified
+
+- `internal/storage/signed.go`: SignedURLService implementation (100 lines)
+- `internal/storage/signed_test.go`: Comprehensive test suite (240 lines)
+- `internal/server/handlers/files.go`: Added Sign handler, updated Download/View (80 lines added)
+- `internal/server/handlers/files_test.go`: Added signed URL tests (200 lines added)
+
+### Implementation Details
+
+**SignedURLService Methods**:
+```go
+GenerateSignedURL(fileID, bucket, operation string, expiry time.Duration, userID string) (string, time.Time, error)
+ValidateSignedURL(token, fileID, bucket string) (*SignedURLClaims, error)
+sign(payload string) string  // private helper
+```
+
+**Token Structure**:
+```
+base64(fileID|bucket|operation|expiresAt|userID|signature)
+```
+
+**Sign Endpoint**:
+```
+GET /api/files/{bucket}/{id}/sign?expiry=15m&operation=download
+```
+
+**Response**:
+```json
+{
+  "url": "http://localhost:8090/api/files/uploads/file-123/download?token=...",
+  "token": "base64-encoded-token",
+  "expires_at": "2026-01-27T09:00:00Z"
+}
+```
+
+### Security Considerations
+
+- **HMAC-SHA256**: Cryptographically secure signature algorithm
+- **Constant-time comparison**: `hmac.Equal()` prevents timing attacks
+- **Expiry enforcement**: No indefinite tokens allowed
+- **Operation binding**: Token tied to specific operation (download/view)
+- **File/bucket binding**: Token tied to specific file and bucket
+- **No information leakage**: Deleted files return 404 (not 403)
+- **Secret management**: Uses JWT secret from config (shared secret)
+
+### Performance Considerations
+
+- **Lightweight**: No external dependencies, stdlib only
+- **Fast**: HMAC-SHA256 is very fast (microseconds)
+- **Stateless**: No database lookups for validation
+- **Cacheable**: Tokens can be cached client-side until expiry
+
+### Lessons Learned
+
+1. **HMAC vs JWT**: HMAC-SHA256 is simpler and sufficient for signed URLs (no need for JWT complexity)
+2. **Pipe Delimiter**: Simple and effective for payload structure (no escaping needed)
+3. **Base64 URL Encoding**: Required for safe URL transmission (standard base64 has `+` and `/`)
+4. **Constant-time Comparison**: Always use `hmac.Equal()` for signature validation (prevents timing attacks)
+5. **Error Codes**: Distinguish between expired (401) and invalid (401) tokens for better debugging
+6. **404 vs 403**: Return 404 for deleted files to prevent information leakage
+7. **Operation Validation**: Prevents token reuse for different operations (defense in depth)
+
+### Next Steps
+
+This implementation completes signed URL support for the storage bucket system. The foundation is ready for:
+- Server integration (add SignedURLService to Server struct)
+- Route registration (add `/api/files/{bucket}/{id}/sign` endpoint)
+- Configuration (use JWT secret from config)
+- Documentation (API docs for signed URL generation)
+- Client SDK generation (TypeScript/Go/Python clients)
+
+### Notes
+
+- Signed URLs are stateless (no database tracking)
+- Tokens cannot be revoked (by design, for simplicity)
+- Expiry is the only way to invalidate a token
+- For revocable tokens, use database-backed sessions instead
+- Secret rotation requires re-generating all tokens
+- Tokens are URL-safe (base64 URL encoding)
+

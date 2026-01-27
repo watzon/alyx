@@ -5,21 +5,25 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/storage"
 )
 
 type FileHandlers struct {
-	service    *storage.Service
-	tusService *storage.TUSService
+	service       *storage.Service
+	tusService    *storage.TUSService
+	signedService *storage.SignedURLService
 }
 
-func NewFileHandlers(service *storage.Service, tusService *storage.TUSService) *FileHandlers {
+func NewFileHandlers(service *storage.Service, tusService *storage.TUSService, signedService *storage.SignedURLService) *FileHandlers {
 	return &FileHandlers{
-		service:    service,
-		tusService: tusService,
+		service:       service,
+		tusService:    tusService,
+		signedService: signedService,
 	}
 }
 
@@ -127,6 +131,70 @@ func (h *FileHandlers) GetMetadata(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, file)
 }
 
+func (h *FileHandlers) Sign(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	fileID := r.PathValue("id")
+
+	if bucket == "" {
+		Error(w, http.StatusBadRequest, "BUCKET_REQUIRED", "Bucket name is required")
+		return
+	}
+	if fileID == "" {
+		Error(w, http.StatusBadRequest, "FILE_ID_REQUIRED", "File ID is required")
+		return
+	}
+
+	expiryStr := r.URL.Query().Get("expiry")
+	if expiryStr == "" {
+		expiryStr = "15m"
+	}
+
+	expiry, err := time.ParseDuration(expiryStr)
+	if err != nil {
+		Error(w, http.StatusBadRequest, "INVALID_EXPIRY", "Invalid expiry duration")
+		return
+	}
+
+	operation := r.URL.Query().Get("operation")
+	if operation == "" {
+		operation = "download"
+	}
+
+	if operation != "download" && operation != "view" {
+		Error(w, http.StatusBadRequest, "INVALID_OPERATION", "Operation must be 'download' or 'view'")
+		return
+	}
+
+	_, err = h.service.GetMetadata(r.Context(), bucket, fileID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			Error(w, http.StatusNotFound, "FILE_NOT_FOUND", "File not found")
+			return
+		}
+		log.Error().Err(err).Str("bucket", bucket).Str("file_id", fileID).Msg("Failed to get file metadata")
+		Error(w, http.StatusInternalServerError, "METADATA_ERROR", "Failed to get file metadata")
+		return
+	}
+
+	userID := ""
+	if claims, ok := r.Context().Value("claims").(*auth.Claims); ok {
+		userID = claims.UserID
+	}
+
+	token, expiresAt, err := h.signedService.GenerateSignedURL(fileID, bucket, operation, expiry, userID)
+	if err != nil {
+		log.Error().Err(err).Str("bucket", bucket).Str("file_id", fileID).Msg("Failed to generate signed URL")
+		Error(w, http.StatusInternalServerError, "SIGN_ERROR", "Failed to generate signed URL")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"url":        r.URL.Scheme + "://" + r.Host + "/api/files/" + bucket + "/" + fileID + "/" + operation + "?token=" + token,
+		"token":      token,
+		"expires_at": expiresAt.Format(time.RFC3339),
+	})
+}
+
 func (h *FileHandlers) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	fileID := r.PathValue("id")
@@ -138,6 +206,18 @@ func (h *FileHandlers) Download(w http.ResponseWriter, r *http.Request) {
 	if fileID == "" {
 		Error(w, http.StatusBadRequest, "FILE_ID_REQUIRED", "File ID is required")
 		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token != "" {
+		if err := h.validateToken(token, fileID, bucket, "download"); err != nil {
+			if errors.Is(err, storage.ErrExpiredToken) {
+				Error(w, http.StatusUnauthorized, "TOKEN_EXPIRED", "Signed URL has expired")
+				return
+			}
+			Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid or tampered token")
+			return
+		}
 	}
 
 	rc, file, err := h.service.Download(r.Context(), bucket, fileID)
@@ -172,6 +252,18 @@ func (h *FileHandlers) View(w http.ResponseWriter, r *http.Request) {
 	if fileID == "" {
 		Error(w, http.StatusBadRequest, "FILE_ID_REQUIRED", "File ID is required")
 		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token != "" {
+		if err := h.validateToken(token, fileID, bucket, "view"); err != nil {
+			if errors.Is(err, storage.ErrExpiredToken) {
+				Error(w, http.StatusUnauthorized, "TOKEN_EXPIRED", "Signed URL has expired")
+				return
+			}
+			Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid or tampered token")
+			return
+		}
 	}
 
 	rc, file, err := h.service.Download(r.Context(), bucket, fileID)
@@ -219,6 +311,19 @@ func (h *FileHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FileHandlers) validateToken(token, fileID, bucket, operation string) error {
+	claims, err := h.signedService.ValidateSignedURL(token, fileID, bucket)
+	if err != nil {
+		return err
+	}
+
+	if claims.Operation != operation {
+		return storage.ErrInvalidSignature
+	}
+
+	return nil
 }
 
 func (h *FileHandlers) TUSCreate(w http.ResponseWriter, r *http.Request) {

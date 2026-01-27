@@ -69,7 +69,8 @@ func testFileHandlers(t *testing.T) (*FileHandlers, *storage.Service) {
 
 	service := storage.NewService(db, backends, s, appCfg)
 	tusService := storage.NewTUSService(db, backends, s, appCfg, tmpDir)
-	handlers := NewFileHandlers(service, tusService)
+	signedService := storage.NewSignedURLService([]byte("test-secret-key-for-signing"))
+	handlers := NewFileHandlers(service, tusService, signedService)
 
 	return handlers, service
 }
@@ -287,5 +288,241 @@ func TestFileHandlersNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestFileHandlersSign(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=15m&operation=download", nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.Sign(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Decode response failed: %v", err)
+	}
+
+	if response["token"] == nil {
+		t.Error("Expected token in response")
+	}
+
+	if response["url"] == nil {
+		t.Error("Expected url in response")
+	}
+
+	if response["expires_at"] == nil {
+		t.Error("Expected expires_at in response")
+	}
+}
+
+func TestFileHandlersDownloadWithToken(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	signReq := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=15m&operation=download", nil)
+	signReq.SetPathValue("bucket", "uploads")
+	signReq.SetPathValue("id", file.ID)
+
+	signW := httptest.NewRecorder()
+	handlers.Sign(signW, signReq)
+
+	var signResponse map[string]any
+	if err := json.NewDecoder(signW.Body).Decode(&signResponse); err != nil {
+		t.Fatalf("Decode sign response failed: %v", err)
+	}
+
+	token := signResponse["token"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/download?token="+token, nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.Download(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	downloaded, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatalf("Read body failed: %v", err)
+	}
+
+	if !bytes.Equal(downloaded, content) {
+		t.Errorf("Downloaded content = %q, want %q", downloaded, content)
+	}
+}
+
+func TestFileHandlersViewWithToken(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	signReq := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=15m&operation=view", nil)
+	signReq.SetPathValue("bucket", "uploads")
+	signReq.SetPathValue("id", file.ID)
+
+	signW := httptest.NewRecorder()
+	handlers.Sign(signW, signReq)
+
+	var signResponse map[string]any
+	if err := json.NewDecoder(signW.Body).Decode(&signResponse); err != nil {
+		t.Fatalf("Decode sign response failed: %v", err)
+	}
+
+	token := signResponse["token"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/view?token="+token, nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.View(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	downloaded, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatalf("Read body failed: %v", err)
+	}
+
+	if !bytes.Equal(downloaded, content) {
+		t.Errorf("Downloaded content = %q, want %q", downloaded, content)
+	}
+}
+
+func TestFileHandlersExpiredToken(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	signReq := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=-1s&operation=download", nil)
+	signReq.SetPathValue("bucket", "uploads")
+	signReq.SetPathValue("id", file.ID)
+
+	signW := httptest.NewRecorder()
+	handlers.Sign(signW, signReq)
+
+	var signResponse map[string]any
+	if err := json.NewDecoder(signW.Body).Decode(&signResponse); err != nil {
+		t.Fatalf("Decode sign response failed: %v", err)
+	}
+
+	token := signResponse["token"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/download?token="+token, nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.Download(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestFileHandlersTamperedToken(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	signReq := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=15m&operation=download", nil)
+	signReq.SetPathValue("bucket", "uploads")
+	signReq.SetPathValue("id", file.ID)
+
+	signW := httptest.NewRecorder()
+	handlers.Sign(signW, signReq)
+
+	var signResponse map[string]any
+	if err := json.NewDecoder(signW.Body).Decode(&signResponse); err != nil {
+		t.Fatalf("Decode sign response failed: %v", err)
+	}
+
+	token := signResponse["token"].(string)
+	tamperedToken := token[:len(token)-5] + "XXXXX"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/download?token="+tamperedToken, nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.Download(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestFileHandlersDeletedFileWithValidToken(t *testing.T) {
+	handlers, service := testFileHandlers(t)
+
+	content := []byte("Hello, World!")
+	file, err := service.Upload(httptest.NewRequest(http.MethodPost, "/", nil).Context(), "uploads", "test.txt", bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	signReq := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/sign?expiry=15m&operation=download", nil)
+	signReq.SetPathValue("bucket", "uploads")
+	signReq.SetPathValue("id", file.ID)
+
+	signW := httptest.NewRecorder()
+	handlers.Sign(signW, signReq)
+
+	var signResponse map[string]any
+	if err := json.NewDecoder(signW.Body).Decode(&signResponse); err != nil {
+		t.Fatalf("Decode sign response failed: %v", err)
+	}
+
+	token := signResponse["token"].(string)
+
+	if err := service.Delete(httptest.NewRequest(http.MethodDelete, "/", nil).Context(), "uploads", file.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/uploads/"+file.ID+"/download?token="+token, nil)
+	req.SetPathValue("bucket", "uploads")
+	req.SetPathValue("id", file.ID)
+
+	w := httptest.NewRecorder()
+	handlers.Download(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Status = %d, want %d (file deleted should return 404, not 403)", w.Code, http.StatusNotFound)
 	}
 }

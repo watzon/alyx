@@ -480,7 +480,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 10. Implement signed URLs
+- [x] 10. Implement signed URLs
 
   **What to do**:
   - Add `GET /api/files/{bucket}/{id}/sign` endpoint
