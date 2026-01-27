@@ -517,7 +517,7 @@ Phase 4: Integration
 
 ---
 
-- [ ] 11. Implement CEL access rules for buckets
+- [x] 11. Implement CEL access rules for buckets
 
   **What to do**:
   - Add `OpDownload` to `internal/rules/engine.go` as 5th operation

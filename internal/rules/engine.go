@@ -22,10 +22,11 @@ var (
 type Operation string
 
 const (
-	OpCreate Operation = "create"
-	OpRead   Operation = "read"
-	OpUpdate Operation = "update"
-	OpDelete Operation = "delete"
+	OpCreate   Operation = "create"
+	OpRead     Operation = "read"
+	OpUpdate   Operation = "update"
+	OpDelete   Operation = "delete"
+	OpDownload Operation = "download"
 )
 
 type Engine struct {
@@ -37,6 +38,7 @@ type Engine struct {
 type EvalContext struct {
 	Auth    map[string]any
 	Doc     map[string]any
+	File    map[string]any
 	Request map[string]any
 }
 
@@ -44,6 +46,7 @@ func NewEngine() (*Engine, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("auth", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("doc", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("file", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
 	)
 	if err != nil {
@@ -87,6 +90,38 @@ func (e *Engine) LoadSchema(s *schema.Schema) error {
 		}
 	}
 
+	for name, bucket := range s.Buckets {
+		if bucket.Rules == nil {
+			continue
+		}
+
+		if bucket.Rules.Create != "" {
+			if err := e.compileRule(name, OpCreate, bucket.Rules.Create); err != nil {
+				return fmt.Errorf("compiling create rule for bucket %s: %w", name, err)
+			}
+		}
+		if bucket.Rules.Read != "" {
+			if err := e.compileRule(name, OpRead, bucket.Rules.Read); err != nil {
+				return fmt.Errorf("compiling read rule for bucket %s: %w", name, err)
+			}
+		}
+		if bucket.Rules.Update != "" {
+			if err := e.compileRule(name, OpUpdate, bucket.Rules.Update); err != nil {
+				return fmt.Errorf("compiling update rule for bucket %s: %w", name, err)
+			}
+		}
+		if bucket.Rules.Delete != "" {
+			if err := e.compileRule(name, OpDelete, bucket.Rules.Delete); err != nil {
+				return fmt.Errorf("compiling delete rule for bucket %s: %w", name, err)
+			}
+		}
+		if bucket.Rules.Download != "" {
+			if err := e.compileRule(name, OpDownload, bucket.Rules.Download); err != nil {
+				return fmt.Errorf("compiling download rule for bucket %s: %w", name, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -119,6 +154,7 @@ func (e *Engine) Evaluate(collection string, op Operation, ctx *EvalContext) (bo
 	vars := map[string]any{
 		"auth":    ctx.Auth,
 		"doc":     ctx.Doc,
+		"file":    ctx.File,
 		"request": ctx.Request,
 	}
 
@@ -127,6 +163,9 @@ func (e *Engine) Evaluate(collection string, op Operation, ctx *EvalContext) (bo
 	}
 	if vars["doc"] == nil {
 		vars["doc"] = map[string]any{}
+	}
+	if vars["file"] == nil {
+		vars["file"] = map[string]any{}
 	}
 	if vars["request"] == nil {
 		vars["request"] = map[string]any{}

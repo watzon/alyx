@@ -492,14 +492,15 @@ func (i *Index) SQL(tableName string) string {
 }
 
 type Rules struct {
-	Create string `yaml:"create"`
-	Read   string `yaml:"read"`
-	Update string `yaml:"update"`
-	Delete string `yaml:"delete"`
+	Create   string `yaml:"create"`
+	Read     string `yaml:"read"`
+	Update   string `yaml:"update"`
+	Delete   string `yaml:"delete"`
+	Download string `yaml:"download"`
 }
 
 func (r *Rules) HasRules() bool {
-	return r != nil && (r.Create != "" || r.Read != "" || r.Update != "" || r.Delete != "")
+	return r != nil && (r.Create != "" || r.Read != "" || r.Update != "" || r.Delete != "" || r.Download != "")
 }
 
 type Bucket struct {

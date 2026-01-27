@@ -67,7 +67,7 @@ func testFileHandlers(t *testing.T) (*FileHandlers, *storage.Service) {
 
 	appCfg := &config.Config{}
 
-	service := storage.NewService(db, backends, s, appCfg)
+	service := storage.NewService(db, backends, s, appCfg, nil)
 	tusService := storage.NewTUSService(db, backends, s, appCfg, tmpDir)
 	signedService := storage.NewSignedURLService([]byte("test-secret-key-for-signing"))
 	handlers := NewFileHandlers(service, tusService, signedService)

@@ -11,8 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/watzon/alyx/internal/auth"
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
+	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 )
 
@@ -22,15 +24,17 @@ type Service struct {
 	backends map[string]Backend
 	schema   *schema.Schema
 	cfg      *config.Config
+	rules    *rules.Engine
 }
 
-func NewService(db *database.DB, backends map[string]Backend, s *schema.Schema, cfg *config.Config) *Service {
+func NewService(db *database.DB, backends map[string]Backend, s *schema.Schema, cfg *config.Config, rulesEngine *rules.Engine) *Service {
 	return &Service{
 		db:       db,
 		store:    NewStore(db),
 		backends: backends,
 		schema:   s,
 		cfg:      cfg,
+		rules:    rulesEngine,
 	}
 }
 
@@ -38,6 +42,19 @@ func (s *Service) Upload(ctx context.Context, bucket, filename string, r io.Read
 	bucketCfg, ok := s.schema.Buckets[bucket]
 	if !ok {
 		return nil, fmt.Errorf("bucket not found: %s", bucket)
+	}
+
+	if s.rules != nil {
+		user := auth.UserFromContext(ctx)
+		claims := auth.ClaimsFromContext(ctx)
+
+		evalCtx := &rules.EvalContext{
+			Auth: rules.BuildAuthContext(user, claims),
+		}
+
+		if err := s.rules.CheckAccess(bucket, rules.OpCreate, evalCtx); err != nil {
+			return nil, fmt.Errorf("access denied: %w", err)
+		}
 	}
 
 	if bucketCfg.MaxFileSize > 0 && size > bucketCfg.MaxFileSize {
@@ -107,6 +124,12 @@ func (s *Service) Download(ctx context.Context, bucket, fileID string) (io.ReadC
 		return nil, nil, err
 	}
 
+	if s.rules != nil {
+		if err := s.checkFileAccess(ctx, bucket, file, rules.OpDownload); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	bucketCfg, ok := s.schema.Buckets[bucket]
 	if !ok {
 		return nil, nil, fmt.Errorf("bucket not found: %s", bucket)
@@ -126,13 +149,30 @@ func (s *Service) Download(ctx context.Context, bucket, fileID string) (io.ReadC
 }
 
 func (s *Service) GetMetadata(ctx context.Context, bucket, fileID string) (*File, error) {
-	return s.store.Get(ctx, bucket, fileID)
+	file, err := s.store.Get(ctx, bucket, fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.rules != nil {
+		if err := s.checkFileAccess(ctx, bucket, file, rules.OpRead); err != nil {
+			return nil, err
+		}
+	}
+
+	return file, nil
 }
 
 func (s *Service) Delete(ctx context.Context, bucket, fileID string) error {
-	_, err := s.store.Get(ctx, bucket, fileID)
+	file, err := s.store.Get(ctx, bucket, fileID)
 	if err != nil {
 		return err
+	}
+
+	if s.rules != nil {
+		if err := s.checkFileAccess(ctx, bucket, file, rules.OpDelete); err != nil {
+			return err
+		}
 	}
 
 	bucketCfg, ok := s.schema.Buckets[bucket]
@@ -161,7 +201,83 @@ func (s *Service) List(ctx context.Context, bucket string, offset, limit int) ([
 		return nil, fmt.Errorf("bucket not found: %s", bucket)
 	}
 
+	if s.rules != nil {
+		user := auth.UserFromContext(ctx)
+		claims := auth.ClaimsFromContext(ctx)
+
+		evalCtx := &rules.EvalContext{
+			Auth: rules.BuildAuthContext(user, claims),
+		}
+
+		if err := s.rules.CheckAccess(bucket, rules.OpRead, evalCtx); err != nil {
+			return nil, fmt.Errorf("access denied: %w", err)
+		}
+	}
+
 	return s.store.List(ctx, bucket, offset, limit)
+}
+
+func (s *Service) checkFileAccess(ctx context.Context, bucket string, file *File, op rules.Operation) error {
+	user := auth.UserFromContext(ctx)
+	claims := auth.ClaimsFromContext(ctx)
+
+	fileCtx := map[string]any{
+		"id":        file.ID,
+		"name":      file.Name,
+		"mime_type": file.MimeType,
+		"size":      file.Size,
+		"bucket":    file.Bucket,
+	}
+
+	evalCtx := &rules.EvalContext{
+		Auth: rules.BuildAuthContext(user, claims),
+		File: fileCtx,
+	}
+
+	if file.Metadata != nil && file.Metadata["file_security"] == "true" {
+		if fileRule, ok := file.Metadata[string(op)]; ok && fileRule != "" {
+			allowed, err := s.evaluateFileRule(fileRule, evalCtx)
+			if err != nil {
+				return fmt.Errorf("evaluating file-level rule: %w", err)
+			}
+			if !allowed {
+				return rules.ErrAccessDenied
+			}
+			return nil
+		}
+	}
+
+	if err := s.rules.CheckAccess(bucket, op, evalCtx); err != nil {
+		return fmt.Errorf("access denied: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) evaluateFileRule(ruleExpr string, ctx *rules.EvalContext) (bool, error) {
+	tempEngine, err := rules.NewEngine()
+	if err != nil {
+		return false, fmt.Errorf("creating temp engine: %w", err)
+	}
+
+	tempSchema := &schema.Schema{
+		Collections: map[string]*schema.Collection{},
+		Buckets: map[string]*schema.Bucket{
+			"_temp": {
+				Name:    "_temp",
+				Backend: "local",
+				Rules: &schema.Rules{
+					Download: ruleExpr,
+				},
+			},
+		},
+	}
+
+	if err := tempEngine.LoadSchema(tempSchema); err != nil {
+		return false, fmt.Errorf("loading file rule: %w", err)
+	}
+
+	return tempEngine.Evaluate("_temp", rules.OpDownload, ctx)
 }
 
 func matchesMimeType(mimeType, pattern string) bool {

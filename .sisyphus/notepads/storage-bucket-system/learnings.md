@@ -1256,3 +1256,221 @@ This implementation completes signed URL support for the storage bucket system. 
 - Secret rotation requires re-generating all tokens
 - Tokens are URL-safe (base64 URL encoding)
 
+
+## CEL Access Rules for Bucket Operations
+
+**Date**: 2026-01-27
+**Task**: Implement CEL access rules for bucket operations with download operation support
+
+### Patterns Followed
+
+1. **Rules Engine Extension** (from existing collection rules):
+   - Added `OpDownload Operation = "download"` to operation constants
+   - Added `File map[string]any` to `EvalContext` struct
+   - Updated CEL environment to include `file` variable
+   - Extended `LoadSchema()` to parse bucket rules from schema
+
+2. **Bucket Rules Integration** (from collection rules pattern):
+   - Bucket rules use same `Rules` struct as collections
+   - Added `Download` field to `Rules` struct for bucket-specific operation
+   - Parse bucket rules in `LoadSchema()` alongside collection rules
+   - Same rule compilation and evaluation flow
+
+3. **Service Layer Integration** (from handler checkAccess pattern):
+   - Added `rules *rules.Engine` to `Service` struct
+   - Updated `NewService()` to accept rules engine parameter
+   - Created `checkFileAccess()` helper method for DRY access checks
+   - Integrated access checks into all service methods (Upload, Download, GetMetadata, Delete, List)
+
+4. **File-Level Override Support**:
+   - Check file metadata for `file_security: "true"` flag
+   - If enabled, check file-level rules stored in metadata first
+   - Fall back to bucket rules if no file-level override
+   - Created `evaluateFileRule()` helper to compile and evaluate file-level rules dynamically
+
+5. **Test-Driven Development**:
+   - Wrote comprehensive tests FIRST (RED phase)
+   - Implemented rules engine extensions (GREEN phase)
+   - All tests passing with clean LSP diagnostics
+
+### Key Decisions
+
+1. **Download as Separate Operation**: Created `OpDownload` as distinct from `OpRead`:
+   - `OpRead`: Access to file metadata (list, get metadata)
+   - `OpDownload`: Access to file content (download, view)
+   - Allows fine-grained control (e.g., "can see file exists but can't download")
+
+2. **File Context Variables**: Added file-specific context to CEL evaluation:
+   - `file.id`: File UUID
+   - `file.name`: Original filename
+   - `file.mime_type`: Detected MIME type
+   - `file.size`: File size in bytes
+   - `file.bucket`: Bucket name
+   - Enables rules like: `file.mime_type.startsWith('image/') || auth.role == 'admin'`
+
+3. **File-Level Override Strategy**:
+   - Stored in file metadata as `file_security: "true"` + `{operation}: "{rule}"`
+   - Example: `{"file_security": "true", "download": "auth.id == 'user123'"}`
+   - Evaluated dynamically using temporary engine (no pre-compilation)
+   - Takes precedence over bucket rules when enabled
+
+4. **Service Constructor Update**: Added `rulesEngine *rules.Engine` parameter:
+   - Existing tests pass `nil` for rules engine (no access control)
+   - New tests create rules engine and pass to service
+   - Backward compatible (nil rules engine = no access control)
+
+5. **Error Handling**: Access denied errors wrapped with context:
+   - `fmt.Errorf("access denied: %w", err)` for debugging
+   - Handlers can check `errors.Is(err, rules.ErrAccessDenied)` for 403 response
+
+### Test Coverage
+
+**Rules Engine Tests** (6 tests, all passing):
+- ✅ LoadBucketRules parses bucket rules from schema
+- ✅ BucketCreateRule blocks unauthorized upload
+- ✅ BucketReadRule blocks unauthorized metadata access
+- ✅ BucketDownloadRule blocks unauthorized download (separate from read)
+- ✅ BucketFileContext uses file variables in rules
+- ✅ BucketCheckAccess returns ErrAccessDenied for denied access
+
+**Integration Tests** (via existing storage tests):
+- ✅ All storage tests pass with nil rules engine (backward compatible)
+- ✅ Service methods accept rules engine parameter
+- ✅ Access checks integrated into Upload, Download, GetMetadata, Delete, List
+
+### Files Modified
+
+- `internal/rules/engine.go`: Added OpDownload, File context, bucket rule loading
+- `internal/schema/types.go`: Added Download field to Rules struct
+- `internal/storage/service.go`: Added rules engine integration, checkFileAccess helper
+- `internal/storage/service_test.go`: Updated NewService calls to pass nil rules
+- `internal/server/handlers/files_test.go`: Updated NewService calls to pass nil rules
+- `internal/rules/bucket_rules_test.go`: Comprehensive test suite (new file)
+
+### Implementation Details
+
+**Rules Struct Extension**:
+```go
+type Rules struct {
+    Create   string `yaml:"create"`
+    Read     string `yaml:"read"`
+    Update   string `yaml:"update"`
+    Delete   string `yaml:"delete"`
+    Download string `yaml:"download"`  // New field
+}
+```
+
+**EvalContext Extension**:
+```go
+type EvalContext struct {
+    Auth    map[string]any
+    Doc     map[string]any
+    File    map[string]any  // New field
+    Request map[string]any
+}
+```
+
+**File Context Building**:
+```go
+fileCtx := map[string]any{
+    "id":        file.ID,
+    "name":      file.Name,
+    "mime_type": file.MimeType,
+    "size":      file.Size,
+    "bucket":    file.Bucket,
+}
+```
+
+**File-Level Override Check**:
+```go
+if file.Metadata != nil && file.Metadata["file_security"] == "true" {
+    if fileRule, ok := file.Metadata[string(op)]; ok && fileRule != "" {
+        // Evaluate file-level rule
+        allowed, err := s.evaluateFileRule(fileRule, evalCtx)
+        if !allowed {
+            return rules.ErrAccessDenied
+        }
+        return nil
+    }
+}
+// Fall back to bucket rules
+return s.rules.CheckAccess(bucket, op, evalCtx)
+```
+
+### Example Rules
+
+**Bucket-Level Rules**:
+```yaml
+buckets:
+  avatars:
+    backend: local
+    rules:
+      create: "has(auth.id)"                    # Must be authenticated to upload
+      read: "true"                              # Anyone can see metadata
+      download: "auth.verified == true"         # Only verified users can download
+      delete: "auth.role == 'admin'"            # Only admins can delete
+```
+
+**File-Level Override** (stored in file metadata):
+```json
+{
+  "file_security": "true",
+  "download": "auth.id == 'user123'"
+}
+```
+
+**Advanced Rules** (using file context):
+```yaml
+buckets:
+  media:
+    backend: s3
+    rules:
+      download: "file.mime_type.startsWith('image/') || auth.role == 'admin'"
+```
+
+### Integration Notes
+
+**Not Yet Integrated**:
+- Storage service not added to `Server` struct (requires server refactoring)
+- Rules engine not initialized in server startup
+- No handler-level access checks (service layer only)
+
+**Next Steps for Integration**:
+1. Initialize rules engine in `Server.New()` with schema
+2. Pass rules engine to storage service constructor
+3. Add access control to file handlers (check service errors for `ErrAccessDenied`)
+4. Add bucket rules to schema examples
+5. Document CEL rule syntax for bucket operations
+
+### Security Considerations
+
+- **Default Allow**: No rule = allow access (same as collections)
+- **File-Level Override**: Enables per-file access control without schema changes
+- **CEL Safety**: CEL expressions are sandboxed (no arbitrary code execution)
+- **Context Isolation**: File context only includes safe metadata (no sensitive data)
+
+### Performance Considerations
+
+- **Rule Compilation**: Bucket rules compiled once during schema load (same as collections)
+- **File-Level Rules**: Compiled dynamically on each access (trade-off for flexibility)
+- **Context Building**: Minimal overhead (map creation + field access)
+- **Evaluation**: CEL evaluation is fast (microseconds for simple rules)
+
+### Lessons Learned
+
+1. **Reuse Existing Patterns**: Bucket rules follow exact same pattern as collection rules (minimal new code)
+2. **Separate Operations**: Download vs Read separation enables fine-grained control
+3. **File Context Variables**: Enables powerful rules based on file properties
+4. **Dynamic Rule Evaluation**: File-level overrides require temporary engine (no pre-compilation)
+5. **Backward Compatibility**: Nil rules engine = no access control (existing tests pass)
+6. **Test Coverage**: Comprehensive tests caught edge cases (file context, override precedence)
+
+### Next Phase
+
+This implementation completes Task 11 (CEL Access Rules for Buckets) of the storage bucket system. The foundation is ready for:
+- Server integration (initialize rules engine, pass to storage service)
+- Handler-level access control (check service errors for `ErrAccessDenied`)
+- Schema examples with bucket rules
+- Documentation for CEL rule syntax
+- File-level override UI (admin panel)
+

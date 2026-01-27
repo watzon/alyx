@@ -68,7 +68,7 @@ func testService(t *testing.T) (*Service, Backend) {
 
 	appCfg := &config.Config{}
 
-	service := NewService(db, backends, s, appCfg)
+	service := NewService(db, backends, s, appCfg, nil)
 
 	return service, backend
 }
