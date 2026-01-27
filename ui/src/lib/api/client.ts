@@ -90,7 +90,6 @@ class ApiClient {
 	 * Uses a single promise to prevent concurrent refresh attempts.
 	 */
 	private async refreshAccessToken(): Promise<boolean> {
-		// If already refreshing, wait for that to complete
 		if (this.refreshPromise) {
 			return this.refreshPromise;
 		}
@@ -109,7 +108,6 @@ class ApiClient {
 				});
 
 				if (!response.ok) {
-					// Refresh token is invalid/expired - clear everything
 					this.setToken(null);
 					this.setRefreshToken(null);
 					return false;
@@ -132,7 +130,7 @@ class ApiClient {
 		return this.refreshPromise;
 	}
 
-	private async request<T>(
+	async request<T>(
 		method: string,
 		path: string,
 		body?: unknown,
@@ -154,14 +152,11 @@ class ApiClient {
 				body: body ? JSON.stringify(body) : undefined
 			});
 
-			// Handle 401 - attempt token refresh (but not for auth endpoints or retries)
 			if (response.status === 401 && !isRetry && !path.startsWith('/auth/')) {
 				const refreshed = await this.refreshAccessToken();
 				if (refreshed) {
-					// Retry the original request with the new token
 					return this.request<T>(method, path, body, true);
 				}
-				// Refresh failed - notify auth store to handle logout
 				this.onAuthFailure?.();
 			}
 
@@ -169,7 +164,6 @@ class ApiClient {
 
 			if (!response.ok) {
 				const apiError = data as ApiError;
-				// Backend uses 'error' field, normalize to 'message' for consistency
 				if (apiError.error && !apiError.message) {
 					apiError.message = apiError.error;
 				}
@@ -207,6 +201,42 @@ class ApiClient {
 
 	delete<T>(path: string) {
 		return this.request<T>('DELETE', path);
+	}
+
+	async uploadFile<T>(path: string, file: File): Promise<ApiResponse<T>> {
+		const url = `${BASE_URL}${path}`;
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const headers: Record<string, string> = {};
+		const token = this.getToken();
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
+		}
+
+		try {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers,
+				body: formData
+			});
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				return { error: data as ApiError };
+			}
+
+			return { data: data as T };
+		} catch (error) {
+			return {
+				error: {
+					code: 'NETWORK_ERROR',
+					error: 'Network error',
+					message: error instanceof Error ? error.message : 'Unknown error'
+				}
+			};
+		}
 	}
 }
 
@@ -273,6 +303,13 @@ export interface RelationConfig {
 	displayName?: string;
 }
 
+export interface FileConfig {
+	bucket: string;
+	maxSize?: number;
+	allowedTypes?: string[];
+	onDelete?: string;
+}
+
 export interface Field {
 	name: string;
 	type: string;
@@ -287,6 +324,7 @@ export interface Field {
 	richtext?: RichTextConfig;
 	select?: SelectConfig;
 	relation?: RelationConfig;
+	file?: FileConfig;
 }
 
 export interface Index {
@@ -302,9 +340,17 @@ export interface Rules {
 	delete?: string;
 }
 
+export interface Bucket {
+	name: string;
+	backend: string;
+	maxFileSize?: number;
+	allowedTypes?: string[];
+}
+
 export interface Schema {
 	version: number;
 	collections: Collection[];
+	buckets?: Bucket[];
 }
 
 export interface Stats {
@@ -421,6 +467,46 @@ export interface ConfigRaw {
 	path: string;
 }
 
+export interface PendingChange {
+	id: string;
+	type: string;
+	collection: string;
+	field?: string;
+	description: string;
+	safe: boolean;
+	created_at: string;
+}
+
+export interface PendingChangesResponse {
+	pending: boolean;
+	changes: PendingChange[];
+	total: number;
+}
+
+export interface SchemaChange {
+	Type: string;
+	Collection: string;
+	Field?: string;
+	Description: string;
+	Safe: boolean;
+	RequiresManual?: boolean;
+}
+
+export interface SchemaDraftPreviewResponse {
+	sessionId: string;
+	valid: boolean;
+	safeChanges: SchemaChange[];
+	unsafeChanges: SchemaChange[];
+	totalChanges: number;
+}
+
+export interface SchemaDraftApplyResponse {
+	success: boolean;
+	message: string;
+	safeApplied: number;
+	unsafeApplied: number;
+}
+
 export const admin = {
 	stats: () => api.get<Stats>('/admin/stats'),
 
@@ -432,8 +518,23 @@ export const admin = {
 			api.put<{ success: boolean; message?: string }>('/admin/schema/raw', { content })
 	},
 
+	schemaDraft: {
+		preview: (content: string) =>
+			api.put<SchemaDraftPreviewResponse>('/admin/schema', { content }),
+		apply: () =>
+			api.post<SchemaDraftApplyResponse>('/admin/schema/apply'),
+		cancel: () =>
+			api.delete<{ success: boolean; message: string }>('/admin/schema/draft')
+	},
+
 	validateRule: (expression: string, fields?: string[]) =>
 		api.post<ValidateRuleResponse>('/admin/schema/validate-rule', { expression, fields }),
+
+	pendingChanges: {
+		list: () => api.get<PendingChangesResponse>('/admin/schema/pending-changes'),
+		confirm: () => api.post<{ success: boolean; message: string; applied: number }>('/admin/schema/confirm-changes'),
+		cancel: () => api.post<{ success: boolean; message: string }>('/admin/schema/cancel-changes')
+	},
 
 	configRaw: {
 		get: () => api.get<ConfigRaw>('/admin/config/raw'),
@@ -545,4 +646,67 @@ export const collections = {
 		api.patch<Record<string, unknown>>(`/collections/${collection}/${id}`, data),
 
 	delete: (collection: string, id: string) => api.delete(`/collections/${collection}/${id}`)
+};
+
+export interface FileMetadata {
+	id: string;
+	bucket: string;
+	name: string;
+	path: string;
+	mime_type: string;
+	size: number;
+	checksum?: string;
+	compressed: boolean;
+	compression_type?: string;
+	original_size?: number;
+	metadata?: Record<string, string>;
+	version: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export const files = {
+	upload: (bucket: string, file: File) =>
+		api.uploadFile<FileMetadata>(`/files/${bucket}`, file),
+
+	get: (bucket: string, id: string) =>
+		api.get<FileMetadata>(`/files/${bucket}/${id}`),
+
+	delete: (bucket: string, id: string) =>
+		api.delete(`/files/${bucket}/${id}`),
+
+	getDownloadUrl: (bucket: string, id: string) =>
+		`${BASE_URL}/files/${bucket}/${id}/download`,
+
+	getViewUrl: (bucket: string, id: string) =>
+		`${BASE_URL}/files/${bucket}/${id}/view`,
+
+	list: (
+		bucket: string,
+		params?: {
+			offset?: number;
+			limit?: number;
+			search?: string;
+			mime_type?: string;
+		}
+	) => {
+		const query = new URLSearchParams();
+		if (params?.offset) query.set('offset', String(params.offset));
+		if (params?.limit) query.set('limit', String(params.limit));
+		if (params?.search) query.set('search', params.search);
+		if (params?.mime_type) query.set('mime_type', params.mime_type);
+		const qs = query.toString();
+		return api.get<{
+			files: FileMetadata[];
+			total: number;
+			offset: number;
+			limit: number;
+		}>(`/files/${bucket}${qs ? `?${qs}` : ''}`);
+	},
+
+	deleteBatch: (bucket: string, ids: string[]) =>
+		api.request<{
+			deleted: number;
+			failed: Array<{ id: string; error: string }>;
+		}>('DELETE', `/files/${bucket}/batch`, { ids })
 };

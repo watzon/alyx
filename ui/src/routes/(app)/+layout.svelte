@@ -15,6 +15,7 @@
 	const navItems = [
 		{ href: '/', label: 'Overview' },
 		{ href: '/collections', label: 'Collections' },
+		{ href: '/storage', label: 'Storage' },
 		{ href: '/schema', label: 'Schema' },
 		{ href: '/functions', label: 'Functions' },
 		{ href: '/users', label: 'Users' },
