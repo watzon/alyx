@@ -1,6 +1,5 @@
 <script lang="ts">
   import * as Table from '$ui/table';
-  import { Badge } from '$ui/badge';
   import { Skeleton } from '$ui/skeleton';
   import * as Tooltip from '$ui/tooltip';
   import type { Collection } from '$lib/api/client';
@@ -16,15 +15,20 @@
 
   let { collection, documents, isLoading = false, onRowClick, onDeleteSuccess }: Props = $props();
 
+  function formatDate(dateString: string | null | undefined): string {
+    if (!dateString) return '-';
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return '-';
+    }
+  }
+
   function formatValue(value: unknown, type: string): string {
     if (value === null || value === undefined) return '-';
     if (type === 'bool') return value ? 'Yes' : 'No';
     if (type === 'timestamp' && typeof value === 'string') {
-      try {
-        return new Date(value).toLocaleString();
-      } catch {
-        return String(value);
-      }
+      return formatDate(value);
     }
     if (typeof value === 'object') {
       return JSON.stringify(value);
@@ -35,22 +39,6 @@
   function truncate(str: string, maxLength: number = 50): string {
     if (str.length <= maxLength) return str;
     return str.slice(0, maxLength) + '...';
-  }
-
-  function getTypeColor(type: string): string {
-    const colors: Record<string, string> = {
-      uuid: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
-      string: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-      text: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-      int: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
-      float: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
-      bool: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
-      timestamp: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
-      json: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300',
-      blob: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300',
-      file: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-    };
-    return colors[type] || 'bg-gray-100 text-gray-800';
   }
 </script>
 
@@ -87,15 +75,10 @@
   <div class="rounded-md border overflow-hidden">
     <Table.Root>
       <Table.Header class="sticky top-0 z-20 bg-card">
-        <Table.Row class="border-b-0">
+        <Table.Row>
           {#each collection.fields || [] as field}
             <Table.Head class="whitespace-nowrap">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-medium">{field.name}</span>
-                <Badge variant="secondary" class="text-[10px] font-normal {getTypeColor(field.type)}">
-                  {field.type}
-                </Badge>
-              </div>
+              {field.name}
             </Table.Head>
           {/each}
           <Table.Head class="w-[60px]">

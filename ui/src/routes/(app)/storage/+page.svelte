@@ -13,6 +13,10 @@
 	import TableIcon from 'lucide-svelte/icons/table';
 	import GridIcon from 'lucide-svelte/icons/grid-2x2';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import ChevronLeftIcon from 'lucide-svelte/icons/chevron-left';
+	import ChevronRightIcon from 'lucide-svelte/icons/chevron-right';
+	import ChevronsLeftIcon from 'lucide-svelte/icons/chevrons-left';
+	import ChevronsRightIcon from 'lucide-svelte/icons/chevrons-right';
 
 	const queryClient = useQueryClient();
 
@@ -23,6 +27,8 @@
 	let selectedIds = $state<string[]>([]);
 	let previewFile = $state<FileMetadata | null>(null);
 	let previewOpen = $state(false);
+	let pageIndex = $state(1);
+	let pageSize = $state(50);
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['admin', 'schema'],
@@ -40,15 +46,25 @@
 	);
 
 	const filesQuery = createQuery(() => ({
-		queryKey: ['files', selectedBucket, search, mimeType],
+		queryKey: ['files', selectedBucket, search, mimeType, pageIndex, pageSize],
 		queryFn: async () => {
 			if (!selectedBucket) return null;
-			const result = await files.list(selectedBucket, { search, mime_type: mimeType });
+			const offset = (pageIndex - 1) * pageSize;
+			const result = await files.list(selectedBucket, {
+				search,
+				mime_type: mimeType,
+				offset,
+				limit: pageSize
+			});
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
 		},
 		enabled: !!selectedBucket
 	}));
+
+	const totalPages = $derived(
+		filesQuery.data ? Math.max(1, Math.ceil(filesQuery.data.total / pageSize)) : 1
+	);
 
 	const deleteMutation = createMutation(() => ({
 		mutationFn: async (ids: string[]) => {
@@ -75,6 +91,7 @@
 		search = '';
 		mimeType = '';
 		selectedIds = [];
+		pageIndex = 1;
 	}
 
 	function handleUploadComplete(file: FileMetadata) {
@@ -191,6 +208,71 @@
 						onDelete={handleDelete}
 						onPreview={handlePreview}
 					/>
+
+					{#if filesQuery.data.files.length > 0}
+						<div class="flex items-center justify-between px-4 py-3 border-t bg-card">
+							<div class="flex items-center gap-2 text-sm text-muted-foreground">
+								<span>Rows per page</span>
+								<select
+									class="h-8 w-[70px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+									value={String(pageSize)}
+									onchange={(e) => {
+										pageSize = Number(e.currentTarget.value);
+										pageIndex = 1;
+									}}
+								>
+									<option value="10">10</option>
+									<option value="25">25</option>
+									<option value="50">50</option>
+									<option value="100">100</option>
+								</select>
+							</div>
+
+							<div class="flex items-center gap-4">
+								<span class="text-sm text-muted-foreground">
+									Page {pageIndex} of {totalPages}
+								</span>
+								<div class="flex items-center gap-1">
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-8 w-8"
+										onclick={() => (pageIndex = 1)}
+										disabled={pageIndex === 1}
+									>
+										<ChevronsLeftIcon class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-8 w-8"
+										onclick={() => pageIndex--}
+										disabled={pageIndex === 1}
+									>
+										<ChevronLeftIcon class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-8 w-8"
+										onclick={() => pageIndex++}
+										disabled={pageIndex >= totalPages}
+									>
+										<ChevronRightIcon class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="outline"
+										size="icon"
+										class="h-8 w-8"
+										onclick={() => (pageIndex = totalPages)}
+										disabled={pageIndex >= totalPages}
+									>
+										<ChevronsRightIcon class="h-4 w-4" />
+									</Button>
+								</div>
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
