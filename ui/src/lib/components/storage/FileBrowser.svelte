@@ -10,13 +10,14 @@
 		selectedIds: string[];
 		onSelectionChange: (ids: string[]) => void;
 		onDelete?: (ids: string[]) => void;
+		onPreview?: (file: FileMetadata) => void;
 	}
 
-	let { bucket, files, viewMode, selectedIds, onSelectionChange, onDelete }: Props = $props();
+	let { bucket, files, viewMode, selectedIds, onSelectionChange, onDelete, onPreview }: Props = $props();
 </script>
 
 {#if viewMode === 'table'}
-	<FileTable {bucket} {files} {selectedIds} {onSelectionChange} {onDelete} />
+	<FileTable {bucket} {files} {selectedIds} {onSelectionChange} {onDelete} {onPreview} />
 {:else}
-	<FileGrid {bucket} {files} {selectedIds} {onSelectionChange} {onDelete} />
+	<FileGrid {bucket} {files} {selectedIds} {onSelectionChange} {onDelete} {onPreview} />
 {/if}

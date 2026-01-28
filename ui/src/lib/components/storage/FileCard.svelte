@@ -14,9 +14,10 @@
 		selected: boolean;
 		onToggle: () => void;
 		onDelete?: () => void;
+		onPreview?: () => void;
 	}
 
-	let { bucket, file, selected, onToggle, onDelete }: Props = $props();
+	let { bucket, file, selected, onToggle, onDelete, onPreview }: Props = $props();
 
 	let isImage = $derived(file.mime_type.startsWith('image/'));
 	let viewUrl = $derived(isImage ? files.getViewUrl(bucket, file.id) : null);
@@ -56,12 +57,14 @@
 	{/if}
 	<Card.Content class="p-0">
 		{#if viewUrl}
-			<img src={viewUrl} alt={file.name} class="w-full h-48 object-cover rounded-t-lg bg-muted" loading="lazy" />
+			<button class="w-full h-48 block" onclick={onPreview}>
+				<img src={viewUrl} alt={file.name} class="w-full h-48 object-cover rounded-t-lg bg-muted" loading="lazy" />
+			</button>
 		{:else}
-			<div class="w-full h-48 bg-muted flex flex-col items-center justify-center rounded-t-lg">
+			<button class="w-full h-48 bg-muted flex flex-col items-center justify-center rounded-t-lg" onclick={onPreview}>
 				<FileIconComponent class="h-16 w-16 text-muted-foreground/50 mb-2" />
 				<span class="text-xs text-muted-foreground uppercase tracking-wide">{file.mime_type.split('/')[1] || 'file'}</span>
-			</div>
+			</button>
 		{/if}
 		<div class="p-4">
 			<Tooltip.Provider>

@@ -10,9 +10,10 @@
 		selectedIds: string[];
 		onSelectionChange: (ids: string[]) => void;
 		onDelete?: (ids: string[]) => void;
+		onPreview?: (file: FileMetadata) => void;
 	}
 
-	let { bucket, files, selectedIds, onSelectionChange, onDelete }: Props = $props();
+	let { bucket, files, selectedIds, onSelectionChange, onDelete, onPreview }: Props = $props();
 
 	function toggleSelection(id: string) {
 		if (selectedIds.includes(id)) {
@@ -44,6 +45,7 @@
 				selected={selectedIds.includes(file.id)}
 				onToggle={() => toggleSelection(file.id)}
 				onDelete={onDelete ? () => handleDelete(file.id) : undefined}
+				onPreview={onPreview ? () => onPreview(file) : undefined}
 			/>
 		{/each}
 	</div>

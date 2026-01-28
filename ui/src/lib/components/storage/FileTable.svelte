@@ -13,9 +13,10 @@
 		selectedIds: string[];
 		onSelectionChange: (ids: string[]) => void;
 		onDelete?: (ids: string[]) => void;
+		onPreview?: (file: FileMetadata) => void;
 	}
 
-	let { bucket, files, selectedIds, onSelectionChange, onDelete }: Props = $props();
+	let { bucket, files, selectedIds, onSelectionChange, onDelete, onPreview }: Props = $props();
 
 	function toggleSelection(id: string) {
 		if (selectedIds.includes(id)) {
@@ -97,18 +98,22 @@
 						</Table.Cell>
 						<Table.Cell>
 							{#if file.mime_type.startsWith('image/')}
-								<img src={`/api/files/${bucket}/${file.id}/view`} alt="" class="w-8 h-8 object-cover rounded" />
+								<button onclick={() => onPreview?.(file)}>
+									<img src={`/api/files/${bucket}/${file.id}/view`} alt="" class="w-8 h-8 object-cover rounded" />
+								</button>
 							{:else}
-								<div class="w-8 h-8 rounded bg-muted flex items-center justify-center">
+								<button class="w-8 h-8 rounded bg-muted flex items-center justify-center" onclick={() => onPreview?.(file)}>
 									<FileIcon class="w-4 h-4 text-muted-foreground" />
-								</div>
+								</button>
 							{/if}
 						</Table.Cell>
 						<Table.Cell>
 							<Tooltip.Provider>
 								<Tooltip.Root>
 									<Tooltip.Trigger class="text-left">
-										<span class="font-medium truncate block max-w-[200px]">{file.name}</span>
+										<button class="font-medium truncate block max-w-[200px] text-left" onclick={() => onPreview?.(file)}>
+											{file.name}
+										</button>
 									</Tooltip.Trigger>
 									<Tooltip.Content>
 										<p class="max-w-xs">{file.name}</p>
