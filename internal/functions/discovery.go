@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+	"github.com/watzon/alyx/internal/schema"
 	"gopkg.in/yaml.v3"
 )
 
@@ -76,6 +77,36 @@ func NewRegistry(functionsDir string) *Registry {
 		functionsDir: functionsDir,
 		functions:    make(map[string]*FunctionDef),
 	}
+}
+
+// NewRegistryFromSchema creates a Registry from schema functions.
+func NewRegistryFromSchema(s *schema.Schema, functionsDir string, registrar Registrar) (*Registry, error) {
+	defs, err := SchemaToFunctionDefs(s, functionsDir)
+	if err != nil {
+		return nil, fmt.Errorf("converting schema functions: %w", err)
+	}
+
+	registry := &Registry{
+		functionsDir: functionsDir,
+		functions:    make(map[string]*FunctionDef),
+		registrar:    registrar,
+	}
+
+	for _, def := range defs {
+		registry.functions[def.Name] = def
+	}
+
+	if registrar != nil {
+		ctx := context.Background()
+		for _, def := range defs {
+			if err := registry.autoRegister(ctx, def); err != nil {
+				log.Warn().Err(err).Str("function", def.Name).Msg("Failed to auto-register manifest components")
+			}
+		}
+	}
+
+	log.Info().Int("count", len(registry.functions)).Msg("Functions loaded from schema")
+	return registry, nil
 }
 
 // SetRegistrar sets the registrar for auto-registration of manifest components.

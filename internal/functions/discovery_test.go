@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/watzon/alyx/internal/schema"
 )
 
 func createFunctionDir(t *testing.T, baseDir, name, entryFile, code string) {
@@ -606,5 +608,219 @@ func TestRegistry_TypeScriptDiscovery(t *testing.T) {
 				t.Errorf("expected entry file %s, got %s", expectedPath, fn.Path)
 			}
 		})
+	}
+}
+
+type testRegistrar struct {
+	hooks     map[string][]HookConfig
+	schedules map[string][]ScheduleConfig
+	webhooks  map[string][]HookConfig
+}
+
+func (r *testRegistrar) RegisterHooks(ctx context.Context, functionID string, hooks []HookConfig) error {
+	if r.hooks == nil {
+		r.hooks = make(map[string][]HookConfig)
+	}
+	r.hooks[functionID] = hooks
+	return nil
+}
+
+func (r *testRegistrar) RegisterSchedules(ctx context.Context, functionID string, schedules []ScheduleConfig) error {
+	if r.schedules == nil {
+		r.schedules = make(map[string][]ScheduleConfig)
+	}
+	r.schedules[functionID] = schedules
+	return nil
+}
+
+func (r *testRegistrar) RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error {
+	if r.webhooks == nil {
+		r.webhooks = make(map[string][]HookConfig)
+	}
+	r.webhooks[functionID] = hooks
+	return nil
+}
+
+func TestNewRegistryFromSchema(t *testing.T) {
+	dir := t.TempDir()
+
+	createFunctionDir(t, dir, "test_func", "index.js", "module.exports = {}")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"test_func": {
+				Name:       "test_func",
+				Runtime:    "node",
+				Entrypoint: "index.js",
+				Timeout:    "60s",
+				Memory:     "256mb",
+				Env: map[string]string{
+					"TEST_VAR": "test_value",
+				},
+				Hooks: []schema.FunctionHook{
+					{Type: "database", Source: "users", Action: "insert"},
+				},
+				Schedules: []schema.FunctionSchedule{
+					{Name: "daily", Type: "cron", Expression: "0 0 * * *"},
+				},
+			},
+		},
+	}
+
+	registrar := &testRegistrar{}
+
+	registry, err := NewRegistryFromSchema(s, dir, registrar)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	fn, ok := registry.Get("test_func")
+	if !ok {
+		t.Fatal("function not found in registry")
+	}
+
+	if fn.Name != "test_func" {
+		t.Errorf("expected name test_func, got %s", fn.Name)
+	}
+	if fn.Runtime != RuntimeNode {
+		t.Errorf("expected runtime node, got %s", fn.Runtime)
+	}
+	if fn.Timeout != 60 {
+		t.Errorf("expected timeout 60, got %d", fn.Timeout)
+	}
+	if fn.Memory != 256 {
+		t.Errorf("expected memory 256, got %d", fn.Memory)
+	}
+	if fn.Env["TEST_VAR"] != "test_value" {
+		t.Errorf("expected TEST_VAR=test_value, got %s", fn.Env["TEST_VAR"])
+	}
+
+	if len(registrar.hooks["test_func"]) != 1 {
+		t.Errorf("expected 1 hook, got %d", len(registrar.hooks["test_func"]))
+	}
+
+	if len(registrar.schedules["test_func"]) != 1 {
+		t.Errorf("expected 1 schedule, got %d", len(registrar.schedules["test_func"]))
+	}
+}
+
+func TestNewRegistryFromSchema_WithWebhook(t *testing.T) {
+	dir := t.TempDir()
+
+	createFunctionDir(t, dir, "webhook_func", "index.js", "module.exports = {}")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"webhook_func": {
+				Name:       "webhook_func",
+				Runtime:    "node",
+				Entrypoint: "index.js",
+				Hooks: []schema.FunctionHook{
+					{
+						Type:   "webhook",
+						Source: "stripe",
+						Action: "charge.succeeded",
+						Verification: &schema.FunctionWebhookVerification{
+							Type:   "hmac-sha256",
+							Header: "X-Stripe-Signature",
+							Secret: "test-secret",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	registrar := &testRegistrar{}
+
+	registry, err := NewRegistryFromSchema(s, dir, registrar)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	fn, ok := registry.Get("webhook_func")
+	if !ok {
+		t.Fatal("function not found in registry")
+	}
+
+	if len(fn.Hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(fn.Hooks))
+	}
+
+	hook := fn.Hooks[0]
+	if hook.Type != "webhook" {
+		t.Errorf("expected hook type webhook, got %s", hook.Type)
+	}
+	if hook.Verification == nil {
+		t.Fatal("expected verification config")
+	}
+	if hook.Verification.Type != "hmac-sha256" {
+		t.Errorf("expected verification type hmac-sha256, got %s", hook.Verification.Type)
+	}
+
+	if len(registrar.webhooks["webhook_func"]) != 1 {
+		t.Errorf("expected 1 webhook, got %d", len(registrar.webhooks["webhook_func"]))
+	}
+}
+
+func TestNewRegistryFromSchema_EmptySchema(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	if registry.Count() != 0 {
+		t.Errorf("expected 0 functions, got %d", registry.Count())
+	}
+}
+
+func TestNewRegistryFromSchema_MultipleFunctions(t *testing.T) {
+	dir := t.TempDir()
+
+	createFunctionDir(t, dir, "func1", "index.js", "module.exports = {}")
+	createFunctionDir(t, dir, "func2", "index.py", "def handler(): pass")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"func1": {
+				Name:       "func1",
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+			"func2": {
+				Name:       "func2",
+				Runtime:    "python",
+				Entrypoint: "index.py",
+			},
+		},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	if registry.Count() != 2 {
+		t.Errorf("expected 2 functions, got %d", registry.Count())
+	}
+
+	fn1, ok := registry.Get("func1")
+	if !ok {
+		t.Error("func1 not found")
+	} else if fn1.Runtime != RuntimeNode {
+		t.Errorf("expected func1 runtime node, got %s", fn1.Runtime)
+	}
+
+	fn2, ok := registry.Get("func2")
+	if !ok {
+		t.Error("func2 not found")
+	} else if fn2.Runtime != RuntimePython {
+		t.Errorf("expected func2 runtime python, got %s", fn2.Runtime)
 	}
 }
