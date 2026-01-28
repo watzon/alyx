@@ -51,6 +51,15 @@
 		}
 	}
 
+	function handleKeyDown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+			e.preventDefault();
+			if (!isExecuting && !parseError) {
+				handleExecute();
+			}
+		}
+	}
+
 	$effect(() => {
 		validateJSON(inputValue);
 	});
@@ -61,10 +70,10 @@
 		<div class="flex items-center gap-3">
 			<h3 class="text-sm font-medium">Request</h3>
 			{#if parseError}
-				<Badge variant="destructive">Invalid JSON</Badge>
+				<Badge variant="destructive" id="json-error" role="alert">Invalid JSON</Badge>
 			{/if}
 		</div>
-		<Button variant="ghost" size="sm" class="h-7 gap-1.5" onclick={handleReset}>
+		<Button variant="ghost" size="sm" class="h-7 gap-1.5" onclick={handleReset} aria-label="Reset to default input">
 			<RotateCcw class="size-3.5" />
 			Reset
 		</Button>
@@ -73,9 +82,12 @@
 	<div class="flex-1 p-4">
 		<textarea
 			bind:value={inputValue}
+			onkeydown={handleKeyDown}
 			class="bg-muted/50 border-input focus-visible:ring-ring h-full w-full resize-none rounded-md border p-3 font-mono text-sm focus-visible:ring-1 focus-visible:outline-none"
 			placeholder="Enter JSON input..."
 			spellcheck="false"
+			aria-label="Function input JSON"
+			aria-describedby={parseError ? 'json-error' : undefined}
 		></textarea>
 	</div>
 
@@ -84,6 +96,7 @@
 			class="w-full gap-2"
 			disabled={isExecuting || !!parseError}
 			onclick={handleExecute}
+			aria-label={isExecuting ? 'Executing function...' : `Execute ${functionName}`}
 		>
 			{#if isExecuting}
 				<Loader2 class="size-4 animate-spin" />
@@ -93,5 +106,9 @@
 				Execute {functionName}
 			{/if}
 		</Button>
+		<p class="text-muted-foreground mt-2 text-center text-xs">
+			Press <kbd class="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">⌘</kbd>+
+			<kbd class="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">Enter</kbd> to execute
+		</p>
 	</div>
 </div>

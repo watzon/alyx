@@ -11,9 +11,18 @@
 	interface Props {
 		response: FunctionInvokeResponse | null;
 		isLoading: boolean;
+		autofocus?: boolean;
 	}
 
-	let { response, isLoading }: Props = $props();
+	let { response, isLoading, autofocus = false }: Props = $props();
+
+	let responseContainer = $state<HTMLDivElement | null>(null);
+
+	$effect(() => {
+		if (autofocus && response && !isLoading && responseContainer) {
+			responseContainer.focus();
+		}
+	});
 
 	function formatJSON(data: unknown): string {
 		try {
@@ -57,7 +66,14 @@
 	}
 </script>
 
-<div class="flex h-full flex-col">
+<div
+	class="flex h-full flex-col"
+	bind:this={responseContainer}
+	tabindex="-1"
+	role="region"
+	aria-label="Function response"
+	aria-live="polite"
+>
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-3">
 			<h3 class="text-sm font-medium">Response</h3>
@@ -72,7 +88,7 @@
 				<span class="text-muted-foreground text-xs">{response.duration_ms}ms</span>
 			{/if}
 			{#if response && !isLoading}
-				<Button variant="ghost" size="icon" class="size-7" onclick={copyToClipboard}>
+				<Button variant="ghost" size="icon" class="size-7" onclick={copyToClipboard} aria-label="Copy response to clipboard">
 					<Copy class="size-4" />
 				</Button>
 			{/if}

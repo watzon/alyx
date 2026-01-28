@@ -61,7 +61,7 @@
 			<Badge variant="secondary">{history.length}</Badge>
 		</div>
 		{#if history.length > 0}
-			<Button variant="ghost" size="sm" class="h-7 gap-1.5" onclick={onClear}>
+			<Button variant="ghost" size="sm" class="h-7 gap-1.5" onclick={onClear} aria-label="Clear execution history">
 				<Trash2 class="size-3.5" />
 				Clear
 			</Button>
@@ -78,29 +78,30 @@
 		{:else}
 			<div class="divide-y">
 				{#each history as item (item.id)}
-					<button
-						class="w-full px-4 py-3 text-left transition-colors hover:bg-muted/50 focus:bg-muted/50 focus:outline-none"
-						onclick={() => onSelect(item)}
-					>
+						<button
+							class="w-full px-4 py-3 text-left transition-colors hover:bg-muted/50 focus:bg-muted/50 focus:outline-none"
+							onclick={() => onSelect(item)}
+							aria-label="View execution from {formatRelativeTime(item.timestamp)}"
+						>
 						<div class="flex items-start gap-3">
-							<div class="mt-0.5 shrink-0">
-								{#if item.response.success}
-									<CheckCircle class="size-4 text-green-500" />
-								{:else}
-									<XCircle class="size-4 text-red-500" />
-								{/if}
-							</div>
-							<div class="flex-1 min-w-0">
-								<p class="font-mono text-xs text-muted-foreground truncate">
-									{truncateInput(item.input)}
-								</p>
-								<div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground/70">
-									{#if item.response.duration_ms !== undefined}
-										<span>{formatDuration(item.response.duration_ms)}</span>
-										<span>·</span>
+								<div class="mt-0.5 shrink-0" aria-hidden="true">
+									{#if item.response.success}
+										<CheckCircle class="size-4 text-green-500" />
+									{:else}
+										<XCircle class="size-4 text-red-500" />
 									{/if}
-									<span>{formatRelativeTime(item.timestamp)}</span>
 								</div>
+								<div class="flex-1 min-w-0">
+									<p class="font-mono text-xs text-muted-foreground truncate" aria-label="Input: {truncateInput(item.input)}">
+										{truncateInput(item.input)}
+									</p>
+									<div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground/70" aria-label="Execution details">
+										{#if item.response.duration_ms !== undefined}
+											<span>{formatDuration(item.response.duration_ms)}</span>
+											<span aria-hidden="true">·</span>
+										{/if}
+										<span>{formatRelativeTime(item.timestamp)}</span>
+									</div>
 							</div>
 						</div>
 					</button>

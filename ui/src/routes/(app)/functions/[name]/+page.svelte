@@ -14,6 +14,7 @@
 	import PlayIcon from 'lucide-svelte/icons/play';
 	import SettingsIcon from 'lucide-svelte/icons/settings';
 	import { FunctionTestPanel, FunctionResponsePanel, FunctionHistory, type HistoryItem } from '$lib/components/functions';
+	import { toast } from 'svelte-sonner';
 
 	const name = $derived((page.params as { name?: string }).name);
 
@@ -36,10 +37,13 @@
 
 	async function handleExecute(input: unknown) {
 		if (!name) return;
-		
+
 		isExecuting = true;
+		const startTime = performance.now();
 		try {
 			const result = await admin.functions.invoke(name, input);
+			const duration = Math.round(performance.now() - startTime);
+
 			if (result.data) {
 				const historyItem: HistoryItem = {
 					id: crypto.randomUUID(),
@@ -50,7 +54,23 @@
 				// Prepend to array and limit to 50 items
 				history = [historyItem, ...history].slice(0, 50);
 				currentResponse = result.data;
+
+				// Show success toast with duration
+				if (result.data.success) {
+					toast.success(`Function executed in ${result.data.duration_ms ?? duration}ms`);
+				} else {
+					toast.error('Function execution failed', {
+						description: result.data.error || 'Unknown error'
+					});
+				}
+			} else if (result.error) {
+				toast.error('Execution failed', {
+					description: result.error.message || 'Unknown error'
+				});
 			}
+		} catch (e) {
+			const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+			toast.error('Execution failed', { description: errorMessage });
 		} finally {
 			isExecuting = false;
 		}
@@ -183,6 +203,7 @@
 									<FunctionResponsePanel
 										response={currentResponse}
 										isLoading={isExecuting}
+										autofocus={true}
 									/>
 								</div>
 							</div>
