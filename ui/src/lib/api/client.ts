@@ -368,6 +368,26 @@ export interface FunctionInfo {
 	enabled: boolean;
 }
 
+export interface FunctionDetail {
+	name: string;
+	runtime: string;
+	path: string;
+	entrypoint: string;
+	description?: string;
+	timeout?: string;
+	memory?: string;
+	enabled: boolean;
+	env?: Record<string, string>;
+	dependencies?: string[];
+}
+
+export interface FunctionInvokeResponse {
+	success: boolean;
+	output?: unknown;
+	error?: string;
+	duration_ms?: number;
+}
+
 export interface AuthStatus {
 	needs_setup: boolean;
 	allow_registration: boolean;
@@ -579,8 +599,9 @@ export const admin = {
 
 	functions: {
 		list: () => api.get<{ functions: FunctionInfo[] }>('/functions'),
+		get: (name: string) => api.get<FunctionDetail>(`/functions/${name}`),
 		stats: () => api.get<Record<string, unknown>>('/functions/stats'),
-		invoke: (name: string, input?: unknown) => api.post(`/functions/${name}`, input),
+		invoke: (name: string, input?: unknown) => api.post<FunctionInvokeResponse>(`/functions/${name}`, input),
 		reload: () => api.post('/functions/reload')
 	},
 
