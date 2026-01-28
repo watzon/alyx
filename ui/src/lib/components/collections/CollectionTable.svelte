@@ -15,10 +15,22 @@
 
   let { collection, documents, isLoading = false, onRowClick, onDeleteSuccess }: Props = $props();
 
-  function formatDate(dateString: string | null | undefined): string {
-    if (!dateString) return '-';
+  function formatDate(value: unknown): string {
+    if (value === null || value === undefined) return '-';
     try {
-      return new Date(dateString).toLocaleDateString();
+      // Handle various date formats
+      let date: Date;
+      if (typeof value === 'number') {
+        // Unix timestamp (seconds or milliseconds)
+        date = new Date(value > 1e12 ? value : value * 1000);
+      } else if (typeof value === 'string') {
+        date = new Date(value);
+      } else {
+        return '-';
+      }
+      // Check if date is valid
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString();
     } catch {
       return '-';
     }
@@ -27,7 +39,7 @@
   function formatValue(value: unknown, type: string): string {
     if (value === null || value === undefined) return '-';
     if (type === 'bool') return value ? 'Yes' : 'No';
-    if (type === 'timestamp' && typeof value === 'string') {
+    if (type === 'timestamp' || type === 'datetime') {
       return formatDate(value);
     }
     if (typeof value === 'object') {

@@ -186,17 +186,17 @@
 			</div>
 
 			{#if docsQuery.isPending}
-				<Card.Root class="flex items-center justify-center py-16">
-					<Skeleton class="h-32 w-32" />
-				</Card.Root>
+				<Skeleton class="h-64 w-full" />
 			{:else if docsQuery.isError}
-				<Card.Root class="border-destructive/50 flex items-center justify-center py-16">
-					<p class="text-sm text-destructive">
-						Failed to load: {docsQuery.error?.message}
-					</p>
+				<Card.Root class="border-destructive/50">
+					<Card.Content class="py-4">
+						<p class="text-sm text-destructive">
+							Failed to load: {docsQuery.error?.message}
+						</p>
+					</Card.Content>
 				</Card.Root>
 			{:else if docsQuery.data}
-				<Card.Root class="overflow-hidden">
+				<div class="space-y-4">
 					<CollectionTable
 						collection={selectedCollectionSchema}
 						documents={docsQuery.data?.docs || []}
@@ -206,7 +206,7 @@
 					/>
 
 					{#if docsQuery.data?.docs && docsQuery.data.docs.length > 0}
-						<div class="flex items-center justify-between px-4 py-3 border-t bg-card">
+						<div class="flex items-center justify-between">
 							<div class="flex items-center gap-2 text-sm text-muted-foreground">
 								<span>Rows per page</span>
 								<select
@@ -269,7 +269,7 @@
 							</div>
 						</div>
 					{/if}
-				</Card.Root>
+				</div>
 			{/if}
 		</div>
 	{/if}
