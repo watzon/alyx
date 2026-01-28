@@ -53,6 +53,7 @@ type ScheduleConfig struct {
 	Expression string         `yaml:"expression"`
 	Timezone   string         `yaml:"timezone"`
 	Config     map[string]any `yaml:"config"`
+	Input      map[string]any `yaml:"input"`
 }
 
 // VerificationConfig represents webhook verification configuration.
