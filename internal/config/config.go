@@ -58,12 +58,6 @@ type CORSConfig struct {
 	// Allowed origins (use ["*"] for all)
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 
-	// Allowed methods
-	AllowedMethods []string `mapstructure:"allowed_methods"`
-
-	// Allowed headers
-	AllowedHeaders []string `mapstructure:"allowed_headers"`
-
 	// Exposed headers
 	ExposedHeaders []string `mapstructure:"exposed_headers"`
 
@@ -72,6 +66,18 @@ type CORSConfig struct {
 
 	// Max age for preflight cache
 	MaxAge time.Duration `mapstructure:"max_age"`
+}
+
+// AllowedMethods returns the hard-coded list of allowed HTTP methods
+// These are required for admin UI and API functionality
+func (c *CORSConfig) AllowedMethods() []string {
+	return []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+}
+
+// AllowedHeaders returns the hard-coded list of allowed request headers
+// These are required for admin UI and API functionality
+func (c *CORSConfig) AllowedHeaders() []string {
+	return []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"}
 }
 
 // TLSConfig holds TLS settings.
@@ -97,29 +103,49 @@ type DatabaseConfig struct {
 	// Path to SQLite database file
 	Path string `mapstructure:"path"`
 
-	// Enable WAL mode (recommended)
-	WALMode bool `mapstructure:"wal_mode"`
-
-	// Cache size in KB (negative for KB, positive for pages)
-	CacheSize int `mapstructure:"cache_size"`
-
-	// Busy timeout in milliseconds
-	BusyTimeout time.Duration `mapstructure:"busy_timeout"`
-
-	// Enable foreign keys
-	ForeignKeys bool `mapstructure:"foreign_keys"`
-
-	// Maximum open connections
-	MaxOpenConns int `mapstructure:"max_open_conns"`
-
-	// Maximum idle connections
-	MaxIdleConns int `mapstructure:"max_idle_conns"`
-
-	// Connection max lifetime
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
-
 	// Turso configuration (optional, for distributed deployments)
 	Turso *TursoConfig `mapstructure:"turso"`
+}
+
+// WALMode returns true (always enabled for concurrency)
+func (d *DatabaseConfig) WALMode() bool {
+	return true
+}
+
+// ForeignKeys returns true (always enabled for data integrity)
+func (d *DatabaseConfig) ForeignKeys() bool {
+	return true
+}
+
+// CacheSize returns the cache size in KB (64MB)
+func (d *DatabaseConfig) CacheSize() int {
+	return -64000
+}
+
+// BusyTimeout returns the busy timeout
+func (d *DatabaseConfig) BusyTimeout() time.Duration {
+	return 5 * time.Second
+}
+
+// MaxOpenConns returns the maximum open connections (1 for SQLite)
+func (d *DatabaseConfig) MaxOpenConns() int {
+	if d.Turso != nil && d.Turso.Enabled {
+		return 25
+	}
+	return 1
+}
+
+// MaxIdleConns returns the maximum idle connections
+func (d *DatabaseConfig) MaxIdleConns() int {
+	if d.Turso != nil && d.Turso.Enabled {
+		return 5
+	}
+	return 1
+}
+
+// ConnMaxLifetime returns the connection max lifetime (0 = no limit)
+func (d *DatabaseConfig) ConnMaxLifetime() time.Duration {
+	return 0
 }
 
 // TursoConfig holds Turso (libSQL) settings.
@@ -322,12 +348,35 @@ type RealtimeConfig struct {
 
 // StorageConfig holds storage backend settings.
 type StorageConfig struct {
-	// S3 backend configuration
-	S3 S3Config `mapstructure:"s3"`
+	// Named backend configurations
+	Backends map[string]StorageBackendConfig `mapstructure:"backends"`
 }
 
-// S3Config holds S3-compatible storage settings.
-type S3Config struct {
+// StorageBackendConfig holds configuration for a single storage backend.
+type StorageBackendConfig struct {
+	// Backend type: "filesystem" or "s3"
+	Type string `mapstructure:"type"`
+
+	// Filesystem backend settings
+	Filesystem *FilesystemBackendConfig `mapstructure:"filesystem"`
+
+	// S3 backend settings
+	S3 *S3BackendConfig `mapstructure:"s3"`
+}
+
+// FilesystemBackendConfig holds filesystem storage settings.
+type FilesystemBackendConfig struct {
+	// Base path for storage
+	Path string `mapstructure:"path"`
+
+	// Base path prefix for all buckets (optional)
+	// If set, all bucket names will be prefixed with this value
+	// Example: "app-" + "uploads" = "app-uploads"
+	BasePath string `mapstructure:"base_path"`
+}
+
+// S3BackendConfig holds S3-compatible storage settings.
+type S3BackendConfig struct {
 	// Custom endpoint for S3-compatible services (MinIO, R2, etc.)
 	// Leave empty for AWS S3
 	Endpoint string `mapstructure:"endpoint"`
@@ -349,6 +398,9 @@ type S3Config struct {
 	// AWS S3 uses virtual-hosted-style by default
 	ForcePathStyle bool `mapstructure:"force_path_style"`
 }
+
+// S3Config is a legacy type alias for backwards compatibility
+type S3Config = S3BackendConfig
 
 // Address returns the server address in host:port format.
 func (s *ServerConfig) Address() string {

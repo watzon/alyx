@@ -87,20 +87,13 @@ func setViperDefaults(v *viper.Viper, cfg *Config) {
 
 	v.SetDefault("server.cors.enabled", cfg.Server.CORS.Enabled)
 	v.SetDefault("server.cors.allowed_origins", cfg.Server.CORS.AllowedOrigins)
-	v.SetDefault("server.cors.allowed_methods", cfg.Server.CORS.AllowedMethods)
-	v.SetDefault("server.cors.allowed_headers", cfg.Server.CORS.AllowedHeaders)
 	v.SetDefault("server.cors.exposed_headers", cfg.Server.CORS.ExposedHeaders)
+	// CORS methods and headers are hard-coded (see CORSConfig methods)
 	v.SetDefault("server.cors.allow_credentials", cfg.Server.CORS.AllowCredentials)
 	v.SetDefault("server.cors.max_age", cfg.Server.CORS.MaxAge)
 
 	v.SetDefault("database.path", cfg.Database.Path)
-	v.SetDefault("database.wal_mode", cfg.Database.WALMode)
-	v.SetDefault("database.cache_size", cfg.Database.CacheSize)
-	v.SetDefault("database.busy_timeout", cfg.Database.BusyTimeout)
-	v.SetDefault("database.foreign_keys", cfg.Database.ForeignKeys)
-	v.SetDefault("database.max_open_conns", cfg.Database.MaxOpenConns)
-	v.SetDefault("database.max_idle_conns", cfg.Database.MaxIdleConns)
-	v.SetDefault("database.conn_max_lifetime", cfg.Database.ConnMaxLifetime)
+	// Database connection settings are hard-coded (see DatabaseConfig methods)
 
 	v.SetDefault("auth.jwt.access_ttl", cfg.Auth.JWT.AccessTTL)
 	v.SetDefault("auth.jwt.refresh_ttl", cfg.Auth.JWT.RefreshTTL)

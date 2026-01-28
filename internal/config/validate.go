@@ -40,6 +40,9 @@ func Validate(cfg *Config) error {
 	errs = append(errs, validateFunctions(&cfg.Functions)...)
 	errs = append(errs, validateLogging(&cfg.Logging)...)
 	errs = append(errs, validateDocs(&cfg.Docs)...)
+	errs = append(errs, validateRealtime(&cfg.Realtime)...)
+	errs = append(errs, validateAdminUI(&cfg.AdminUI)...)
+	errs = append(errs, validateStorage(&cfg.Storage)...)
 
 	if len(errs) > 0 {
 		return errs
@@ -64,10 +67,24 @@ func validateServer(cfg *ServerConfig) ValidationErrors {
 		})
 	}
 
+	if cfg.ReadTimeout > 0 && cfg.ReadTimeout < time.Second {
+		errs = append(errs, ValidationError{
+			Field:   "server.read_timeout",
+			Message: "warning: values below 1s may cause legitimate requests to timeout",
+		})
+	}
+
 	if cfg.WriteTimeout < 0 {
 		errs = append(errs, ValidationError{
 			Field:   "server.write_timeout",
 			Message: "must be non-negative",
+		})
+	}
+
+	if cfg.WriteTimeout > 0 && cfg.WriteTimeout < time.Second {
+		errs = append(errs, ValidationError{
+			Field:   "server.write_timeout",
+			Message: "warning: values below 1s may cause legitimate requests to timeout",
 		})
 	}
 
@@ -76,6 +93,18 @@ func validateServer(cfg *ServerConfig) ValidationErrors {
 			Field:   "server.max_body_size",
 			Message: "must be non-negative",
 		})
+	}
+
+	if cfg.CORS.Enabled && cfg.CORS.AllowCredentials {
+		for _, origin := range cfg.CORS.AllowedOrigins {
+			if origin == "*" {
+				errs = append(errs, ValidationError{
+					Field:   "server.cors",
+					Message: "security: allow_credentials=true with allowed_origins=[\"*\"] is insecure",
+				})
+				break
+			}
+		}
 	}
 
 	if cfg.TLS != nil && cfg.TLS.Enabled {
@@ -113,19 +142,7 @@ func validateDatabase(cfg *DatabaseConfig) ValidationErrors {
 		})
 	}
 
-	if cfg.BusyTimeout < 0 {
-		errs = append(errs, ValidationError{
-			Field:   "database.busy_timeout",
-			Message: "must be non-negative",
-		})
-	}
-
-	if cfg.MaxOpenConns < 1 {
-		errs = append(errs, ValidationError{
-			Field:   "database.max_open_conns",
-			Message: "must be at least 1",
-		})
-	}
+	// Database connection settings are hard-coded (see DatabaseConfig methods)
 
 	if cfg.Turso != nil && cfg.Turso.Enabled {
 		if cfg.Turso.URL == "" {
@@ -162,10 +179,10 @@ func validateAuth(cfg *AuthConfig) ValidationErrors {
 		})
 	}
 
-	if cfg.Password.MinLength < 1 {
+	if cfg.Password.MinLength < 8 {
 		errs = append(errs, ValidationError{
 			Field:   "auth.password.min_length",
-			Message: "must be at least 1",
+			Message: "must be at least 8 for security",
 		})
 	}
 
@@ -230,10 +247,10 @@ func validateFunctions(cfg *FunctionsConfig) ValidationErrors {
 		})
 	}
 
-	if cfg.CPULimit <= 0 {
+	if cfg.CPULimit < 0.1 {
 		errs = append(errs, ValidationError{
 			Field:   "functions.cpu_limit",
-			Message: "must be positive",
+			Message: "must be at least 0.1 cores",
 		})
 	}
 
@@ -307,6 +324,193 @@ func validateDocs(cfg *DocsConfig) ValidationErrors {
 			Field:   "docs.ui",
 			Message: "must be one of: scalar, swagger, redoc, stoplight",
 		})
+	}
+
+	return errs
+}
+
+func validateRealtime(cfg *RealtimeConfig) ValidationErrors {
+	var errs ValidationErrors
+
+	if !cfg.Enabled {
+		return errs
+	}
+
+	if cfg.PollInterval < 10*time.Millisecond {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.poll_interval",
+			Message: "must be at least 10ms to prevent high CPU usage",
+		})
+	}
+
+	if cfg.PollInterval < 50*time.Millisecond {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.poll_interval",
+			Message: "warning: values below 50ms may cause elevated CPU usage",
+		})
+	}
+
+	if cfg.MaxConnections < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.max_connections",
+			Message: "must be at least 1",
+		})
+	}
+
+	if cfg.MaxSubscriptionsPerClient < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.max_subscriptions_per_client",
+			Message: "must be at least 1",
+		})
+	}
+
+	if cfg.ChangeBufferSize < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.change_buffer_size",
+			Message: "must be at least 1",
+		})
+	}
+
+	if cfg.CleanupInterval < time.Minute {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.cleanup_interval",
+			Message: "must be at least 1 minute",
+		})
+	}
+
+	if cfg.CleanupAge < time.Minute {
+		errs = append(errs, ValidationError{
+			Field:   "realtime.cleanup_age",
+			Message: "must be at least 1 minute",
+		})
+	}
+
+	return errs
+}
+
+func validateAdminUI(cfg *AdminUIConfig) ValidationErrors {
+	var errs ValidationErrors
+
+	if !cfg.Enabled {
+		return errs
+	}
+
+	if cfg.Path == "" {
+		errs = append(errs, ValidationError{
+			Field:   "admin_ui.path",
+			Message: "required when admin UI is enabled",
+		})
+	}
+
+	if cfg.Path != "" && cfg.Path[0] != '/' {
+		errs = append(errs, ValidationError{
+			Field:   "admin_ui.path",
+			Message: "must start with /",
+		})
+	}
+
+	reservedPaths := map[string]bool{
+		"/api": true, "/auth": true, "/functions": true,
+		"/docs": true, "/health": true, "/metrics": true,
+	}
+	if reservedPaths[cfg.Path] {
+		errs = append(errs, ValidationError{
+			Field:   "admin_ui.path",
+			Message: fmt.Sprintf("path '%s' is reserved for API routes", cfg.Path),
+		})
+	}
+
+	return errs
+}
+
+func validateStorage(cfg *StorageConfig) ValidationErrors {
+	var errs ValidationErrors
+
+	for name, backend := range cfg.Backends {
+		if backend.Type == "" {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("storage.backends.%s.type", name),
+				Message: "required (must be 'filesystem' or 's3')",
+			})
+			continue
+		}
+
+		validTypes := map[string]bool{"filesystem": true, "s3": true}
+		if !validTypes[backend.Type] {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("storage.backends.%s.type", name),
+				Message: "must be 'filesystem' or 's3'",
+			})
+		}
+
+		switch backend.Type {
+		case "filesystem":
+			if backend.Filesystem == nil {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.filesystem", name),
+					Message: "required when type is 'filesystem'",
+				})
+				break
+			}
+
+			if backend.Filesystem.Path == "" {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.filesystem.path", name),
+					Message: "required",
+				})
+			}
+
+			if strings.Contains(backend.Filesystem.Path, "..") {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.filesystem.path", name),
+					Message: "path traversal (..) not allowed",
+				})
+			}
+
+			if strings.Contains(backend.Filesystem.BasePath, "..") || strings.Contains(backend.Filesystem.BasePath, "/") {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.filesystem.base_path", name),
+					Message: "must not contain path separators or traversal (..)",
+				})
+			}
+
+		case "s3":
+			if backend.S3 == nil {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.s3", name),
+					Message: "required when type is 's3'",
+				})
+				break
+			}
+
+			if backend.S3.Region == "" {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.s3.region", name),
+					Message: "required",
+				})
+			}
+
+			if backend.S3.AccessKeyID == "" {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.s3.access_key_id", name),
+					Message: "required",
+				})
+			}
+
+			if backend.S3.SecretAccessKey == "" {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.s3.secret_access_key", name),
+					Message: "required",
+				})
+			}
+
+			if strings.Contains(backend.S3.BucketPrefix, "/") {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("storage.backends.%s.s3.bucket_prefix", name),
+					Message: "must not contain path separators",
+				})
+			}
+		}
 	}
 
 	return errs

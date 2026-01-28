@@ -206,3 +206,194 @@ func TestValidate_FunctionPoolConfig(t *testing.T) {
 		t.Error("expected validation error for min_warm > max_instances")
 	}
 }
+
+func TestValidate_Storage(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*Config)
+		wantErr   bool
+		errField  string
+	}{
+		{
+			name: "valid filesystem backend",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"local": {
+						Type: "filesystem",
+						Filesystem: &FilesystemBackendConfig{
+							Path: "./storage",
+						},
+					},
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "filesystem missing path",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"local": {
+						Type: "filesystem",
+						Filesystem: &FilesystemBackendConfig{
+							Path: "",
+						},
+					},
+				}
+			},
+			wantErr:  true,
+			errField: "storage.backends.local.filesystem.path",
+		},
+		{
+			name: "filesystem path traversal",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"local": {
+						Type: "filesystem",
+						Filesystem: &FilesystemBackendConfig{
+							Path: "../../../etc",
+						},
+					},
+				}
+			},
+			wantErr:  true,
+			errField: "storage.backends.local.filesystem.path",
+		},
+		{
+			name: "filesystem base_path with slash",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"local": {
+						Type: "filesystem",
+						Filesystem: &FilesystemBackendConfig{
+							Path:     "./storage",
+							BasePath: "app-/",
+						},
+					},
+				}
+			},
+			wantErr:  true,
+			errField: "storage.backends.local.filesystem.base_path",
+		},
+		{
+			name: "valid s3 backend",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"s3": {
+						Type: "s3",
+						S3: &S3BackendConfig{
+							Region:          "us-east-1",
+							AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+							SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+						},
+					},
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "s3 missing credentials",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"s3": {
+						Type: "s3",
+						S3: &S3BackendConfig{
+							Region: "us-east-1",
+						},
+					},
+				}
+			},
+			wantErr:  true,
+			errField: "storage.backends.s3.s3.access_key_id",
+		},
+		{
+			name: "invalid backend type",
+			configure: func(cfg *Config) {
+				cfg.Storage.Backends = map[string]StorageBackendConfig{
+					"bad": {
+						Type: "invalid",
+					},
+				}
+			},
+			wantErr:  true,
+			errField: "storage.backends.bad.type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			tt.configure(cfg)
+
+			err := Validate(cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				var errs ValidationErrors
+				if !errors.As(err, &errs) {
+					t.Fatalf("expected ValidationErrors, got %T", err)
+				}
+
+				found := false
+				for _, e := range errs {
+					if e.Field == tt.errField {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error for field %s, got errors: %v", tt.errField, errs)
+				}
+			}
+		})
+	}
+}
+
+func TestValidate_Realtime(t *testing.T) {
+	cfg := Default()
+	cfg.Realtime.PollInterval = -1 * time.Second
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected validation error for negative poll interval")
+	}
+}
+
+func TestValidate_AdminUI_ReservedPath(t *testing.T) {
+	cfg := Default()
+	cfg.AdminUI.Path = "/api"
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected validation error for reserved path")
+	}
+
+	var errs ValidationErrors
+	if !errors.As(err, &errs) {
+		t.Fatalf("expected ValidationErrors, got %T", err)
+	}
+
+	found := false
+	for _, e := range errs {
+		if e.Field == "admin_ui.path" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error for admin_ui.path")
+	}
+}
+
+func TestValidate_CORS_Security(t *testing.T) {
+	cfg := Default()
+	cfg.Server.CORS.AllowedOrigins = []string{"*"}
+	cfg.Server.CORS.AllowCredentials = true
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected validation warning for insecure CORS config")
+	}
+}

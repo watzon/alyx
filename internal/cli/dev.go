@@ -212,7 +212,7 @@ func setupDevWatcher(ctx context.Context, schemaPath, functionsPath string, db *
 }
 
 func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *config.Config) {
-	log.Info().Str("path", path).Msg("Schema file changed")
+	log.Info().Str("path", path).Msg("Schema file changed - applying all changes destructively")
 
 	newSchema, err := schema.ParseFile(path)
 	if err != nil {
@@ -232,15 +232,44 @@ func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *c
 	safeChanges := differ.SafeChanges(changes)
 	unsafeChanges := differ.UnsafeChanges(changes)
 
-	for _, c := range safeChanges {
-		log.Info().Str("change", c.String()).Msg("Applying schema change")
+	migrator := schema.NewMigrator(db.DB, path, "migrations")
+
+	for _, c := range changes {
+		log.Info().
+			Str("change", c.String()).
+			Bool("safe", c.Safe).
+			Msg("Applying schema change")
 	}
 
 	if len(safeChanges) > 0 {
-		migrator := schema.NewMigrator(db.DB, path, "migrations")
 		if err := migrator.ApplySafeChanges(safeChanges); err != nil {
-			log.Error().Err(err).Msg("Failed to apply schema changes")
+			log.Error().Err(err).Msg("Failed to apply safe schema changes")
 			return
+		}
+	}
+
+	if len(unsafeChanges) > 0 {
+		validationErrors := migrator.ValidateUnsafeChanges(unsafeChanges)
+		if len(validationErrors) > 0 {
+			log.Error().Int("errors", len(validationErrors)).Msg("Unsafe changes validation failed")
+			for _, ve := range validationErrors {
+				log.Error().Str("path", ve.Path).Str("message", ve.Message).Msg("  Validation error")
+			}
+			return
+		}
+
+		if err := migrator.ApplyUnsafeChanges(unsafeChanges); err != nil {
+			log.Error().Err(err).Msg("Failed to apply unsafe schema changes")
+			return
+		}
+
+		gen := schema.NewSQLGenerator(newSchema)
+		for _, col := range newSchema.Collections {
+			for _, stmt := range gen.GenerateTriggers(col) {
+				if _, err := db.Exec(stmt); err != nil {
+					log.Warn().Err(err).Str("trigger", stmt[:50]).Msg("Failed to recreate trigger")
+				}
+			}
 		}
 	}
 
@@ -250,18 +279,10 @@ func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *c
 	}
 
 	log.Info().
-		Int("applied", len(safeChanges)).
-		Int("pending", len(unsafeChanges)).
-		Msg("Schema changes applied")
+		Int("safe", len(safeChanges)).
+		Int("unsafe", len(unsafeChanges)).
+		Msg("All schema changes applied successfully")
 
-	if len(unsafeChanges) > 0 {
-		log.Warn().Msg("Some changes require manual migration:")
-		for _, c := range unsafeChanges {
-			log.Warn().Str("change", c.String()).Msg("  Requires migration")
-		}
-	}
-
-	// Auto-regenerate client SDKs if configured
 	if cfg.Dev.AutoGenerate && len(cfg.Dev.GenerateLanguages) > 0 {
 		regenerateClients(newSchema, cfg)
 	}

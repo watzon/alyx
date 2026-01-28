@@ -44,10 +44,10 @@ func Open(cfg *config.DatabaseConfig) (*DB, error) {
 		return nil, fmt.Errorf("configuring database: %w", err)
 	}
 
-	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	if cfg.ConnMaxLifetime > 0 {
-		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns())
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns())
+	if cfg.ConnMaxLifetime() > 0 {
+		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime())
 	}
 
 	if err := migrations.Run(context.Background(), sqlDB); err != nil {
@@ -71,21 +71,23 @@ func ensureDir(dbPath string) error {
 }
 
 func (db *DB) configure() error {
+	busyTimeout := db.cfg.BusyTimeout()
 	pragmas := []string{
-		"PRAGMA busy_timeout = " + fmt.Sprintf("%d", db.cfg.BusyTimeout.Milliseconds()),
+		"PRAGMA busy_timeout = " + fmt.Sprintf("%d", busyTimeout.Milliseconds()),
 	}
 
-	if db.cfg.WALMode {
+	if db.cfg.WALMode() {
 		pragmas = append(pragmas, "PRAGMA journal_mode = WAL")
 		pragmas = append(pragmas, "PRAGMA synchronous = NORMAL")
 	}
 
-	if db.cfg.ForeignKeys {
+	if db.cfg.ForeignKeys() {
 		pragmas = append(pragmas, "PRAGMA foreign_keys = ON")
 	}
 
-	if db.cfg.CacheSize != 0 {
-		pragmas = append(pragmas, fmt.Sprintf("PRAGMA cache_size = %d", db.cfg.CacheSize))
+	cacheSize := db.cfg.CacheSize()
+	if cacheSize != 0 {
+		pragmas = append(pragmas, fmt.Sprintf("PRAGMA cache_size = %d", cacheSize))
 	}
 
 	pragmas = append(pragmas, "PRAGMA temp_store = MEMORY")
@@ -108,7 +110,7 @@ func (db *DB) Close() error {
 	}
 	db.closed = true
 
-	if db.cfg.WALMode {
+	if db.cfg.WALMode() {
 		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	}
 

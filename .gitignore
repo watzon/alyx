@@ -32,6 +32,7 @@ Thumbs.db
 *.local.y*ml
 alyx.y*ml
 schema.y*ml
+/storage/
 
 # But allow example configs
 !examples/**/alyx.y*ml
@@ -58,3 +59,6 @@ tmp/
 
 # Node modules (for admin UI)
 node_modules/
+
+# Sisyphus
+.sisyphus/

@@ -139,11 +139,13 @@ func CORSMiddleware(cfg config.CORSConfig) Middleware {
 			}
 
 			if r.Method == http.MethodOptions {
-				if len(cfg.AllowedMethods) > 0 {
-					w.Header().Set("Access-Control-Allow-Methods", strings.Join(cfg.AllowedMethods, ", "))
+				methods := cfg.AllowedMethods()
+				if len(methods) > 0 {
+					w.Header().Set("Access-Control-Allow-Methods", strings.Join(methods, ", "))
 				}
-				if len(cfg.AllowedHeaders) > 0 {
-					w.Header().Set("Access-Control-Allow-Headers", strings.Join(cfg.AllowedHeaders, ", "))
+				headers := cfg.AllowedHeaders()
+				if len(headers) > 0 {
+					w.Header().Set("Access-Control-Allow-Headers", strings.Join(headers, ", "))
 				}
 				if cfg.MaxAge > 0 {
 					w.Header().Set("Access-Control-Max-Age", strconv.Itoa(int(cfg.MaxAge.Seconds())))

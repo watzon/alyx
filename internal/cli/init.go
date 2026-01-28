@@ -492,9 +492,9 @@ collections:
   # ---------------------------------------------------------------------------
   items:
     fields:
-      # Primary key - auto-generated UUID
+      # Primary key - auto-generated 15-character ID
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       
@@ -541,7 +541,7 @@ collections:
   # users:
   #   fields:
   #     id:
-  #       type: uuid
+  #       type: id
   #       primary: true
   #       default: auto
   #     email:
@@ -585,7 +585,7 @@ collections:
   # posts:
   #   fields:
   #     id:
-  #       type: uuid
+  #       type: id
   #       primary: true
   #       default: auto
   #     title:
@@ -643,7 +643,8 @@ collections:
   # ---------------------------------------------------------------------------
   # Field Types Reference
   # ---------------------------------------------------------------------------
-  # type: uuid        - UUID string (use for IDs)
+  # type: id          - 15-character alphanumeric ID (recommended for primary keys)
+  # type: uuid        - Full UUID string (36 characters)
   # type: string      - Text with optional length limits
   # type: text        - Unlimited text (for long content)
   # type: int         - Integer number
@@ -660,7 +661,7 @@ collections:
   # unique: true      - Enforce uniqueness
   # nullable: true    - Allow NULL values
   # index: true       - Create database index
-  # default: value    - Default value (use "auto" for UUIDs, "now" for timestamps)
+  # default: value    - Default value (use "auto" for IDs/UUIDs, "now" for timestamps)
   # references: tbl.col - Foreign key reference
   # onDelete: cascade/restrict/set null - Foreign key action
   # onUpdate: now     - Auto-update timestamp on changes
@@ -768,7 +769,7 @@ collections:
   users:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       email:
@@ -814,7 +815,7 @@ collections:
   posts:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       title:
@@ -881,7 +882,7 @@ collections:
   comments:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       post_id:
@@ -917,7 +918,7 @@ collections:
 # 
 # categories:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     name: { type: string, maxLength: 50 }
 #     slug: { type: string, unique: true, index: true }
 #     description: { type: text, nullable: true }
@@ -929,7 +930,7 @@ collections:
 #
 # tags:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     name: { type: string, unique: true, maxLength: 30 }
 #   rules:
 #     create: "auth.id != null"
@@ -939,7 +940,7 @@ collections:
 #
 # media:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     filename: { type: string }
 #     url: { type: string }
 #     mime_type: { type: string }
@@ -1027,7 +1028,7 @@ collections:
   users:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       email:
@@ -1064,7 +1065,7 @@ collections:
   organizations:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       name:
@@ -1108,7 +1109,7 @@ collections:
   members:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       org_id:
@@ -1155,7 +1156,7 @@ collections:
   invitations:
     fields:
       id:
-        type: uuid
+        type: id
         primary: true
         default: auto
       org_id:
@@ -1199,7 +1200,7 @@ collections:
 #
 # projects:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     org_id: { type: uuid, references: organizations.id, onDelete: cascade, index: true }
 #     name: { type: string, maxLength: 100 }
 #     description: { type: text, nullable: true }
@@ -1214,7 +1215,7 @@ collections:
 #
 # api_keys:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     org_id: { type: uuid, references: organizations.id, onDelete: cascade, index: true }
 #     name: { type: string, maxLength: 50 }
 #     key_hash: { type: string, internal: true }  # Never expose
@@ -1230,7 +1231,7 @@ collections:
 #
 # audit_logs:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     org_id: { type: uuid, references: organizations.id, onDelete: cascade, index: true }
 #     user_id: { type: uuid, references: users.id, onDelete: set null, nullable: true }
 #     action: { type: string }
@@ -1251,7 +1252,7 @@ collections:
 #
 # subscriptions:
 #   fields:
-#     id: { type: uuid, primary: true, default: auto }
+#     id: { type: id, primary: true, default: auto }
 #     org_id: { type: uuid, references: organizations.id, onDelete: cascade, unique: true }
 #     plan: { type: string, validate: { enum: [free, starter, pro, enterprise] } }
 #     status: { type: string, validate: { enum: [active, past_due, canceled, trialing] } }

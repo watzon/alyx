@@ -62,22 +62,13 @@ func Default() *Config {
 			CORS: CORSConfig{
 				Enabled:          true,
 				AllowedOrigins:   []string{"*"},
-				AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-				AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 				ExposedHeaders:   []string{"X-Request-ID"},
 				AllowCredentials: false,
 				MaxAge:           12 * time.Hour,
 			},
 		},
 		Database: DatabaseConfig{
-			Path:            DefaultDBPath,
-			WALMode:         true,
-			CacheSize:       DefaultCacheSize,
-			BusyTimeout:     DefaultBusyTimeout,
-			ForeignKeys:     true,
-			MaxOpenConns:    DefaultMaxOpenConns,
-			MaxIdleConns:    DefaultMaxIdleConns,
-			ConnMaxLifetime: 0, // No limit
+			Path: DefaultDBPath,
 		},
 		Auth: AuthConfig{
 			JWT: JWTConfig{
@@ -172,6 +163,9 @@ func Default() *Config {
 		AdminUI: AdminUIConfig{
 			Enabled: true,
 			Path:    "/_admin",
+		},
+		Storage: StorageConfig{
+			Backends: make(map[string]StorageBackendConfig),
 		},
 	}
 }

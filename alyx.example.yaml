@@ -2,32 +2,45 @@
 # Copy this to alyx.yaml and customize for your project
 
 server:
+  # Host to bind the server to
   host: localhost
+  
+  # Port to listen on
   port: 8090
+  
+  # HTTP timeout settings
   read_timeout: 30s
   write_timeout: 30s
   idle_timeout: 120s
-  max_body_size: 10485760  # 10MB
-  admin_ui: true
+  
+  # Maximum request body size in bytes (10MB)
+  max_body_size: 10485760
 
+  # Cross-Origin Resource Sharing (CORS) configuration
   cors:
+    # Enable CORS
     enabled: true
+    
+    # Allowed origins (use ["*"] for all, not recommended in production)
+    # For production, specify exact origins: ["https://yourdomain.com"]
     allowed_origins:
       - "*"
-    allowed_methods:
-      - GET
-      - POST
-      - PUT
-      - PATCH
-      - DELETE
-      - OPTIONS
-    allowed_headers:
-      - Accept
-      - Authorization
-      - Content-Type
-      - X-Request-ID
+    
+    # Allow credentials (cookies, authorization headers)
+    # WARNING: Do not use with allowed_origins=["*"] (security risk)
     allow_credentials: false
+    
+    # Headers exposed to the client (optional)
+    exposed_headers:
+      - X-Request-ID
+    
+    # Max age for preflight cache
     max_age: 12h
+    
+    # NOTE: allowed_methods and allowed_headers are hard-coded to ensure
+    # admin UI and API functionality. They include:
+    # - Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+    # - Headers: Accept, Authorization, Content-Type, X-Request-ID
 
   # TLS configuration (optional)
   # tls:
@@ -39,27 +52,45 @@ server:
   #   domain: api.example.com
 
 database:
+  # Path to SQLite database file
   path: alyx.db
-  wal_mode: true
-  cache_size: -64000  # 64MB (negative = KB)
-  busy_timeout: 5s
-  foreign_keys: true
-  max_open_conns: 1
-  max_idle_conns: 1
 
   # Turso configuration for distributed deployments (optional)
+  # When enabled, allows multiple instances to share the same database
   # turso:
   #   enabled: true
   #   url: libsql://your-db.turso.io
   #   auth_token: ${TURSO_AUTH_TOKEN}
+  
+  # NOTE: The following settings are hard-coded for stability:
+  # - wal_mode: true (required for concurrency)
+  # - foreign_keys: true (required for data integrity)
+  # - cache_size: -64000 (64MB, optimized for performance)
+  # - busy_timeout: 5s (prevents lock timeout errors)
+  # - max_open_conns: 1 (SQLite single-writer best practice)
+  # - max_idle_conns: 1 (matches max_open_conns)
 
 auth:
+  # JWT configuration
   jwt:
-    secret: ${JWT_SECRET}  # Required in production, min 32 chars
+    # Secret key for signing tokens (required in production, min 32 chars)
+    # Use environment variable: ${JWT_SECRET}
+    secret: ${JWT_SECRET}
+    
+    # Access token lifetime
     access_ttl: 15m
+    
+    # Refresh token lifetime
     refresh_ttl: 168h  # 7 days
+    
+    # JWT issuer claim
     issuer: alyx
+    
+    # JWT audience claim (optional)
+    # audience:
+    #   - https://api.example.com
 
+  # Password requirements
   password:
     min_length: 8
     require_uppercase: false
@@ -67,18 +98,27 @@ auth:
     require_number: false
     require_special: false
 
+  # Rate limiting for auth endpoints
   rate_limit:
+    # Login attempts
     login:
       max: 5
       window: 1m
+    
+    # Registration attempts
     register:
       max: 3
       window: 1m
+    
+    # Password reset attempts
     password_reset:
       max: 3
       window: 1h
 
+  # Allow new user registration
   allow_registration: true
+  
+  # Require email verification for new accounts
   require_verification: false
 
   # OAuth providers (optional)
@@ -88,34 +128,60 @@ auth:
   #     client_secret: ${GITHUB_CLIENT_SECRET}
   #     scopes:
   #       - user:email
+  #   
   #   google:
   #     client_id: ${GOOGLE_CLIENT_ID}
   #     client_secret: ${GOOGLE_CLIENT_SECRET}
   #     scopes:
   #       - email
   #       - profile
+  #   
+  #   # Custom OIDC provider
+  #   custom:
+  #     client_id: ${CUSTOM_CLIENT_ID}
+  #     client_secret: ${CUSTOM_CLIENT_SECRET}
+  #     auth_url: https://auth.example.com/oauth/authorize
+  #     token_url: https://auth.example.com/oauth/token
+  #     user_info_url: https://auth.example.com/oauth/userinfo
+  #     scopes:
+  #       - openid
+  #       - profile
 
 functions:
+  # Enable serverless functions
   enabled: true
+  
+  # Path to functions directory
   path: functions
-  runtime: docker  # docker or podman
+  
+  # Container runtime (docker or podman)
+  runtime: docker
+  
+  # Default execution timeout
   timeout: 30s
-  memory_limit: 256  # MB
+  
+  # Default memory limit in MB
+  memory_limit: 256
+  
+  # Default CPU limit (cores)
   cpu_limit: 1.0
 
+  # Container pool settings per runtime
   pools:
     node:
       min_warm: 1
       max_instances: 10
       idle_timeout: 60s
       image: ghcr.io/watzon/alyx-runtime-node:latest
+    
     python:
       min_warm: 1
       max_instances: 10
       idle_timeout: 60s
       image: ghcr.io/watzon/alyx-runtime-python:latest
+    
     go:
-      min_warm: 0
+      min_warm: 0  # Go compiles, so no warm pool needed
       max_instances: 10
       idle_timeout: 60s
       image: ghcr.io/watzon/alyx-runtime-go:latest
@@ -126,24 +192,143 @@ functions:
   #   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
 
 logging:
-  level: info  # trace, debug, info, warn, error, fatal, panic
-  format: console  # json or console
+  # Log level: trace, debug, info, warn, error, fatal, panic
+  level: info
+  
+  # Log format: json or console
+  format: console
+  
+  # Include caller info (file:line)
   caller: false
+  
+  # Include timestamp
   timestamp: true
-  # output: /var/log/alyx/alyx.log  # Empty for stdout
+  
+  # Output file (empty for stdout)
+  # output: /var/log/alyx/alyx.log
 
 dev:
+  # Enable development mode
   enabled: false
+  
+  # Watch for file changes and auto-reload
   watch: true
+  
+  # Automatically run migrations on schema changes
   auto_migrate: true
+  
+  # Automatically generate SDK on schema changes
   auto_generate: true
+  
+  # Languages to generate SDKs for
   generate_languages:
     - typescript
+  
+  # Output directory for generated SDKs
   generate_output: generated
 
 docs:
+  # Enable OpenAPI documentation
   enabled: true
-  ui: scalar  # scalar, swagger, redoc, stoplight
+  
+  # Documentation UI: scalar, swagger, redoc, stoplight
+  ui: scalar
+  
+  # API title
   title: "My API"
+  
+  # API description
   description: "API documentation generated from your schema"
+  
+  # API version
   version: "1.0.0"
+
+# Real-time WebSocket subscriptions
+realtime:
+  # Enable real-time subscriptions
+  enabled: true
+  
+  # Poll interval for database changes
+  # Minimum: 10ms (values below 50ms may cause elevated CPU usage)
+  poll_interval: 50ms
+  
+  # Maximum concurrent WebSocket connections
+  max_connections: 1000
+  
+  # Maximum subscriptions per client
+  max_subscriptions_per_client: 100
+  
+  # NOTE: change_buffer_size, cleanup_interval, and cleanup_age are hard-coded
+  # for optimal performance (1000, 5m, 1h respectively)
+
+# Admin UI configuration
+admin_ui:
+  # Enable admin UI
+  enabled: true
+  
+  # URL path for admin UI
+  path: /_admin
+
+# Storage backend configuration
+# Define named backends that can be referenced by buckets in schema.yaml
+storage:
+  backends:
+    # Example: Local filesystem backend
+    # local:
+    #   type: filesystem
+    #   filesystem:
+    #     path: ./storage
+    #     # Optional: Prefix all bucket names
+    #     base_path: app-
+    
+    # Example: AWS S3 backend
+    # s3-primary:
+    #   type: s3
+    #   s3:
+    #     region: us-east-1
+    #     access_key_id: ${AWS_ACCESS_KEY_ID}
+    #     secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+    #     # Optional: Prefix all bucket names
+    #     bucket_prefix: alyx-
+    
+    # Example: MinIO backend
+    # minio:
+    #   type: s3
+    #   s3:
+    #     endpoint: https://minio.example.com
+    #     region: us-east-1
+    #     access_key_id: ${MINIO_ACCESS_KEY}
+    #     secret_access_key: ${MINIO_SECRET_KEY}
+    #     force_path_style: true
+    
+    # Example: Cloudflare R2 backend
+    # cloudflare-r2:
+    #   type: s3
+    #   s3:
+    #     endpoint: https://<account-id>.r2.cloudflarestorage.com
+    #     region: auto
+    #     access_key_id: ${R2_ACCESS_KEY_ID}
+    #     secret_access_key: ${R2_SECRET_ACCESS_KEY}
+    
+    # Example: DigitalOcean Spaces backend
+    # do-spaces:
+    #   type: s3
+    #   s3:
+    #     endpoint: https://nyc3.digitaloceanspaces.com
+    #     region: nyc3
+    #     access_key_id: ${DO_SPACES_KEY}
+    #     secret_access_key: ${DO_SPACES_SECRET}
+    #     force_path_style: true
+    
+    # Example: Multiple filesystem backends for different purposes
+    # uploads:
+    #   type: filesystem
+    #   filesystem:
+    #     path: ./uploads
+    #     base_path: temp-  # temp-avatars, temp-documents, etc.
+    # 
+    # archives:
+    #   type: filesystem
+    #   filesystem:
+    #     path: /mnt/archives
+    #     base_path: archive-  # archive-2024, archive-backup, etc.
