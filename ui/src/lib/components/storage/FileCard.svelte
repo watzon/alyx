@@ -37,7 +37,7 @@
 	}
 </script>
 
-	<Card.Root class="relative group overflow-hidden">
+<Card.Root class="relative group overflow-hidden p-0">
 	<div class="absolute top-2 left-2 z-10">
 		<label class="flex items-center justify-center w-5 h-5 rounded border bg-background/80 backdrop-blur-sm cursor-pointer transition-colors {selected ? 'border-primary bg-primary' : 'border-border'}">
 			<input type="checkbox" checked={selected} onchange={onToggle} class="sr-only" />
@@ -55,17 +55,18 @@
 			</Button>
 		</div>
 	{/if}
-	{#if viewUrl}
-		<button class="w-full h-48 block" onclick={onPreview}>
-			<img src={viewUrl} alt={file.name} class="w-full h-48 object-cover rounded-t-lg bg-muted" loading="lazy" />
-		</button>
-	{:else}
-		<button class="w-full h-48 bg-muted flex flex-col items-center justify-center rounded-t-lg" onclick={onPreview}>
-			<FileIconComponent class="h-16 w-16 text-muted-foreground/50 mb-2" />
-			<span class="text-xs text-muted-foreground uppercase tracking-wide">{file.mime_type.split('/')[1] || 'file'}</span>
-		</button>
-	{/if}
-	<div class="p-4">
+	<div class="p-0">
+		{#if viewUrl}
+			<button class="w-full h-48 block" onclick={onPreview}>
+				<img src={viewUrl} alt={file.name} class="w-full h-48 object-cover rounded-t-lg bg-muted" loading="lazy" />
+			</button>
+		{:else}
+			<button class="w-full h-48 bg-muted flex flex-col items-center justify-center rounded-t-lg" onclick={onPreview}>
+				<FileIconComponent class="h-16 w-16 text-muted-foreground/50 mb-2" />
+				<span class="text-xs text-muted-foreground uppercase tracking-wide">{file.mime_type.split('/')[1] || 'file'}</span>
+			</button>
+		{/if}
+		<div class="p-4">
 			<Tooltip.Provider>
 				<Tooltip.Root>
 					<Tooltip.Trigger class="block w-full text-left">
@@ -81,4 +82,5 @@
 				<p class="text-xs text-muted-foreground">{new Date(file.created_at).toLocaleDateString()}</p>
 			</div>
 		</div>
+	</div>
 </Card.Root>
