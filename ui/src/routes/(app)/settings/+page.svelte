@@ -138,13 +138,19 @@
 	</div>
 
 	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List>
-			<Tabs.Trigger value="tokens">
+		<Tabs.List class="!bg-transparent !border-0 !p-0 gap-1">
+			<Tabs.Trigger 
+				value="tokens"
+				class="rounded-t-lg bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-x border-t border-b-0 border-border/20 data-[state=active]:bg-muted/30 data-[state=active]:backdrop-blur-xl data-[state=active]:border-border/40 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30"
+			>
 				<KeyIcon class="h-4 w-4 mr-2" />
 				API Tokens
 			</Tabs.Trigger>
 			{#if configStore.isDevMode}
-				<Tabs.Trigger value="config">
+				<Tabs.Trigger 
+					value="config"
+					class="rounded-t-lg bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-x border-t border-b-0 border-border/20 data-[state=active]:bg-muted/30 data-[state=active]:backdrop-blur-xl data-[state=active]:border-border/40 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30"
+				>
 					<SettingsIcon class="h-4 w-4 mr-2" />
 					Configuration
 					{#if hasConfigChanges}

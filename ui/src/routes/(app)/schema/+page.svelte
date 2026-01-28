@@ -375,16 +375,21 @@
 			</Card.Content>
 		</Card.Root>
 	{:else if schemaQuery.data}
-		<Tabs.Root bind:value={activeTab}>
-			<Tabs.List class="w-full justify-start overflow-x-auto">
-				{#each sortedCollections as collection}
-					<Tabs.Trigger value={collection.name}>{collection.name}</Tabs.Trigger>
-				{/each}
-			</Tabs.List>
+		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4 mb-6">
+			{#each sortedCollections as collection}
+				<button
+					class="text-left p-4 rounded-lg border transition-colors bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-border/20 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30 {activeTab === collection.name ? '!bg-muted/30 !backdrop-blur-xl !border-border/40' : ''}"
+					onclick={() => activeTab = collection.name}
+				>
+					<span class="font-medium truncate">{collection.name}</span>
+				</button>
+			{/each}
+		</div>
 
+		<Tabs.Root bind:value={activeTab}>
 			{#each sortedCollections as collection}
 				{@const docsUrl = configStore.getCollectionDocsUrl(collection.name)}
-				<Tabs.Content value={collection.name} class="space-y-4">
+				<Tabs.Content value={collection.name} class="space-y-4 mt-0">
 					<Card.Root>
 						<Card.Header class="flex flex-row items-center justify-between space-y-0">
 							<Card.Title>Fields</Card.Title>

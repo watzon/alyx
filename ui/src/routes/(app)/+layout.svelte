@@ -106,9 +106,9 @@
 					{#each navItems as item}
 						<a
 							href="{base}{item.href === '/' ? '' : item.href}"
-							class="relative px-3 py-3 text-sm transition-colors {isActive(item.href)
-								? 'text-foreground'
-								: 'text-muted-foreground hover:text-foreground'}"
+							class="relative px-3 py-3 text-sm transition-colors rounded-t-lg bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-x border-t border-border/20 {isActive(item.href)
+								? 'text-foreground !bg-muted/30 !backdrop-blur-xl !border-border/40'
+								: 'text-muted-foreground hover:text-foreground hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30'}"
 						>
 							{item.label}
 							{#if isActive(item.href)}

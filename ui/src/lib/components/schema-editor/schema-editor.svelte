@@ -167,23 +167,28 @@
 				</Button>
 			</div>
 		{:else}
-			<Tabs.Root bind:value={activeCollection}>
-				<Tabs.List class="w-full justify-start overflow-x-auto">
-					{#each sortedCollections as collection (collection._id)}
-						{@const errorCount = getCollectionErrorCount(collection._id)}
-						<Tabs.Trigger value={collection._id} class="gap-2">
-							{collection.name || 'Unnamed'}
+			<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4 mb-6">
+				{#each sortedCollections as collection (collection._id)}
+					{@const errorCount = getCollectionErrorCount(collection._id)}
+					<button
+						class="text-left p-4 rounded-lg border transition-colors bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-border/20 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30 {activeCollection === collection._id ? '!bg-muted/30 !backdrop-blur-xl !border-border/40' : ''}"
+						onclick={() => activeCollection = collection._id}
+					>
+						<div class="flex items-center justify-between gap-2">
+							<span class="font-medium truncate">{collection.name || 'Unnamed'}</span>
 							{#if errorCount > 0}
 								<span class="inline-flex items-center justify-center h-5 min-w-5 px-1 text-xs font-medium rounded-full bg-destructive text-destructive-foreground">
 									{errorCount}
 								</span>
 							{/if}
-						</Tabs.Trigger>
-					{/each}
-				</Tabs.List>
+						</div>
+					</button>
+				{/each}
+			</div>
 
+			<Tabs.Root bind:value={activeCollection}>
 				{#each sortedCollections as collection (collection._id)}
-					<Tabs.Content value={collection._id}>
+					<Tabs.Content value={collection._id} class="mt-0">
 						<CollectionEditor
 							{collection}
 							allCollections={schema.collections}
