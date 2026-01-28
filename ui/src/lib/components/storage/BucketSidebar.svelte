@@ -24,7 +24,7 @@
 	<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
 		{#each buckets as bucket}
 			<button
-				class="text-left p-4 rounded-lg border transition-colors hover:bg-accent {selectedBucket === bucket.name ? 'bg-accent border-accent' : 'bg-card'}"
+				class="text-left p-4 rounded-lg border transition-colors bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-border/20 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30 {selectedBucket === bucket.name ? '!bg-muted/30 !backdrop-blur-xl !border-border/40' : ''}"
 				onclick={() => onSelect(bucket.name)}
 			>
 				<div class="flex items-center justify-between gap-2">
