@@ -85,19 +85,19 @@ type rawBucket struct {
 }
 
 type rawFunction struct {
-	Runtime      string     `yaml:"runtime"`
-	Entrypoint   string     `yaml:"entrypoint"`
-	Path         string     `yaml:"path,omitempty"`
-	Description  string     `yaml:"description,omitempty"`
-	Timeout      string     `yaml:"timeout,omitempty"`
-	Memory       string     `yaml:"memory,omitempty"`
-	Env          *yaml.Node `yaml:"env,omitempty"`
-	Dependencies *yaml.Node `yaml:"dependencies,omitempty"`
-	Hooks        *yaml.Node `yaml:"hooks,omitempty"`
-	Schedules    *yaml.Node `yaml:"schedules,omitempty"`
-	Routes       *yaml.Node `yaml:"routes,omitempty"`
-	Build        *yaml.Node `yaml:"build,omitempty"`
-	Rules        *yaml.Node `yaml:"rules,omitempty"`
+	Runtime      string             `yaml:"runtime"`
+	Entrypoint   string             `yaml:"entrypoint"`
+	Path         string             `yaml:"path,omitempty"`
+	Description  string             `yaml:"description,omitempty"`
+	Timeout      string             `yaml:"timeout,omitempty"`
+	Memory       string             `yaml:"memory,omitempty"`
+	Env          map[string]string  `yaml:"env,omitempty"`
+	Dependencies []string           `yaml:"dependencies,omitempty"`
+	Hooks        []FunctionHook     `yaml:"hooks,omitempty"`
+	Schedules    []FunctionSchedule `yaml:"schedules,omitempty"`
+	Routes       []FunctionRoute    `yaml:"routes,omitempty"`
+	Build        *FunctionBuild     `yaml:"build,omitempty"`
+	Rules        *FunctionRules     `yaml:"rules,omitempty"`
 }
 
 func parseCollection(name string, raw *rawCollection) (*Collection, error) {
@@ -164,57 +164,20 @@ func parseFunctions(raw map[string]*rawFunction) (map[string]*Function, error) {
 	functions := make(map[string]*Function)
 	for name, rawFunc := range raw {
 		fn := &Function{
-			Name:        name,
-			Runtime:     rawFunc.Runtime,
-			Entrypoint:  rawFunc.Entrypoint,
-			Path:        rawFunc.Path,
-			Description: rawFunc.Description,
-			Timeout:     rawFunc.Timeout,
-			Memory:      rawFunc.Memory,
-		}
-
-		if rawFunc.Env != nil {
-			if err := rawFunc.Env.Decode(&fn.Env); err != nil {
-				return nil, fmt.Errorf("functions.%s.env: %w", name, err)
-			}
-		}
-
-		if rawFunc.Dependencies != nil {
-			if err := rawFunc.Dependencies.Decode(&fn.Dependencies); err != nil {
-				return nil, fmt.Errorf("functions.%s.dependencies: %w", name, err)
-			}
-		}
-
-		if rawFunc.Hooks != nil {
-			if err := rawFunc.Hooks.Decode(&fn.Hooks); err != nil {
-				return nil, fmt.Errorf("functions.%s.hooks: %w", name, err)
-			}
-		}
-
-		if rawFunc.Schedules != nil {
-			if err := rawFunc.Schedules.Decode(&fn.Schedules); err != nil {
-				return nil, fmt.Errorf("functions.%s.schedules: %w", name, err)
-			}
-		}
-
-		if rawFunc.Routes != nil {
-			if err := rawFunc.Routes.Decode(&fn.Routes); err != nil {
-				return nil, fmt.Errorf("functions.%s.routes: %w", name, err)
-			}
-		}
-
-		if rawFunc.Build != nil {
-			fn.Build = &FunctionBuild{}
-			if err := rawFunc.Build.Decode(fn.Build); err != nil {
-				return nil, fmt.Errorf("functions.%s.build: %w", name, err)
-			}
-		}
-
-		if rawFunc.Rules != nil {
-			fn.Rules = &FunctionRules{}
-			if err := rawFunc.Rules.Decode(fn.Rules); err != nil {
-				return nil, fmt.Errorf("functions.%s.rules: %w", name, err)
-			}
+			Name:         name,
+			Runtime:      rawFunc.Runtime,
+			Entrypoint:   rawFunc.Entrypoint,
+			Path:         rawFunc.Path,
+			Description:  rawFunc.Description,
+			Timeout:      rawFunc.Timeout,
+			Memory:       rawFunc.Memory,
+			Env:          rawFunc.Env,
+			Dependencies: rawFunc.Dependencies,
+			Hooks:        rawFunc.Hooks,
+			Schedules:    rawFunc.Schedules,
+			Routes:       rawFunc.Routes,
+			Build:        rawFunc.Build,
+			Rules:        rawFunc.Rules,
 		}
 
 		functions[name] = fn
@@ -275,10 +238,151 @@ func Validate(s *Schema) error {
 		errs = append(errs, bucketErrs...)
 	}
 
+	for name, fn := range s.Functions {
+		fnErrs := validateFunction(name, fn, s)
+		errs = append(errs, fnErrs...)
+	}
+
 	if len(errs) > 0 {
 		return errs
 	}
 	return nil
+}
+
+func validateFunction(name string, fn *Function, s *Schema) ValidationErrors {
+	var errs ValidationErrors
+	path := fmt.Sprintf("functions.%s", name)
+
+	if !identifierRegex.MatchString(name) {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",
+		})
+	}
+
+	if strings.HasPrefix(name, "_alyx") {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "function names starting with '_alyx' are reserved",
+		})
+	}
+
+	if _, exists := s.Collections[name]; exists {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "name already used by collection",
+		})
+	}
+	if _, exists := s.Buckets[name]; exists {
+		errs = append(errs, &ValidationError{
+			Path:    path,
+			Message: "name already used by bucket",
+		})
+	}
+
+	if fn.Runtime == "" {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".runtime",
+			Message: "required field",
+		})
+	}
+	if fn.Entrypoint == "" {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".entrypoint",
+			Message: "required field",
+		})
+	}
+
+	validRuntimes := map[string]bool{
+		"node": true, "python": true, "go": true, "deno": true, "bun": true,
+	}
+	if fn.Runtime != "" && !validRuntimes[fn.Runtime] {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".runtime",
+			Message: "must be one of: node, python, go, deno, bun",
+		})
+	}
+
+	for i, hook := range fn.Hooks {
+		hookErrs := validateFunctionHook(path, i, &hook, s)
+		errs = append(errs, hookErrs...)
+	}
+
+	for i, schedule := range fn.Schedules {
+		schedErrs := validateFunctionSchedule(path, i, &schedule)
+		errs = append(errs, schedErrs...)
+	}
+
+	for i, route := range fn.Routes {
+		routeErrs := validateFunctionRoute(path, i, &route)
+		errs = append(errs, routeErrs...)
+	}
+
+	return errs
+}
+
+func validateFunctionHook(fnPath string, index int, hook *FunctionHook, s *Schema) ValidationErrors {
+	var errs ValidationErrors
+	path := fmt.Sprintf("%s.hooks[%d]", fnPath, index)
+
+	validTypes := map[string]bool{
+		"database": true, "auth": true, "webhook": true,
+	}
+	if !validTypes[hook.Type] {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".type",
+			Message: "must be one of: database, auth, webhook",
+		})
+	}
+
+	if hook.Type == "database" && hook.Source != "" {
+		if _, exists := s.Collections[hook.Source]; !exists {
+			errs = append(errs, &ValidationError{
+				Path:    path + ".source",
+				Message: fmt.Sprintf("collection %q does not exist", hook.Source),
+			})
+		}
+	}
+
+	if hook.Type == "webhook" && hook.Verification == nil {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".verification",
+			Message: "required for webhook hooks",
+		})
+	}
+
+	return errs
+}
+
+func validateFunctionSchedule(fnPath string, index int, schedule *FunctionSchedule) ValidationErrors {
+	var errs ValidationErrors
+	path := fmt.Sprintf("%s.schedules[%d]", fnPath, index)
+
+	validTypes := map[string]bool{
+		"cron": true, "interval": true, "one_time": true,
+	}
+	if !validTypes[schedule.Type] {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".type",
+			Message: "must be one of: cron, interval, one_time",
+		})
+	}
+
+	return errs
+}
+
+func validateFunctionRoute(fnPath string, index int, route *FunctionRoute) ValidationErrors {
+	var errs ValidationErrors
+	path := fmt.Sprintf("%s.routes[%d]", fnPath, index)
+
+	if !strings.HasPrefix(route.Path, "/") {
+		errs = append(errs, &ValidationError{
+			Path:    path + ".path",
+			Message: "must start with /",
+		})
+	}
+
+	return errs
 }
 
 func validateBucket(name string, b *Bucket) ValidationErrors {
