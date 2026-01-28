@@ -2,8 +2,10 @@
   import * as Table from '$ui/table';
   import { Skeleton } from '$ui/skeleton';
   import * as Tooltip from '$ui/tooltip';
-  import type { Collection } from '$lib/api/client';
+  import type { Collection, Field } from '$lib/api/client';
+  import { files } from '$lib/api/client';
   import DeleteButton from './DeleteButton.svelte';
+  import FileIcon from '@lucide/svelte/icons/file';
 
   interface Props {
     collection: Collection;
@@ -14,6 +16,17 @@
   }
 
   let { collection, documents, isLoading = false, onRowClick, onDeleteSuccess }: Props = $props();
+
+  function getFileViewUrl(field: Field, fileId: string): string | null {
+    if (!fileId || !field.file?.bucket) return null;
+    return files.getViewUrl(field.file.bucket, fileId);
+  }
+
+  function isImageFile(field: Field): boolean {
+    // Check if the bucket is likely to contain images based on allowed types
+    const allowedTypes = field.file?.allowedTypes || [];
+    return allowedTypes.some(t => t.startsWith('image/')) || allowedTypes.includes('image/*');
+  }
 
   function formatDate(value: unknown): string {
     if (value === null || value === undefined) return '-';
@@ -106,21 +119,37 @@
           >
             {#each collection.fields || [] as field}
               {@const value = doc[field.name]}
-              {@const formattedValue = formatValue(value, field.type)}
               <Table.Cell class="font-mono text-sm">
-                {#if formattedValue.length > 50}
-                  <Tooltip.Provider>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger class="text-left">
-                        {truncate(formattedValue)}
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>
-                        <p class="max-w-xs">{formattedValue}</p>
-                      </Tooltip.Content>
-                    </Tooltip.Root>
-                  </Tooltip.Provider>
+                {#if field.type === 'file' && value}
+                  {@const viewUrl = getFileViewUrl(field, value)}
+                  {#if viewUrl}
+                    <img 
+                      src={viewUrl} 
+                      alt="" 
+                      class="w-8 h-8 object-cover rounded"
+                      onerror={(e) => (e.currentTarget as HTMLImageElement).style.display = 'none'}
+                    />
+                  {:else}
+                    <div class="w-8 h-8 rounded bg-muted flex items-center justify-center">
+                      <FileIcon class="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  {/if}
                 {:else}
-                  {formattedValue}
+                  {@const formattedValue = formatValue(value, field.type)}
+                  {#if formattedValue.length > 50}
+                    <Tooltip.Provider>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger class="text-left">
+                          {truncate(formattedValue)}
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>
+                          <p class="max-w-xs">{formattedValue}</p>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                    </Tooltip.Provider>
+                  {:else}
+                    {formattedValue}
+                  {/if}
                 {/if}
               </Table.Cell>
             {/each}
