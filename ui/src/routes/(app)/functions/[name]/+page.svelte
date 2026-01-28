@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
-	import { admin, type FunctionDetail } from '$lib/api/client';
+	import { admin, type FunctionDetail, type FunctionInvokeResponse } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
@@ -13,6 +13,7 @@
 	import AlertCircleIcon from 'lucide-svelte/icons/alert-circle';
 	import PlayIcon from 'lucide-svelte/icons/play';
 	import SettingsIcon from 'lucide-svelte/icons/settings';
+	import { FunctionTestPanel, FunctionResponsePanel, FunctionHistory, type HistoryItem } from '$lib/components/functions';
 
 	const name = $derived((page.params as { name?: string }).name);
 
@@ -27,6 +28,41 @@
 		},
 		enabled: !!name
 	}));
+
+	// State for test functionality
+	let history = $state<HistoryItem[]>([]);
+	let currentResponse = $state<FunctionInvokeResponse | null>(null);
+	let isExecuting = $state(false);
+
+	async function handleExecute(input: unknown) {
+		if (!name) return;
+		
+		isExecuting = true;
+		try {
+			const result = await admin.functions.invoke(name, input);
+			if (result.data) {
+				const historyItem: HistoryItem = {
+					id: crypto.randomUUID(),
+					input,
+					response: result.data,
+					timestamp: new Date()
+				};
+				// Prepend to array and limit to 50 items
+				history = [historyItem, ...history].slice(0, 50);
+				currentResponse = result.data;
+			}
+		} finally {
+			isExecuting = false;
+		}
+	}
+
+	function handleHistorySelect(item: HistoryItem) {
+		currentResponse = item.response;
+	}
+
+	function handleHistoryClear() {
+		history = [];
+	}
 
 	function getRuntimeColor(runtime: string): string {
 		switch (runtime) {
@@ -132,13 +168,33 @@
 							<Skeleton class="h-64 w-full" />
 						</div>
 					{:else if functionQuery.data}
-						<div class="flex h-full flex-col items-center justify-center text-center">
-							<PlayIcon class="h-12 w-12 text-muted-foreground/50" />
-							<h3 class="mt-4 text-lg font-medium">Test Function</h3>
-							<p class="mt-1 text-sm text-muted-foreground max-w-md">
-								Test functionality will be implemented in the next task.
-								This tab will allow you to invoke the function with custom input.
-							</p>
+						{@const func = functionQuery.data}
+						<div class="flex h-full flex-col gap-4">
+							<!-- Two-column grid for test and response panels -->
+							<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+								<div class="border rounded-lg overflow-hidden">
+									<FunctionTestPanel
+										functionName={func.name}
+										onExecute={handleExecute}
+										isExecuting={isExecuting}
+									/>
+								</div>
+								<div class="border rounded-lg overflow-hidden">
+									<FunctionResponsePanel
+										response={currentResponse}
+										isLoading={isExecuting}
+									/>
+								</div>
+							</div>
+
+							<!-- History panel below -->
+							<div class="border rounded-lg overflow-hidden h-48 shrink-0">
+								<FunctionHistory
+									history={history}
+									onSelect={handleHistorySelect}
+									onClear={handleHistoryClear}
+								/>
+							</div>
 						</div>
 					{/if}
 				</Tabs.Content>
