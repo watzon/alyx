@@ -17,13 +17,22 @@
 	import ChevronsRightIcon from 'lucide-svelte/icons/chevrons-right';
 	import BookOpenIcon from 'lucide-svelte/icons/book-open';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import { browser } from '$app/environment';
 
-	let selectedCollection = $state<string | null>(null);
+	let selectedCollection = $state<string | null>(browser ? window.location.hash.slice(1) || null : null);
 	let pageIndex = $state(1);
 	let pageSize = $state(50);
 	let search = $state('');
 	let drawerOpen = $state(false);
 	let editDocument = $state<Record<string, any> | null>(null);
+
+	$effect(() => {
+		if (browser && selectedCollection) {
+			window.history.replaceState(null, '', `#${selectedCollection}`);
+		} else if (browser && !selectedCollection) {
+			window.history.replaceState(null, '', window.location.pathname);
+		}
+	});
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['schema'],

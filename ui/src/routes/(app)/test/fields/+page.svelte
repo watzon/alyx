@@ -8,7 +8,7 @@
   let boolValue = $state(false);
   let dateValue = $state<string | null>(null);
   let jsonValue = $state(null);
-  let blobValue = $state<File | null>(null);
+  let fileValue = $state<File | null>(null);
 
   const fields: Field[] = [
     { name: 'email', type: 'string', nullable: false, validate: { format: 'email', maxLength: 100 } },
@@ -17,7 +17,7 @@
     { name: 'published', type: 'bool', nullable: false },
     { name: 'createdAt', type: 'timestamp', nullable: false },
     { name: 'metadata', type: 'json', nullable: true },
-    { name: 'avatar', type: 'blob', nullable: true },
+    { name: 'avatar', type: 'file', nullable: true },
   ];
 </script>
 
@@ -31,7 +31,7 @@
     <FieldInput field={fields[3]} bind:value={boolValue} />
     <FieldInput field={fields[4]} bind:value={dateValue} />
     <FieldInput field={fields[5]} bind:value={jsonValue} />
-    <FieldInput field={fields[6]} bind:value={blobValue} />
+    <FieldInput field={fields[6]} bind:value={fileValue} />
   </div>
 
   <div class="mt-8">
@@ -43,7 +43,7 @@
       boolValue,
       dateValue,
       jsonValue,
-      blobValue: blobValue?.name,
+      fileValue: fileValue?.name,
     }, null, 2)}</pre>
   </div>
 </div>

@@ -60,7 +60,7 @@
 				<div class="flex h-14 items-center justify-between">
 					<div class="flex items-center gap-4">
 						<a href="{base}/" class="flex items-center">
-							<img src="{base}/alyx-logo.svg" alt="Alyx" class="h-6" />
+							<img src="{base}/alyx-icon.png" alt="Alyx" class="h-8 w-8 object-contain" />
 						</a>
 					</div>
 

@@ -4,6 +4,7 @@
   import * as Tooltip from '$ui/tooltip';
   import type { Collection, Field } from '$lib/api/client';
   import { files } from '$lib/api/client';
+  import { formatDateTime } from '$lib/utils/datetime';
   import DeleteButton from './DeleteButton.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
 
@@ -28,32 +29,11 @@
     return allowedTypes.some(t => t.startsWith('image/')) || allowedTypes.includes('image/*');
   }
 
-  function formatDate(value: unknown): string {
-    if (value === null || value === undefined) return '-';
-    try {
-      // Handle various date formats
-      let date: Date;
-      if (typeof value === 'number') {
-        // Unix timestamp (seconds or milliseconds)
-        date = new Date(value > 1e12 ? value : value * 1000);
-      } else if (typeof value === 'string') {
-        date = new Date(value);
-      } else {
-        return '-';
-      }
-      // Check if date is valid
-      if (isNaN(date.getTime())) return '-';
-      return date.toLocaleDateString();
-    } catch {
-      return '-';
-    }
-  }
-
   function formatValue(value: unknown, type: string): string {
     if (value === null || value === undefined) return '-';
     if (type === 'bool') return value ? 'Yes' : 'No';
     if (type === 'timestamp' || type === 'datetime') {
-      return formatDate(value);
+      return formatDateTime(value);
     }
     if (typeof value === 'object') {
       return JSON.stringify(value);

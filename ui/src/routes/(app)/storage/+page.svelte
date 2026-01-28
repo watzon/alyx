@@ -17,10 +17,11 @@
 	import ChevronRightIcon from 'lucide-svelte/icons/chevron-right';
 	import ChevronsLeftIcon from 'lucide-svelte/icons/chevrons-left';
 	import ChevronsRightIcon from 'lucide-svelte/icons/chevrons-right';
+	import { browser } from '$app/environment';
 
 	const queryClient = useQueryClient();
 
-	let selectedBucket = $state<string | null>(null);
+	let selectedBucket = $state<string | null>(browser ? window.location.hash.slice(1) || null : null);
 	let viewMode = $state<'table' | 'grid'>('table');
 	let search = $state('');
 	let mimeType = $state('');
@@ -29,6 +30,14 @@
 	let previewOpen = $state(false);
 	let pageIndex = $state(1);
 	let pageSize = $state(50);
+
+	$effect(() => {
+		if (browser && selectedBucket) {
+			window.history.replaceState(null, '', `#${selectedBucket}`);
+		} else if (browser && !selectedBucket) {
+			window.history.replaceState(null, '', window.location.pathname);
+		}
+	});
 
 	const schemaQuery = createQuery(() => ({
 		queryKey: ['admin', 'schema'],

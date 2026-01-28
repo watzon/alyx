@@ -187,6 +187,7 @@
 						<CollectionEditor
 							{collection}
 							allCollections={schema.collections}
+							buckets={schema.buckets}
 							onupdate={(c) => updateCollection(collection._id, c)}
 							ondelete={() => deleteCollection(collection._id)}
 							{disabled}

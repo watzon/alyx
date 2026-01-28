@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Field } from '$lib/api/client';
 
+const SHORT_ID_REGEX = /^[a-zA-Z0-9]{15}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/;
 
@@ -25,6 +26,15 @@ export function fieldToZod(field: Field): z.ZodType {
 	const isOptional = isNullable || hasDefault;
 
 	switch (field.type) {
+		case 'id':
+			return z.preprocess(
+				(val) => (isEmpty(val) ? '' : val),
+				z.string().refine(
+					(val) => val === '' || SHORT_ID_REGEX.test(val),
+					{ message: 'Must be a 15-character alphanumeric ID or empty for auto-generation' }
+				)
+			);
+
 		case 'uuid':
 			return z.preprocess(
 				(val) => (isEmpty(val) ? '' : val),

@@ -4,6 +4,7 @@ import type { Schema, Collection, Field, Index, Rules, RichTextConfig } from '$l
  * Field types supported by Alyx schema
  */
 export const FIELD_TYPES = [
+	'id',
 	'uuid',
 	'string',
 	'text',
@@ -14,6 +15,7 @@ export const FIELD_TYPES = [
 	'timestamp',
 	'json',
 	'blob',
+	'file',
 	'email',
 	'url',
 	'date',
@@ -60,6 +62,16 @@ export interface RelationConfig {
 }
 
 /**
+ * File field configuration
+ */
+export interface FileConfig {
+	bucket: string;
+	maxSize?: number;
+	allowedTypes?: string[];
+	onDelete?: OnDeleteAction;
+}
+
+/**
  * Editable version of Field with a unique ID for tracking
  */
 export interface EditableField {
@@ -85,6 +97,7 @@ export interface EditableField {
 	richtext?: RichTextConfig;
 	select?: SelectConfig;
 	relation?: RelationConfig;
+	file?: FileConfig;
 }
 
 /**
@@ -121,9 +134,17 @@ export interface EditableCollection {
 /**
  * Editable version of Schema
  */
+export interface EditableBucket {
+	name: string;
+	backend: string;
+	maxFileSize?: number;
+	allowedTypes?: string[];
+}
+
 export interface EditableSchema {
 	version: number;
 	collections: EditableCollection[];
+	buckets?: EditableBucket[];
 }
 
 export interface SchemaValidationError {
@@ -278,7 +299,7 @@ export function createEmptyCollection(): EditableCollection {
 			{
 				_id: generateId(),
 				name: 'id',
-				type: 'uuid',
+				type: 'id',
 				primary: true,
 				default: 'auto'
 			}
@@ -294,7 +315,13 @@ export function createEmptyCollection(): EditableCollection {
 export function toEditableSchema(schema: Schema): EditableSchema {
 	return {
 		version: schema.version,
-		collections: (schema.collections ?? []).map((c) => toEditableCollection(c))
+		collections: (schema.collections ?? []).map((c) => toEditableCollection(c)),
+		buckets: (schema.buckets ?? []).map((b: any) => ({
+			name: b.name,
+			backend: b.backend || 'filesystem',
+			maxFileSize: b.maxFileSize,
+			allowedTypes: b.allowedTypes
+		}))
 	};
 }
 
@@ -329,7 +356,8 @@ export function toEditableField(field: Field): EditableField {
 		validate: field.validate as EditableField['validate'],
 		richtext: field.richtext,
 		select: field.select as SelectConfig | undefined,
-		relation: field.relation as RelationConfig | undefined
+		relation: field.relation as RelationConfig | undefined,
+		file: field.file as FileConfig | undefined
 	};
 }
 
@@ -352,6 +380,25 @@ export function toYamlString(schema: EditableSchema): string {
 	const lines: string[] = [];
 	lines.push(`version: ${schema.version}`);
 	lines.push('');
+	
+	if (schema.buckets && schema.buckets.length > 0) {
+		lines.push('buckets:');
+		for (const bucket of schema.buckets) {
+			lines.push(`  ${bucket.name}:`);
+			lines.push(`    backend: ${bucket.backend || 'filesystem'}`);
+			if (bucket.maxFileSize !== undefined) {
+				lines.push(`    max_file_size: ${bucket.maxFileSize}`);
+			}
+			if (bucket.allowedTypes && bucket.allowedTypes.length > 0) {
+				lines.push('    allowed_types:');
+				for (const type of bucket.allowedTypes) {
+					lines.push(`      - ${type}`);
+				}
+			}
+		}
+		lines.push('');
+	}
+	
 	lines.push('collections:');
 
 	for (const collection of schema.collections) {
@@ -436,6 +483,20 @@ export function toYamlString(schema: EditableSchema): string {
 				if (r.onDelete) lines.push(`          onDelete: ${r.onDelete}`);
 				if (r.displayName) lines.push(`          displayName: ${r.displayName}`);
 			}
+
+			if (field.file) {
+				const f = field.file;
+				lines.push('        file:');
+				lines.push(`          bucket: ${f.bucket}`);
+				if (f.maxSize !== undefined) lines.push(`          max_size: ${f.maxSize}`);
+				if (f.allowedTypes && f.allowedTypes.length > 0) {
+					lines.push('          allowed_types:');
+					for (const t of f.allowedTypes) {
+						lines.push(`            - ${t}`);
+					}
+				}
+				if (f.onDelete) lines.push(`          onDelete: ${f.onDelete}`);
+			}
 		}
 
 		if (collection.indexes.length > 0) {
@@ -472,7 +533,8 @@ export function toYamlString(schema: EditableSchema): string {
  */
 export function getFieldTypeInfo(type: FieldType): { label: string; description: string } {
 	const info: Record<FieldType, { label: string; description: string }> = {
-		uuid: { label: 'UUID', description: 'Unique identifier (auto-generated)' },
+		id: { label: 'ID', description: '15-character alphanumeric identifier (recommended)' },
+		uuid: { label: 'UUID', description: 'Full UUID identifier (36 characters)' },
 		string: { label: 'String', description: 'Short text (up to 255 chars)' },
 		text: { label: 'Text', description: 'Long text (unlimited)' },
 		richtext: { label: 'Rich Text', description: 'Formatted HTML content' },
@@ -481,7 +543,8 @@ export function getFieldTypeInfo(type: FieldType): { label: string; description:
 		bool: { label: 'Boolean', description: 'True/false value' },
 		timestamp: { label: 'Timestamp', description: 'Date and time' },
 		json: { label: 'JSON', description: 'Arbitrary JSON data' },
-		blob: { label: 'Blob', description: 'Binary data' },
+		blob: { label: 'Blob', description: 'Binary data (base64)' },
+		file: { label: 'File', description: 'File reference (UUID)' },
 		email: { label: 'Email', description: 'Email address' },
 		url: { label: 'URL', description: 'Web URL address' },
 		date: { label: 'Date', description: 'Date only (YYYY-MM-DD)' },

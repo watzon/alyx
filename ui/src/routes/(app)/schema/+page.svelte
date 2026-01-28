@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { admin, type Schema, type Collection } from '$lib/api/client';
+	import { admin, type Schema, type Collection, type PendingChange, type SchemaChange } from '$lib/api/client';
 	import { configStore } from '$lib/stores/config.svelte';
 	import * as Card from '$ui/card';
 	import * as Tabs from '$ui/tabs';
 	import * as Tooltip from '$ui/tooltip';
+	import * as AlertDialog from '$ui/alert-dialog';
 	import { Skeleton } from '$ui/skeleton';
 	import { Badge } from '$ui/badge';
 	import { Button } from '$ui/button';
@@ -19,18 +20,25 @@
 	import EyeIcon from 'lucide-svelte/icons/eye';
 	import SaveIcon from 'lucide-svelte/icons/save';
 	import XIcon from 'lucide-svelte/icons/x';
+	import AlertTriangleIcon from 'lucide-svelte/icons/triangle-alert';
+	import TrashIcon from 'lucide-svelte/icons/trash-2';
 	import { browser } from '$app/environment';
 
 	const queryClient = useQueryClient();
 
 	let isEditMode = $state(false);
-	let isVisualEditMode = $state(false);
 	let editedContent = $state('');
 	let editableSchema = $state<EditableSchema | null>(null);
 	let saveError = $state<string | null>(null);
 	let validationErrors = $state<SchemaValidationError[]>([]);
 	let activeTab = $state<string>('');
-	let initialTabFromHash = browser ? window.location.hash.slice(1) : '';
+	let showPendingDialog = $state(false);
+	let showPreviewDialog = $state(false);
+	let previewChanges = $state<{ safe: SchemaChange[]; unsafe: SchemaChange[] }>({ safe: [], unsafe: [] });
+
+	let initialHashFromUrl = browser ? window.location.hash.slice(1) : '';
+	let isVisualEditMode = $state(initialHashFromUrl.startsWith('visual-edit'));
+	let initialTabFromHash = isVisualEditMode ? initialHashFromUrl.replace('visual-edit:', '') : initialHashFromUrl;
 
 	function sortCollections(collections: Collection[] | undefined): Collection[] {
 		if (!collections) return [];
@@ -39,7 +47,8 @@
 
 	function updateHashFromTab(tab: string) {
 		if (browser && tab) {
-			window.history.replaceState(null, '', `#${tab}`);
+			const hash = isVisualEditMode ? `visual-edit:${tab}` : tab;
+			window.history.replaceState(null, '', `#${hash}`);
 		}
 	}
 
@@ -68,7 +77,53 @@
 		enabled: configStore.isDevMode
 	}));
 
+	const pendingChangesQuery = createQuery(() => ({
+		queryKey: ['admin', 'schema', 'pending'],
+		queryFn: async () => {
+			const result = await admin.pendingChanges.list();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		enabled: configStore.isDevMode,
+		refetchInterval: 5000
+	}));
+
+	const confirmChangesMutation = createMutation(() => ({
+		mutationFn: async () => {
+			const result = await admin.pendingChanges.confirm();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		onSuccess: (data) => {
+			toast.success(`Applied ${data.applied} schema change${data.applied !== 1 ? 's' : ''}`);
+			showPendingDialog = false;
+			queryClient.invalidateQueries({ queryKey: ['admin', 'schema'] });
+			queryClient.invalidateQueries({ queryKey: ['admin', 'schema', 'pending'] });
+		},
+		onError: (error: Error) => {
+			toast.error('Failed to apply changes: ' + error.message);
+		}
+	}));
+
+	const cancelChangesMutation = createMutation(() => ({
+		mutationFn: async () => {
+			const result = await admin.pendingChanges.cancel();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		onSuccess: () => {
+			toast.success('Pending changes cancelled');
+			showPendingDialog = false;
+			queryClient.invalidateQueries({ queryKey: ['admin', 'schema', 'pending'] });
+		},
+		onError: (error: Error) => {
+			toast.error('Failed to cancel changes: ' + error.message);
+		}
+	}));
+
 	const sortedCollections = $derived(sortCollections(schemaQuery.data?.collections));
+	const hasPendingChanges = $derived(pendingChangesQuery.data?.pending ?? false);
+	const pendingChanges = $derived(pendingChangesQuery.data?.changes ?? []);
 
 	$effect(() => {
 		if (sortedCollections.length > 0 && !activeTab) {
@@ -78,22 +133,51 @@
 		}
 	});
 
-	const saveMutation = createMutation(() => ({
+	const previewMutation = createMutation(() => ({
 		mutationFn: async (content: string) => {
-			const result = await admin.schemaRaw.update(content);
+			const result = await admin.schemaDraft.preview(content);
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
 		},
-		onSuccess: () => {
-			toast.success('Schema saved successfully. Changes will be applied on server restart or hot-reload.');
+		onSuccess: (data) => {
+			previewChanges = { safe: data.safeChanges || [], unsafe: data.unsafeChanges || [] };
+			showPreviewDialog = true;
+		},
+		onError: (error: Error) => {
+			saveError = error.message;
+			toast.error('Failed to validate schema: ' + error.message);
+		}
+	}));
+
+	const applyMutation = createMutation(() => ({
+		mutationFn: async () => {
+			const result = await admin.schemaDraft.apply();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		onSuccess: (data) => {
+			toast.success(`Applied ${data.safeApplied + data.unsafeApplied} schema change${data.safeApplied + data.unsafeApplied !== 1 ? 's' : ''}`);
+			showPreviewDialog = false;
 			isEditMode = false;
+			isVisualEditMode = false;
 			saveError = null;
 			queryClient.invalidateQueries({ queryKey: ['admin', 'schema'] });
 			queryClient.invalidateQueries({ queryKey: ['admin', 'schema', 'raw'] });
 		},
 		onError: (error: Error) => {
-			saveError = error.message;
-			toast.error('Failed to save schema: ' + error.message);
+			toast.error('Failed to apply changes: ' + error.message);
+		}
+	}));
+
+	const cancelDraftMutation = createMutation(() => ({
+		mutationFn: async () => {
+			const result = await admin.schemaDraft.cancel();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		onSuccess: () => {
+			showPreviewDialog = false;
+			previewChanges = { safe: [], unsafe: [] };
 		}
 	}));
 
@@ -110,6 +194,7 @@
 			editableSchema = toEditableSchema(schemaQuery.data);
 			isVisualEditMode = true;
 			isEditMode = false;
+			updateHashFromTab(activeTab);
 		}
 	}
 
@@ -121,10 +206,11 @@
 		if (schemaRawQuery.data) {
 			editedContent = schemaRawQuery.data.content;
 		}
+		updateHashFromTab(activeTab);
 	}
 
 	function saveSchema() {
-		saveMutation.mutate(editedContent);
+		previewMutation.mutate(editedContent);
 	}
 
 	function saveVisualSchema() {
@@ -138,12 +224,13 @@
 			validationErrors = [];
 			saveError = null;
 			const yamlContent = toYamlString(editableSchema);
-			saveMutation.mutate(yamlContent);
+			previewMutation.mutate(yamlContent);
 		}
 	}
 
 	function getFieldTypeColor(type: string): string {
 		switch (type) {
+			case 'id':
 			case 'uuid':
 				return 'bg-purple-500/10 text-purple-500';
 			case 'string':
@@ -162,9 +249,42 @@
 				return 'bg-muted text-muted-foreground';
 		}
 	}
+
+	function getChangeTypeColor(type: string): string {
+		if (type.includes('drop')) {
+			return 'bg-red-500/10 text-red-500 border-red-500/20';
+		}
+		if (type.includes('modify')) {
+			return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+		}
+		return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+	}
+
+	function formatChangeType(type: string): string {
+		return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+	}
 </script>
 
 <div class="max-w-screen-2xl mx-auto space-y-6">
+	{#if configStore.isDevMode && hasPendingChanges}
+		<div class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<AlertTriangleIcon class="h-5 w-5 text-amber-500" />
+					<div>
+						<p class="font-medium text-amber-500">Pending Schema Changes</p>
+						<p class="text-sm text-muted-foreground">
+							{pendingChanges.length} unsafe change{pendingChanges.length !== 1 ? 's' : ''} require{pendingChanges.length === 1 ? 's' : ''} your confirmation
+						</p>
+					</div>
+				</div>
+				<Button variant="outline" size="sm" onclick={() => showPendingDialog = true}>
+					Review Changes
+				</Button>
+			</div>
+		</div>
+	{/if}
+
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Schema</h1>
@@ -181,13 +301,13 @@
 		{#if configStore.isDevMode}
 			<div class="flex items-center gap-2">
 				{#if isEditMode || isVisualEditMode}
-					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saveMutation.isPending}>
+					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={previewMutation.isPending}>
 						<XIcon class="h-4 w-4 mr-2" />
 						Cancel
 					</Button>
-					<Button size="sm" onclick={isEditMode ? saveSchema : saveVisualSchema} disabled={saveMutation.isPending}>
+					<Button size="sm" onclick={isEditMode ? saveSchema : saveVisualSchema} disabled={previewMutation.isPending}>
 						<SaveIcon class="h-4 w-4 mr-2" />
-						{saveMutation.isPending ? 'Saving...' : 'Save'}
+						{previewMutation.isPending ? 'Validating...' : 'Save'}
 					</Button>
 				{:else}
 					<Button
@@ -239,7 +359,7 @@
 			schema={editableSchema}
 			onchange={(s) => { editableSchema = s; validationErrors = []; }}
 			initialCollection={activeTab}
-			disabled={saveMutation.isPending}
+			disabled={previewMutation.isPending}
 			errors={validationErrors}
 		/>
 	{:else if schemaQuery.isPending}
@@ -380,3 +500,138 @@
 		</Tabs.Root>
 	{/if}
 </div>
+
+<AlertDialog.Root bind:open={showPendingDialog}>
+	<AlertDialog.Content class="max-w-2xl">
+		<AlertDialog.Header>
+			<AlertDialog.Title class="flex items-center gap-2">
+				<AlertTriangleIcon class="h-5 w-5 text-amber-500" />
+				Confirm Schema Changes
+			</AlertDialog.Title>
+			<AlertDialog.Description>
+				The following changes may result in data loss. Please review carefully before applying.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<div class="max-h-80 overflow-y-auto space-y-2 py-4">
+			{#each pendingChanges as change}
+				<div class="flex items-start gap-3 rounded-md border p-3">
+					<Badge variant="outline" class={getChangeTypeColor(change.type)}>
+						{formatChangeType(change.type)}
+					</Badge>
+					<div class="flex-1 min-w-0">
+						<p class="font-mono text-sm">
+							{change.collection}{change.field ? `.${change.field}` : ''}
+						</p>
+						<p class="text-sm text-muted-foreground">{change.description}</p>
+					</div>
+					{#if change.type.includes('drop')}
+						<TrashIcon class="h-4 w-4 text-red-500 shrink-0" />
+					{/if}
+				</div>
+			{/each}
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel 
+				disabled={confirmChangesMutation.isPending || cancelChangesMutation.isPending}
+				onclick={() => cancelChangesMutation.mutate()}
+			>
+				Cancel Changes
+			</AlertDialog.Cancel>
+			<AlertDialog.Action
+				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+				disabled={confirmChangesMutation.isPending || cancelChangesMutation.isPending}
+				onclick={() => confirmChangesMutation.mutate()}
+			>
+				{confirmChangesMutation.isPending ? 'Applying...' : 'Apply Changes'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<AlertDialog.Root bind:open={showPreviewDialog}>
+	<AlertDialog.Content class="max-w-3xl max-h-[90vh] flex flex-col">
+		<AlertDialog.Header>
+			<AlertDialog.Title>Preview Schema Changes</AlertDialog.Title>
+			<AlertDialog.Description>
+				Review the changes that will be applied to your database schema.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		
+		<div class="flex-1 overflow-y-auto space-y-4 py-4">
+			{#if previewChanges.safe.length > 0}
+				<div class="space-y-2">
+					<h3 class="font-semibold text-sm text-green-500 flex items-center gap-2">
+						Safe Changes ({previewChanges.safe.length})
+					</h3>
+					<div class="space-y-2">
+						{#each previewChanges.safe as change}
+							<div class="flex items-start gap-3 rounded-md border border-green-500/20 bg-green-500/5 p-3">
+								<Badge variant="outline" class="bg-green-500/10 text-green-500 border-green-500/20">
+									{formatChangeType(change.Type)}
+								</Badge>
+								<div class="flex-1 min-w-0">
+									<p class="font-mono text-sm">
+										{change.Collection}{change.Field ? `.${change.Field}` : ''}
+									</p>
+									<p class="text-sm text-muted-foreground">{change.Description}</p>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if previewChanges.unsafe.length > 0}
+				<div class="space-y-2">
+					<h3 class="font-semibold text-sm text-amber-500 flex items-center gap-2">
+						<AlertTriangleIcon class="h-4 w-4" />
+						Unsafe Changes ({previewChanges.unsafe.length})
+					</h3>
+					<div class="space-y-2">
+						{#each previewChanges.unsafe as change}
+							<div class="flex items-start gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+								<Badge variant="outline" class={getChangeTypeColor(change.Type)}>
+									{formatChangeType(change.Type)}
+								</Badge>
+								<div class="flex-1 min-w-0">
+									<p class="font-mono text-sm">
+										{change.Collection}{change.Field ? `.${change.Field}` : ''}
+									</p>
+									<p class="text-sm text-muted-foreground">{change.Description}</p>
+								</div>
+								{#if change.Type.includes('drop')}
+									<TrashIcon class="h-4 w-4 text-red-500 shrink-0" />
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if previewChanges.safe.length === 0 && previewChanges.unsafe.length === 0}
+				<div class="text-center py-8 text-muted-foreground">
+					No changes detected
+				</div>
+			{/if}
+		</div>
+		
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel 
+				disabled={applyMutation.isPending}
+				onclick={() => cancelDraftMutation.mutate()}
+			>
+				Cancel
+			</AlertDialog.Cancel>
+			<AlertDialog.Action
+				class={previewChanges.unsafe.length > 0 ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+				disabled={applyMutation.isPending || (previewChanges.safe.length === 0 && previewChanges.unsafe.length === 0)}
+				onclick={async (e) => {
+					e.preventDefault();
+					await applyMutation.mutateAsync();
+				}}
+			>
+				{applyMutation.isPending ? 'Applying...' : `Apply ${previewChanges.safe.length + previewChanges.unsafe.length} Change${previewChanges.safe.length + previewChanges.unsafe.length !== 1 ? 's' : ''}`}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

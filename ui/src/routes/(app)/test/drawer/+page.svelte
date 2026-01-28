@@ -10,7 +10,7 @@
   const mockCollection: Collection = {
     name: 'posts',
     fields: [
-      { name: 'id', type: 'uuid', primary: true },
+      { name: 'id', type: 'id', primary: true },
       { name: 'title', type: 'string', nullable: false, validate: { maxLength: 100 } },
       { name: 'content', type: 'text', nullable: true },
       { name: 'published', type: 'bool', nullable: false, default: false },

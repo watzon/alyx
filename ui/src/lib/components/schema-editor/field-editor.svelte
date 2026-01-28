@@ -11,6 +11,7 @@
 		type FieldType,
 		type SelectConfig,
 		type RelationConfig,
+		type FileConfig,
 		type SchemaValidationError,
 		supportsValidation,
 		VALIDATION_FORMATS,
@@ -28,6 +29,7 @@
 	interface Props {
 		field: EditableField;
 		allCollections: EditableCollection[];
+		buckets?: Array<{ name: string }>;
 		hasPrimaryField: boolean;
 		onupdate: (field: EditableField) => void;
 		ondelete: () => void;
@@ -44,6 +46,7 @@
 	let {
 		field,
 		allCollections,
+		buckets = [],
 		hasPrimaryField,
 		onupdate,
 		ondelete,
@@ -112,6 +115,16 @@
 		onupdate({ ...field, relation });
 	}
 
+	function updateFileConfig<K extends keyof FileConfig>(key: K, value: FileConfig[K]) {
+		const file = { ...(field.file ?? { bucket: '' }) };
+		if (value === undefined || value === '') {
+			delete file[key];
+		} else {
+			file[key] = value;
+		}
+		onupdate({ ...field, file });
+	}
+
 	function handleTypeChange(type: FieldType) {
 		const updated: EditableField = { ...field, type };
 		if (type !== 'richtext') {
@@ -123,11 +136,14 @@
 		if (type !== 'relation') {
 			delete updated.relation;
 		}
+		if (type !== 'file') {
+			delete updated.file;
+		}
 		if (!['string', 'text', 'int', 'float', 'email', 'url'].includes(type)) {
 			delete updated.validate;
 		}
 		// Auto-expand for types that require config
-		if (type === 'select' || type === 'relation') {
+		if (type === 'select' || type === 'relation' || type === 'file') {
 			expanded = true;
 		}
 		onupdate(updated);
@@ -137,6 +153,10 @@
 
 	const collectionOptions = $derived(
 		allCollections.map((c) => ({ value: c.name, label: c.name }))
+	);
+
+	const bucketOptions = $derived(
+		buckets.map((b) => ({ value: b.name, label: b.name }))
 	);
 
 	// Types that support default values in the options panel
@@ -154,6 +174,7 @@
 		field.type === 'richtext' ||
 		field.type === 'select' ||
 		field.type === 'relation' ||
+		field.type === 'file' ||
 		supportsDefaultValue
 	);
 
@@ -168,7 +189,8 @@
 
 	const needsConfig = $derived(
 		(field.type === 'select' && (!field.select?.values || field.select.values.length === 0)) ||
-		(field.type === 'relation' && !field.relation?.collection)
+		(field.type === 'relation' && !field.relation?.collection) ||
+		(field.type === 'file' && !field.file?.bucket)
 	);
 </script>
 
@@ -427,13 +449,87 @@
 							</div>
 						</div>
 
-						{#if !field.relation?.collection}
-							<p class="text-sm text-amber-600">A target collection must be selected.</p>
-						{/if}
-					</div>
-				{/if}
+					{#if !field.relation?.collection}
+						<p class="text-sm text-amber-600">A target collection must be selected.</p>
+					{/if}
+				</div>
+			{/if}
 
-				<!-- Default Value (for types that support it) -->
+			<!-- File Field Options -->
+			{#if field.type === 'file'}
+				<div class="space-y-3">
+					<Label class="text-sm font-medium">File Configuration</Label>
+					
+					<div class="grid grid-cols-2 gap-3">
+						<div class="space-y-1">
+							<Label class="text-xs text-muted-foreground">Bucket *</Label>
+							<select
+								class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+								value={field.file?.bucket ?? ''}
+								onchange={(e) => updateFileConfig('bucket', e.currentTarget.value)}
+							>
+								<option value="">Select bucket...</option>
+								{#each bucketOptions as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div class="space-y-1">
+							<Label class="text-xs text-muted-foreground">On Delete</Label>
+							<select
+								class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+								value={field.file?.onDelete ?? 'restrict'}
+								onchange={(e) => updateFileConfig('onDelete', e.currentTarget.value as FileConfig['onDelete'])}
+							>
+								{#each ON_DELETE_ACTIONS as action}
+									<option value={action}>{action}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+
+					<div class="space-y-1">
+						<Label class="text-xs text-muted-foreground">Max File Size (bytes)</Label>
+						<Input
+							type="number"
+							class="h-9"
+							min="0"
+							placeholder="Unlimited"
+							value={field.file?.maxSize ?? ''}
+							onchange={(e) => {
+								const v = e.currentTarget.value;
+								updateFileConfig('maxSize', v ? parseInt(v) : undefined);
+							}}
+						/>
+						<p class="text-xs text-muted-foreground">
+							Leave empty for unlimited. Examples: 5242880 (5MB), 10485760 (10MB)
+						</p>
+					</div>
+
+					<div class="space-y-1">
+						<Label class="text-xs text-muted-foreground">Allowed MIME Types</Label>
+						<Input
+							class="h-9"
+							placeholder="image/jpeg, image/png, application/pdf"
+							value={field.file?.allowedTypes?.join(', ') ?? ''}
+							onchange={(e) => {
+								const v = e.currentTarget.value.trim();
+								updateFileConfig('allowedTypes', v ? v.split(',').map(t => t.trim()) : undefined);
+							}}
+						/>
+						<p class="text-xs text-muted-foreground">
+							Comma-separated. Leave empty to allow all types. Supports wildcards: image/*
+						</p>
+					</div>
+
+					{#if !field.file?.bucket}
+						<p class="text-sm text-amber-600">Bucket selection is required for file fields.</p>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Default Value (for types that support it) -->
 				{#if supportsDefaultValue}
 					<div class="space-y-1">
 						<Label class="text-xs text-muted-foreground">Default Value</Label>

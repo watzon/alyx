@@ -24,6 +24,7 @@
 	interface Props {
 		collection: EditableCollection;
 		allCollections: EditableCollection[];
+		buckets?: Array<{ name: string }>;
 		onupdate: (collection: EditableCollection) => void;
 		ondelete: () => void;
 		disabled?: boolean;
@@ -33,6 +34,7 @@
 	let {
 		collection,
 		allCollections,
+		buckets = [],
 		onupdate,
 		ondelete,
 		disabled = false,
@@ -212,6 +214,7 @@
 					<FieldEditor
 						{field}
 						{allCollections}
+						{buckets}
 						{hasPrimaryField}
 						onupdate={(f) => updateField(field._id, f)}
 						ondelete={() => deleteField(field._id)}

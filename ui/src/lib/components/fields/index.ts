@@ -6,4 +6,5 @@ export { default as BooleanField } from './BooleanField.svelte';
 export { default as DateField } from './DateField.svelte';
 export { default as JsonField } from './JsonField.svelte';
 export { default as BlobField } from './BlobField.svelte';
+export { default as FileField } from './FileField.svelte';
 export { default as ReferenceField } from './ReferenceField.svelte';

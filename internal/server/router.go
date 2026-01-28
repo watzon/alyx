@@ -59,6 +59,9 @@ func (r *Router) setupRoutes() {
 	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config(), r.server.Rules())
 	r.mainHandlers = h
 
+	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth)
+	authService := authHandlers.Service()
+
 	if r.server.cfg.AdminUI.Enabled {
 		uiHandler := adminui.New(&r.server.cfg.AdminUI)
 		basePath := r.server.cfg.AdminUI.Path
@@ -80,14 +83,12 @@ func (r *Router) setupRoutes() {
 	r.mux.Handle("GET /metrics", metrics.Handler())
 
 	r.mux.HandleFunc("GET /api/config", r.wrap(h.Config))
-	r.mux.HandleFunc("GET /api/collections/{collection}", r.wrap(h.ListDocuments))
-	r.mux.HandleFunc("POST /api/collections/{collection}", r.wrap(h.CreateDocument))
-	r.mux.HandleFunc("GET /api/collections/{collection}/{id}", r.wrap(h.GetDocument))
-	r.mux.HandleFunc("PATCH /api/collections/{collection}/{id}", r.wrap(h.UpdateDocument))
-	r.mux.HandleFunc("PUT /api/collections/{collection}/{id}", r.wrap(h.UpdateDocument))
-	r.mux.HandleFunc("DELETE /api/collections/{collection}/{id}", r.wrap(h.DeleteDocument))
-
-	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth)
+	r.mux.HandleFunc("GET /api/collections/{collection}", r.wrapWithOptionalAuth(h.ListDocuments, authService))
+	r.mux.HandleFunc("POST /api/collections/{collection}", r.wrapWithOptionalAuth(h.CreateDocument, authService))
+	r.mux.HandleFunc("GET /api/collections/{collection}/{id}", r.wrapWithOptionalAuth(h.GetDocument, authService))
+	r.mux.HandleFunc("PATCH /api/collections/{collection}/{id}", r.wrapWithOptionalAuth(h.UpdateDocument, authService))
+	r.mux.HandleFunc("PUT /api/collections/{collection}/{id}", r.wrapWithOptionalAuth(h.UpdateDocument, authService))
+	r.mux.HandleFunc("DELETE /api/collections/{collection}/{id}", r.wrapWithOptionalAuth(h.DeleteDocument, authService))
 	r.mux.HandleFunc("GET /api/auth/status", r.wrap(authHandlers.Status))
 	r.mux.HandleFunc("POST /api/auth/register", r.wrap(authHandlers.Register))
 	r.mux.HandleFunc("POST /api/auth/login", r.wrap(authHandlers.Login))
@@ -250,6 +251,16 @@ func (r *Router) wrap(fn handlers.HandlerFunc) http.HandlerFunc {
 func (r *Router) wrapWithAuth(fn handlers.HandlerFunc, authService *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		middleware := auth.RequireAuth(authService)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			fn(w, req)
+		}))
+		handler.ServeHTTP(w, req)
+	}
+}
+
+func (r *Router) wrapWithOptionalAuth(fn handlers.HandlerFunc, authService *auth.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		middleware := auth.OptionalAuth(authService)
 		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			fn(w, req)
 		}))

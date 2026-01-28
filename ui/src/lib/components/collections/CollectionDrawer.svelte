@@ -93,12 +93,21 @@
 
   const { form: formData, enhance, errors, submitting, reset, allErrors } = form;
 
+  // Track if user has actually modified the form
+  let userHasModified = $state(false);
+
   // Reset form when drawer opens or document changes
   $effect(() => {
     if (open) {
       reset({ data: initialData });
+      userHasModified = false;
     }
   });
+
+  // Mark form as modified when user changes any field
+  function handleFieldChange() {
+    userHasModified = true;
+  }
 
   async function processFileFields(data: Record<string, any>): Promise<Record<string, any>> {
     const processed = { ...data };
@@ -168,9 +177,9 @@
 
   // Handle drawer close with unsaved changes warning
   function handleOpenChange(newOpen: boolean) {
-    if (!newOpen && form.tainted && !isLoading) {
-      const confirm = window.confirm('You have unsaved changes. Are you sure you want to close?');
-      if (!confirm) return;
+    if (!newOpen && userHasModified && !isLoading) {
+      const confirmed = window.confirm('You have unsaved changes. Are you sure you want to close?');
+      if (!confirmed) return;
     }
     open = newOpen;
   }
@@ -196,7 +205,7 @@
       </Sheet.Title>
     </Sheet.Header>
 
-    <form method="POST" use:enhance class="pb-24 px-6">
+    <form method="POST" use:enhance class="pb-24 px-6" oninput={handleFieldChange} onchange={handleFieldChange}>
       <div class="space-y-3">
         {#if primaryKeyField && !isEditMode}
           {@const fieldErrors = $errors[primaryKeyField.name]}
@@ -236,7 +245,7 @@
         <Button
           type="button"
           variant="outline"
-          onclick={() => (open = false)}
+          onclick={() => handleOpenChange(false)}
           disabled={isLoading}
           class="min-w-[100px]"
         >

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,11 +32,14 @@ type AdminHandlers struct {
 	schemaPath    string
 	configPath    string
 	startTime     time.Time
+	pendingStore  *schema.PendingChangesStore
+	migrator      *schema.Migrator
+	draftSchemas  map[string]string // session_id -> draft YAML content
 }
 
 // NewAdminHandlers creates new admin handlers.
 func NewAdminHandlers(deployService *deploy.Service, authService *auth.Service, db *database.DB, sch *schema.Schema, funcService *functions.Service, cfg *config.Config, schemaPath, configPath string) *AdminHandlers {
-	return &AdminHandlers{
+	h := &AdminHandlers{
 		deployService: deployService,
 		authService:   authService,
 		db:            db,
@@ -45,7 +49,18 @@ func NewAdminHandlers(deployService *deploy.Service, authService *auth.Service, 
 		schemaPath:    schemaPath,
 		configPath:    configPath,
 		startTime:     time.Now(),
+		draftSchemas:  make(map[string]string),
 	}
+
+	if db != nil && db.DB != nil {
+		h.pendingStore = schema.NewPendingChangesStore(db.DB)
+		if err := h.pendingStore.Init(); err != nil {
+			log.Error().Err(err).Msg("Failed to initialize pending changes store")
+		}
+		h.migrator = schema.NewMigrator(db.DB, schemaPath, "")
+	}
+
+	return h
 }
 
 // requireAdminAuth validates either a JWT token from an admin user or a deploy token.
@@ -367,10 +382,34 @@ func (h *AdminHandlers) SchemaGet(w http.ResponseWriter, r *http.Request) {
 	for _, col := range h.schema.Collections {
 		collections = append(collections, serializeCollection(col))
 	}
+	// Sort collections by name
+	sort.Slice(collections, func(i, j int) bool {
+		return collections[i]["name"].(string) < collections[j]["name"].(string)
+	})
+
+	buckets := make([]map[string]any, 0, len(h.schema.Buckets))
+	for name, bucket := range h.schema.Buckets {
+		b := map[string]any{
+			"name":    name,
+			"backend": bucket.Backend,
+		}
+		if bucket.MaxFileSize > 0 {
+			b["maxFileSize"] = bucket.MaxFileSize
+		}
+		if len(bucket.AllowedTypes) > 0 {
+			b["allowedTypes"] = bucket.AllowedTypes
+		}
+		buckets = append(buckets, b)
+	}
+	// Sort buckets by name
+	sort.Slice(buckets, func(i, j int) bool {
+		return buckets[i]["name"].(string) < buckets[j]["name"].(string)
+	})
 
 	JSON(w, http.StatusOK, map[string]any{
 		"version":     h.schema.Version,
 		"collections": collections,
+		"buckets":     buckets,
 	})
 }
 
@@ -493,6 +532,21 @@ func serializeField(f *schema.Field) map[string]any {
 			relation["displayName"] = f.Relation.DisplayName
 		}
 		field["relation"] = relation
+	}
+	if f.File != nil {
+		fileConfig := map[string]any{
+			"bucket": f.File.Bucket,
+		}
+		if f.File.MaxSize > 0 {
+			fileConfig["maxSize"] = f.File.MaxSize
+		}
+		if len(f.File.AllowedTypes) > 0 {
+			fileConfig["allowedTypes"] = f.File.AllowedTypes
+		}
+		if f.File.OnDelete != "" {
+			fileConfig["onDelete"] = string(f.File.OnDelete)
+		}
+		field["file"] = fileConfig
 	}
 	return field
 }
@@ -985,4 +1039,316 @@ func validateCELExpression(expr string) error {
 	}
 
 	return nil
+}
+
+func (h *AdminHandlers) SchemaPendingChanges(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if h.pendingStore == nil {
+		Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Pending changes store not initialized")
+		return
+	}
+
+	changes, err := h.pendingStore.ListUnsafe()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list pending changes")
+		InternalError(w, "Failed to list pending changes")
+		return
+	}
+
+	hasPending, _ := h.pendingStore.HasPending()
+
+	JSON(w, http.StatusOK, map[string]any{
+		"pending": hasPending,
+		"changes": changes,
+		"total":   len(changes),
+	})
+}
+
+func (h *AdminHandlers) SchemaConfirmChanges(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Schema changes can only be confirmed in development mode")
+		return
+	}
+
+	if h.pendingStore == nil || h.migrator == nil {
+		Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Migration services not initialized")
+		return
+	}
+
+	pending, err := h.pendingStore.ListUnsafe()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list pending changes")
+		InternalError(w, "Failed to list pending changes")
+		return
+	}
+
+	if len(pending) == 0 {
+		JSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"message": "No pending changes to apply",
+			"applied": 0,
+		})
+		return
+	}
+
+	changes := h.pendingStore.ToChanges(pending)
+
+	validationErrors := h.migrator.ValidateUnsafeChanges(changes)
+	if len(validationErrors) > 0 {
+		errorDetails := make([]map[string]string, len(validationErrors))
+		for i, ve := range validationErrors {
+			errorDetails[i] = map[string]string{
+				"path":    ve.Path,
+				"message": ve.Message,
+			}
+		}
+		Error(w, http.StatusConflict, "VALIDATION_FAILED", "Some changes cannot be applied")
+		return
+	}
+
+	if err := h.migrator.ApplyUnsafeChanges(changes); err != nil {
+		log.Error().Err(err).Msg("Failed to apply unsafe changes")
+		Error(w, http.StatusInternalServerError, "MIGRATION_FAILED", err.Error())
+		return
+	}
+
+	if h.schema != nil {
+		gen := schema.NewSQLGenerator(h.schema)
+		for _, col := range h.schema.Collections {
+			for _, stmt := range gen.GenerateTriggers(col) {
+				if _, err := h.db.Exec(stmt); err != nil {
+					log.Warn().Err(err).Str("trigger", stmt[:50]).Msg("Failed to recreate trigger")
+				}
+			}
+		}
+	}
+
+	if err := h.pendingStore.Clear(); err != nil {
+		log.Error().Err(err).Msg("Failed to clear pending changes")
+	}
+
+	log.Info().Int("count", len(changes)).Msg("Applied unsafe schema changes")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Schema changes applied successfully",
+		"applied": len(changes),
+	})
+}
+
+func (h *AdminHandlers) SchemaCancelChanges(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if h.pendingStore == nil {
+		Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Pending changes store not initialized")
+		return
+	}
+
+	if err := h.pendingStore.Clear(); err != nil {
+		log.Error().Err(err).Msg("Failed to clear pending changes")
+		InternalError(w, "Failed to clear pending changes")
+		return
+	}
+
+	log.Info().Msg("Cancelled pending schema changes")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Pending changes cancelled",
+	})
+}
+
+func (h *AdminHandlers) SchemaDraftPreview(w http.ResponseWriter, r *http.Request) {
+	token, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Schema editing is only available in development mode")
+		return
+	}
+
+	var input struct {
+		Content string `json:"content"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&input); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	if input.Content == "" {
+		BadRequest(w, "Content is required")
+		return
+	}
+
+	newSchema, parseErr := schema.Parse([]byte(input.Content))
+	if parseErr != nil {
+		Error(w, http.StatusBadRequest, "INVALID_SCHEMA", parseErr.Error())
+		return
+	}
+
+	sessionID := token.Name
+	h.draftSchemas[sessionID] = input.Content
+
+	currentSchema, err := schema.InferFromDB(h.db.DB)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to infer current schema from database")
+		InternalError(w, "Failed to load current schema")
+		return
+	}
+
+	differ := schema.NewDiffer()
+	diff := differ.Diff(currentSchema, newSchema)
+
+	safeChanges := differ.SafeChanges(diff)
+	unsafeChanges := differ.UnsafeChanges(diff)
+
+	JSON(w, http.StatusOK, map[string]any{
+		"sessionId":     sessionID,
+		"valid":         true,
+		"safeChanges":   safeChanges,
+		"unsafeChanges": unsafeChanges,
+		"totalChanges":  len(diff),
+	})
+}
+
+func (h *AdminHandlers) SchemaDraftApply(w http.ResponseWriter, r *http.Request) {
+	token, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Schema changes can only be applied in development mode")
+		return
+	}
+
+	if h.schemaPath == "" {
+		Error(w, http.StatusNotFound, "SCHEMA_NOT_FOUND", "Schema file path not configured")
+		return
+	}
+
+	sessionID := token.Name
+	draftContent, exists := h.draftSchemas[sessionID]
+	if !exists {
+		Error(w, http.StatusNotFound, "NO_DRAFT", "No draft schema found. Call PUT /api/admin/schema first.")
+		return
+	}
+
+	newSchema, parseErr := schema.Parse([]byte(draftContent))
+	if parseErr != nil {
+		Error(w, http.StatusBadRequest, "INVALID_SCHEMA", parseErr.Error())
+		return
+	}
+
+	currentSchema, err := schema.InferFromDB(h.db.DB)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to infer current schema")
+		InternalError(w, "Failed to load current schema")
+		return
+	}
+
+	differ := schema.NewDiffer()
+	diff := differ.Diff(currentSchema, newSchema)
+
+	safeChanges := differ.SafeChanges(diff)
+	unsafeChanges := differ.UnsafeChanges(diff)
+
+	migrator := schema.NewMigrator(h.db.DB, h.schemaPath, "")
+
+	if len(safeChanges) > 0 {
+		if err := migrator.ApplySafeChanges(safeChanges); err != nil {
+			log.Error().Err(err).Msg("Failed to apply safe changes")
+			Error(w, http.StatusInternalServerError, "SAFE_MIGRATION_FAILED", err.Error())
+			return
+		}
+	}
+
+	if len(unsafeChanges) > 0 {
+		validationErrors := migrator.ValidateUnsafeChanges(unsafeChanges)
+		if len(validationErrors) > 0 {
+			errorDetails := make([]map[string]string, len(validationErrors))
+			for i, ve := range validationErrors {
+				errorDetails[i] = map[string]string{
+					"path":    ve.Path,
+					"message": ve.Message,
+				}
+			}
+			Error(w, http.StatusConflict, "VALIDATION_FAILED", "Some unsafe changes cannot be applied")
+			return
+		}
+
+		if err := migrator.ApplyUnsafeChanges(unsafeChanges); err != nil {
+			log.Error().Err(err).Msg("Failed to apply unsafe changes")
+			Error(w, http.StatusInternalServerError, "UNSAFE_MIGRATION_FAILED", err.Error())
+			return
+		}
+
+		gen := schema.NewSQLGenerator(newSchema)
+		for _, col := range newSchema.Collections {
+			for _, stmt := range gen.GenerateTriggers(col) {
+				if _, err := h.db.Exec(stmt); err != nil {
+					log.Warn().Err(err).Str("trigger", stmt[:50]).Msg("Failed to recreate trigger")
+				}
+			}
+		}
+	}
+
+	if err := os.WriteFile(h.schemaPath, []byte(draftContent), 0o600); err != nil {
+		log.Error().Err(err).Str("path", h.schemaPath).Msg("Failed to write schema file")
+		InternalError(w, "Failed to write schema file")
+		return
+	}
+
+	delete(h.draftSchemas, sessionID)
+
+	log.Info().
+		Str("path", h.schemaPath).
+		Int("safe_changes", len(safeChanges)).
+		Int("unsafe_changes", len(unsafeChanges)).
+		Msg("Applied schema changes and wrote to file")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success":       true,
+		"message":       "Schema applied successfully",
+		"safeApplied":   len(safeChanges),
+		"unsafeApplied": len(unsafeChanges),
+	})
+}
+
+func (h *AdminHandlers) SchemaDraftCancel(w http.ResponseWriter, r *http.Request) {
+	token, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	sessionID := token.Name
+	if _, exists := h.draftSchemas[sessionID]; exists {
+		delete(h.draftSchemas, sessionID)
+		log.Info().Str("session", sessionID).Msg("Cancelled draft schema")
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Draft schema cancelled",
+	})
 }

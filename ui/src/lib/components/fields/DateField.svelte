@@ -7,6 +7,7 @@
   import XIcon from 'lucide-svelte/icons/x';
   import { CalendarDate, parseDate, getLocalTimeZone } from '@internationalized/date';
   import type { Field } from '$lib/api/client';
+  import { formatDateTime } from '$lib/utils/datetime';
 
   interface Props {
     field: Field;
@@ -24,61 +25,131 @@
   function getPlaceholder(): string {
     if (hasAutoDefault) return 'Auto (current time)';
     if (field.nullable) return 'Optional';
-    return 'YYYY-MM-DD';
+    return dateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM';
   }
 
-  function parseInitialValue(val: string | null): { input: string; calendar: CalendarDate | undefined } {
+  function parseValue(val: string | null): { dateStr: string; timeStr: string; calendar: CalendarDate | undefined } {
     if (!val || val === 'now' || val === 'CURRENT_TIMESTAMP') {
-      return { input: '', calendar: undefined };
+      return { dateStr: '', timeStr: '', calendar: undefined };
     }
     
     try {
-      const dateStr = val.split('T')[0];
+      const d = new Date(val);
+      if (isNaN(d.getTime())) {
+        return { dateStr: '', timeStr: '', calendar: undefined };
+      }
+      
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      
+      const dateStr = `${year}-${month}-${day}`;
+      const timeStr = `${hours}:${minutes}`;
+      
       return { 
-        input: dateStr, 
+        dateStr, 
+        timeStr,
         calendar: parseDate(dateStr) 
       };
     } catch {
-      return { input: '', calendar: undefined };
+      return { dateStr: '', timeStr: '', calendar: undefined };
     }
   }
 
-  const initialParsed = parseInitialValue(value);
   let open = $state(false);
-  let inputValue = $state(initialParsed.input);
-  let calendarValue = $state<CalendarDate | undefined>(initialParsed.calendar);
+  let dateInput = $state('');
+  let timeInput = $state('');
+  let calendarValue = $state<CalendarDate | undefined>(undefined);
+  let lastPropValue = $state<string | null>(null);
+
+  $effect(() => {
+    if (value !== lastPropValue) {
+      lastPropValue = value;
+      const parsed = parseValue(value);
+      dateInput = parsed.dateStr;
+      timeInput = parsed.timeStr;
+      calendarValue = parsed.calendar;
+    }
+  });
+
+  function updateValue() {
+    if (!dateInput) {
+      value = null;
+      return;
+    }
+    
+    try {
+      if (dateOnly) {
+        value = dateInput;
+      } else {
+        const time = timeInput || '00:00';
+        const [hours, minutes] = time.split(':').map(Number);
+        const d = new Date(dateInput);
+        d.setHours(hours || 0, minutes || 0, 0, 0);
+        const newValue = d.toISOString();
+        if (value !== newValue) {
+          value = newValue;
+          lastPropValue = newValue;
+        }
+      }
+    } catch {
+      // Invalid date
+    }
+  }
 
   $effect(() => {
     if (calendarValue) {
       const date = calendarValue.toDate(getLocalTimeZone());
-      inputValue = date.toISOString().split('T')[0];
-      value = dateOnly ? inputValue : date.toISOString();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const newDateInput = `${year}-${month}-${day}`;
+      
+      if (dateInput !== newDateInput) {
+        dateInput = newDateInput;
+        updateValue();
+      }
     }
   });
 
-  function handleInput(e: Event) {
+  function handleDateInput(e: Event) {
     const target = e.target as HTMLInputElement;
-    inputValue = target.value;
+    dateInput = target.value;
     
     try {
-      if (inputValue && inputValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        calendarValue = parseDate(inputValue);
-        const date = calendarValue.toDate(getLocalTimeZone());
-        value = dateOnly ? inputValue : date.toISOString();
-      } else if (!inputValue) {
+      if (dateInput && dateInput.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        calendarValue = parseDate(dateInput);
+      } else if (!dateInput) {
         calendarValue = undefined;
-        value = null;
       }
     } catch {
-      // Keep inputValue on invalid date format
+      // Keep dateInput on invalid date format
     }
+    
+    updateValue();
+  }
+
+  function handleTimeInput(e: Event) {
+    const target = e.target as HTMLInputElement;
+    timeInput = target.value;
+    updateValue();
   }
 
   function clearDate() {
     calendarValue = undefined;
     value = null;
-    inputValue = '';
+    dateInput = '';
+    timeInput = '';
+    lastPropValue = null;
   }
+
+  const displayValue = $derived(
+    value && value !== 'now' && value !== 'CURRENT_TIMESTAMP' 
+      ? formatDateTime(value) 
+      : ''
+  );
 </script>
 
 <div>
@@ -88,10 +159,10 @@
         <Input
           id={field.name}
           type="text"
-          value={inputValue}
-          oninput={handleInput}
+          value={dateInput}
+          oninput={handleDateInput}
           {disabled}
-          placeholder={getPlaceholder()}
+          placeholder={dateOnly ? getPlaceholder() : 'YYYY-MM-DD'}
           class={errors?.length ? 'border-destructive pe-10' : 'pe-10'}
         />
         <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center">
@@ -121,14 +192,28 @@
       </Popover.Content>
     </Popover.Root>
 
-    {#if isOptional && (calendarValue || inputValue)}
+    {#if !dateOnly}
+      <Input
+        type="time"
+        value={timeInput}
+        oninput={handleTimeInput}
+        {disabled}
+        placeholder="HH:MM"
+        class="w-28 {errors?.length ? 'border-destructive' : ''}"
+      />
+    {/if}
+
+    {#if isOptional && (dateInput || timeInput)}
       <Button variant="ghost" size="icon" onclick={clearDate} {disabled}>
         <XIcon class="h-4 w-4" />
       </Button>
     {/if}
   </div>
 
-  {#if hasAutoDefault && !inputValue}
+  {#if displayValue && !dateOnly}
+    <p class="text-xs text-muted-foreground mt-1.5">{displayValue}</p>
+  {/if}
+  {#if hasAutoDefault && !dateInput}
     <p class="text-xs text-muted-foreground mt-1.5">Will be set automatically if left empty</p>
   {/if}
   {#if errors?.length}
