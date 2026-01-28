@@ -13,18 +13,18 @@
 	let { buckets, selectedBucket, onSelect }: Props = $props();
 </script>
 
-<div class="space-y-2">
-	{#if buckets.length === 0}
-		<Card.Root>
-			<Card.Content class="py-6 text-center">
-				<DatabaseIcon class="mx-auto h-8 w-8 text-muted-foreground/50 mb-3" />
-				<p class="text-sm text-muted-foreground">No buckets defined</p>
-			</Card.Content>
-		</Card.Root>
-	{:else}
+{#if buckets.length === 0}
+	<Card.Root>
+		<Card.Content class="py-6 text-center">
+			<DatabaseIcon class="mx-auto h-8 w-8 text-muted-foreground/50 mb-3" />
+			<p class="text-sm text-muted-foreground">No buckets defined</p>
+		</Card.Content>
+	</Card.Root>
+{:else}
+	<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
 		{#each buckets as bucket}
 			<button
-				class="w-full text-left p-3 rounded-lg hover:bg-accent transition-colors {selectedBucket === bucket.name ? 'bg-accent' : ''}"
+				class="text-left p-4 rounded-lg border transition-colors hover:bg-accent {selectedBucket === bucket.name ? 'bg-accent border-accent' : 'bg-card'}"
 				onclick={() => onSelect(bucket.name)}
 			>
 				<div class="flex items-center justify-between gap-2">
@@ -33,5 +33,5 @@
 				</div>
 			</button>
 		{/each}
-	{/if}
-</div>
+	</div>
+{/if}

@@ -4,7 +4,6 @@
 	import * as Card from '$ui/card';
 	import { Skeleton } from '$ui/skeleton';
 	import { Button } from '$ui/button';
-	import { Switch } from '$ui/switch';
 	import { toast } from 'svelte-sonner';
 	import BucketSidebar from '$lib/components/storage/BucketSidebar.svelte';
 	import FileBrowser from '$lib/components/storage/FileBrowser.svelte';
@@ -13,6 +12,7 @@
 	import FileFilters from '$lib/components/storage/FileFilters.svelte';
 	import TableIcon from 'lucide-svelte/icons/table';
 	import GridIcon from 'lucide-svelte/icons/grid-2x2';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
 
 	const queryClient = useQueryClient();
 
@@ -88,99 +88,115 @@
 </script>
 
 <div class="max-w-screen-2xl mx-auto space-y-6">
-	<div class="grid grid-cols-[280px_1fr] gap-6">
-		<!-- Left Sidebar: Buckets -->
-		<div class="border-r pr-6">
-			<h2 class="text-lg font-semibold mb-4">Buckets</h2>
-			{#if schemaQuery.isPending}
-				<Skeleton class="h-20 w-full" />
-			{:else if schemaQuery.data?.buckets}
-				<BucketSidebar
-					buckets={schemaQuery.data.buckets}
-					{selectedBucket}
-					onSelect={handleBucketSelect}
-				/>
-			{:else}
-				<p class="text-sm text-muted-foreground">No buckets defined</p>
-			{/if}
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-2xl font-semibold tracking-tight">Storage</h1>
+			<p class="text-sm text-muted-foreground">Manage files across your storage buckets</p>
 		</div>
+		{#if selectedBucket}
+			<div class="flex items-center gap-2">
+				<Button
+					variant={viewMode === 'table' ? 'default' : 'outline'}
+					size="sm"
+					onclick={() => (viewMode = 'table')}
+				>
+					<TableIcon class="h-4 w-4" />
+				</Button>
+				<Button
+					variant={viewMode === 'grid' ? 'default' : 'outline'}
+					size="sm"
+					onclick={() => (viewMode = 'grid')}
+				>
+					<GridIcon class="h-4 w-4" />
+				</Button>
+			</div>
+		{/if}
+	</div>
 
-		<!-- Right Content: File Browser -->
+	<div>
+		{#if schemaQuery.isPending}
+			<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+				{#each Array(4) as _}
+					<Skeleton class="h-20 w-full" />
+				{/each}
+			</div>
+		{:else if schemaQuery.data?.buckets}
+			<BucketSidebar
+				buckets={schemaQuery.data.buckets}
+				{selectedBucket}
+				onSelect={handleBucketSelect}
+			/>
+		{:else}
+			<Card.Root>
+				<Card.Content class="py-10 text-center">
+					<DatabaseIcon class="mx-auto h-10 w-10 text-muted-foreground/50" />
+					<h3 class="mt-3 text-sm font-medium">No buckets defined</h3>
+					<p class="mt-1 text-sm text-muted-foreground">
+						Add storage buckets to your schema to get started
+					</p>
+				</Card.Content>
+			</Card.Root>
+		{/if}
+	</div>
+
+	{#if selectedBucket}
 		<div class="space-y-4">
-			{#if !selectedBucket}
-				<Card.Root class="flex items-center justify-center py-16">
-					<Card.Content class="text-center">
-						<p class="text-muted-foreground">Select a bucket to view files</p>
+			<UploadZone bucket={selectedBucket} onUploadComplete={handleUploadComplete} />
+
+			<FileFilters
+				{search}
+				{mimeType}
+				onSearchChange={(v) => (search = v)}
+				onMimeTypeChange={(v) => (mimeType = v)}
+			/>
+
+			{#if filesQuery.isPending}
+				<Skeleton class="h-64 w-full" />
+			{:else if filesQuery.isError}
+				<Card.Root class="border-destructive/50">
+					<Card.Content class="py-4">
+						<p class="text-sm text-destructive">Failed to load files</p>
 					</Card.Content>
 				</Card.Root>
-			{:else}
-				<div class="flex items-center justify-between">
-					<h2 class="text-lg font-semibold">{selectedBucket}</h2>
-					<div class="flex items-center gap-2">
-						<Button
-							variant={viewMode === 'table' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => (viewMode = 'table')}
-						>
-							<TableIcon class="h-4 w-4" />
-						</Button>
-						<Button
-							variant={viewMode === 'grid' ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => (viewMode = 'grid')}
-						>
-							<GridIcon class="h-4 w-4" />
-						</Button>
-					</div>
+			{:else if filesQuery.data}
+				<div class="space-y-4">
+					{#if selectedIds.length > 0}
+						<div class="flex items-center gap-2">
+							<p class="text-sm text-muted-foreground">{selectedIds.length} selected</p>
+							<Button
+								variant="destructive"
+								size="sm"
+								onclick={() => handleDelete(selectedIds)}
+								disabled={deleteMutation.isPending}
+							>
+								Delete Selected
+							</Button>
+						</div>
+					{/if}
+
+					<FileBrowser
+						bucket={selectedBucket}
+						files={filesQuery.data.files}
+						{viewMode}
+						{selectedIds}
+						onSelectionChange={(ids) => (selectedIds = ids)}
+						onDelete={handleDelete}
+						onPreview={handlePreview}
+					/>
 				</div>
-
-				<UploadZone bucket={selectedBucket} onUploadComplete={handleUploadComplete} />
-
-				<FileFilters
-					{search}
-					{mimeType}
-					onSearchChange={(v) => (search = v)}
-					onMimeTypeChange={(v) => (mimeType = v)}
-				/>
-
-				{#if filesQuery.isPending}
-					<Skeleton class="h-64 w-full" />
-				{:else if filesQuery.isError}
-					<Card.Root class="border-destructive/50">
-						<Card.Content class="py-4">
-							<p class="text-sm text-destructive">Failed to load files</p>
-						</Card.Content>
-					</Card.Root>
-				{:else if filesQuery.data}
-					<div class="space-y-4">
-						{#if selectedIds.length > 0}
-							<div class="flex items-center gap-2">
-								<p class="text-sm text-muted-foreground">{selectedIds.length} selected</p>
-								<Button
-									variant="destructive"
-									size="sm"
-									onclick={() => handleDelete(selectedIds)}
-									disabled={deleteMutation.isPending}
-								>
-									Delete Selected
-								</Button>
-							</div>
-						{/if}
-
-						<FileBrowser
-							bucket={selectedBucket}
-							files={filesQuery.data.files}
-							{viewMode}
-							{selectedIds}
-							onSelectionChange={(ids) => (selectedIds = ids)}
-							onDelete={handleDelete}
-							onPreview={handlePreview}
-						/>
-					</div>
-				{/if}
 			{/if}
 		</div>
-	</div>
+	{:else}
+		<Card.Root>
+			<Card.Content class="py-10 text-center">
+				<DatabaseIcon class="mx-auto h-10 w-10 text-muted-foreground/50" />
+				<h3 class="mt-3 text-sm font-medium">Select a bucket</h3>
+				<p class="mt-1 text-sm text-muted-foreground">
+					Choose a storage bucket above to view and manage files
+				</p>
+			</Card.Content>
+		</Card.Root>
+	{/if}
 </div>
 
 {#if selectedBucket && previewFile}
