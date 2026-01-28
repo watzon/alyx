@@ -37,6 +37,8 @@ type Service struct {
 	config        *config.FunctionsConfig
 	serverPort    int
 	devMode       bool
+	schema        interface{} // *schema.Schema, but avoiding import cycle
+	registrar     Registrar
 }
 
 // NewService creates a new function service with subprocess runtime.
@@ -48,16 +50,13 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 	var registry *Registry
 	var err error
 
-	if cfg.Schema != nil {
-		registry, err = newRegistryFromSchemaInterface(cfg.Schema, cfg.FunctionsDir, cfg.Registrar)
-		if err != nil {
-			return nil, fmt.Errorf("loading functions from schema: %w", err)
-		}
-	} else {
-		registry = NewRegistry(cfg.FunctionsDir)
-		if err := registry.Discover(); err != nil {
-			return nil, fmt.Errorf("discovering functions: %w", err)
-		}
+	if cfg.Schema == nil {
+		return nil, fmt.Errorf("schema is required for function service")
+	}
+
+	registry, err = newRegistryFromSchemaInterface(cfg.Schema, cfg.FunctionsDir, cfg.Registrar)
+	if err != nil {
+		return nil, fmt.Errorf("loading functions from schema: %w", err)
 	}
 
 	// Create subprocess runtimes for each runtime type
@@ -97,6 +96,8 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 		config:        cfg.Config,
 		serverPort:    cfg.ServerPort,
 		devMode:       cfg.DevMode,
+		schema:        cfg.Schema,
+		registrar:     cfg.Registrar,
 	}, nil
 }
 
@@ -201,13 +202,14 @@ func (s *Service) ListFunctions() []*FunctionDef {
 	return s.registry.List()
 }
 
-// ReloadFunctions rediscovers functions and reloads the registry.
+// ReloadFunctions reloads functions from the schema.
 func (s *Service) ReloadFunctions() error {
-	s.registry = NewRegistry(s.functionsDir)
-
-	if err := s.registry.Discover(); err != nil {
-		return fmt.Errorf("discovering functions: %w", err)
+	registry, err := newRegistryFromSchemaInterface(s.schema, s.functionsDir, s.registrar)
+	if err != nil {
+		return fmt.Errorf("reloading functions from schema: %w", err)
 	}
+
+	s.registry = registry
 
 	functions := s.registry.List()
 	log.Info().Int("count", len(functions)).Msg("Functions reloaded")

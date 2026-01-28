@@ -267,38 +267,11 @@ type FunctionsConfig struct {
 	// Path to functions directory
 	Path string `mapstructure:"path"`
 
-	// Container runtime (docker or podman)
-	Runtime string `mapstructure:"runtime"`
-
 	// Default execution timeout
 	Timeout time.Duration `mapstructure:"timeout"`
 
-	// Default memory limit in MB
-	MemoryLimit int `mapstructure:"memory_limit"`
-
-	// Default CPU limit (cores)
-	CPULimit float64 `mapstructure:"cpu_limit"`
-
-	// Container pool settings per runtime
-	Pools map[string]PoolConfig `mapstructure:"pools"`
-
 	// Environment variables to pass to functions
 	Env map[string]string `mapstructure:"env"`
-}
-
-// PoolConfig holds container pool settings.
-type PoolConfig struct {
-	// Minimum warm instances
-	MinWarm int `mapstructure:"min_warm"`
-
-	// Maximum concurrent instances
-	MaxInstances int `mapstructure:"max_instances"`
-
-	// Idle timeout before scaling down
-	IdleTimeout time.Duration `mapstructure:"idle_timeout"`
-
-	// Container image to use
-	Image string `mapstructure:"image"`
 }
 
 // LoggingConfig holds logging settings.

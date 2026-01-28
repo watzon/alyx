@@ -1,60 +1,40 @@
-// Package functions provides serverless function execution via containers.
 package functions
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/rs/zerolog/log"
 	"github.com/watzon/alyx/internal/schema"
 )
 
-var errNotAFunction = errors.New("not a function file")
-
-// FunctionDef represents a discovered function and its metadata.
+// FunctionDef represents a function and its metadata.
 type FunctionDef struct {
-	// Name is the function name (derived from filename).
-	Name string `json:"name"`
-	// Runtime is the function runtime (node, python, go).
-	Runtime Runtime `json:"runtime"`
-	// Path is the absolute path to the function file.
-	Path string `json:"path"`
-	// OutputPath is the absolute path to the compiled output (if HasBuild is true).
-	OutputPath string `json:"output_path,omitempty"`
-	// HasBuild indicates if this function has a build configuration.
-	HasBuild bool `json:"has_build"`
-	// Build contains the build configuration (if HasBuild is true).
-	Build *BuildConfig `json:"build,omitempty"`
-	// Timeout overrides the default timeout (optional).
-	Timeout int `json:"timeout,omitempty"`
-	// Memory overrides the default memory limit in MB (optional).
-	Memory int `json:"memory,omitempty"`
-	// Env contains environment variables for this function.
-	Env map[string]string `json:"env,omitempty"`
-	// HasManifest indicates if a YAML manifest was found.
-	HasManifest bool `json:"has_manifest"`
-	// Routes contains HTTP route configurations from manifest.
-	Routes []RouteConfig `json:"routes,omitempty"`
-	// Hooks contains hook configurations from manifest.
-	Hooks []HookConfig `json:"hooks,omitempty"`
-	// Schedules contains schedule configurations from manifest.
-	Schedules []ScheduleConfig `json:"schedules,omitempty"`
+	Name        string            `json:"name"`
+	Runtime     Runtime           `json:"runtime"`
+	Path        string            `json:"path"`
+	OutputPath  string            `json:"output_path,omitempty"`
+	Description string            `json:"description,omitempty"`
+	SampleInput any               `json:"sample_input,omitempty"`
+	HasBuild    bool              `json:"has_build"`
+	Build       *BuildConfig      `json:"build,omitempty"`
+	Timeout     int               `json:"timeout,omitempty"`
+	Memory      int               `json:"memory,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Routes      []RouteConfig     `json:"routes,omitempty"`
+	Hooks       []HookConfig      `json:"hooks,omitempty"`
+	Schedules   []ScheduleConfig  `json:"schedules,omitempty"`
 }
 
-// FunctionManifest represents a function's YAML manifest file (legacy format).
-// Deprecated: Use Manifest for new manifests with hooks/schedules/routes support.
-type FunctionManifest struct {
-	Name         string            `yaml:"name"`
-	Runtime      string            `yaml:"runtime"`
-	Timeout      string            `yaml:"timeout"`
-	Memory       string            `yaml:"memory"`
-	Env          map[string]string `yaml:"env"`
-	Dependencies []string          `yaml:"dependencies"`
+// GetEntrypoint returns the appropriate entrypoint path based on dev mode.
+func (f *FunctionDef) GetEntrypoint(devMode bool) string {
+	if devMode {
+		return f.Path
+	}
+	if f.HasBuild && f.OutputPath != "" {
+		return f.OutputPath
+	}
+	return f.Path
 }
 
 // Registrar defines the interface for auto-registering manifest components.
@@ -64,7 +44,7 @@ type Registrar interface {
 	RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error
 }
 
-// Registry manages discovered functions.
+// Registry manages functions loaded from schema.
 type Registry struct {
 	functionsDir string
 	functions    map[string]*FunctionDef
@@ -72,22 +52,11 @@ type Registry struct {
 	mu           sync.RWMutex
 }
 
-// NewRegistry creates a new function registry.
-// Deprecated: Use NewRegistryFromSchema instead. This function will be removed
-// in a future version. Functions should be defined in schema.yaml, not discovered
-// from the filesystem.
-func NewRegistry(functionsDir string) *Registry {
-	return &Registry{
-		functionsDir: functionsDir,
-		functions:    make(map[string]*FunctionDef),
-	}
-}
-
 // NewRegistryFromSchema creates a Registry from schema functions.
 func NewRegistryFromSchema(s *schema.Schema, functionsDir string, registrar Registrar) (*Registry, error) {
 	defs, err := SchemaToFunctionDefs(s, functionsDir)
 	if err != nil {
-		return nil, fmt.Errorf("converting schema functions: %w", err)
+		return nil, err
 	}
 
 	registry := &Registry{
@@ -120,132 +89,19 @@ func (r *Registry) SetRegistrar(registrar Registrar) {
 	r.registrar = registrar
 }
 
-// Discover scans the functions directory and discovers all functions.
-func (r *Registry) Discover() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Clear existing functions
-	r.functions = make(map[string]*FunctionDef)
-
-	// Check if functions directory exists
-	if _, err := os.Stat(r.functionsDir); os.IsNotExist(err) {
-		log.Warn().Str("path", r.functionsDir).Msg("Functions directory does not exist")
-		return nil
-	}
-
-	entries, err := os.ReadDir(r.functionsDir)
-	if err != nil {
-		return fmt.Errorf("reading functions directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "node_modules" {
-			continue
-		}
-
-		funcDef, err := r.parseFunctionDirectory(name)
-		if errors.Is(err, errNotAFunction) {
-			continue
-		}
-		if err != nil {
-			log.Warn().Err(err).Str("file", name).Msg("Failed to parse function")
-			continue
-		}
-
-		r.functions[funcDef.Name] = funcDef
-		log.Debug().
-			Str("name", funcDef.Name).
-			Str("runtime", string(funcDef.Runtime)).
-			Bool("has_manifest", funcDef.HasManifest).
-			Msg("Discovered function")
-	}
-
-	log.Info().Int("count", len(r.functions)).Msg("Functions discovered")
-	return nil
-}
-
-func (r *Registry) parseFunctionDirectory(dirName string) (*FunctionDef, error) {
-	dirPath := filepath.Join(r.functionsDir, dirName)
-
-	entryFile, runtime := r.findEntryFile(dirPath)
-	if entryFile == "" {
-		return nil, errNotAFunction
-	}
-
-	funcDef := &FunctionDef{
-		Name:    dirName,
-		Runtime: runtime,
-		Path:    entryFile,
-		Env:     make(map[string]string),
-	}
-
-	return funcDef, nil
-}
-
-func (r *Registry) findEntryFile(dirPath string) (string, Runtime) {
-	candidates := []struct {
-		name    string
-		runtime Runtime
-	}{
-		{"mod.ts", RuntimeDeno},
-		{"main.ts", RuntimeDeno},
-		{"index.js", RuntimeNode},
-		{"index.mjs", RuntimeNode},
-		{"index.cjs", RuntimeNode},
-		{"index.ts", RuntimeNode},
-		{"index.mts", RuntimeNode},
-		{"index.cts", RuntimeNode},
-		{"index.tsx", RuntimeBun},
-		{"index.py", RuntimePython},
-		{"main.go", RuntimeGo},
-		{"index.go", RuntimeGo},
-	}
-
-	for _, c := range candidates {
-		path := filepath.Join(dirPath, c.name)
-		if _, err := os.Stat(path); err == nil {
-			if c.runtime == RuntimeDeno && strings.HasSuffix(c.name, ".ts") {
-				if hasDenoCfg := r.hasDenoConfig(dirPath); hasDenoCfg {
-					return path, RuntimeDeno
-				}
-				return path, RuntimeNode
-			}
-			return path, c.runtime
-		}
-	}
-
-	return "", ""
-}
-
-func (r *Registry) hasDenoConfig(dirPath string) bool {
-	for _, name := range []string{"deno.json", "deno.jsonc"} {
-		if _, err := os.Stat(filepath.Join(dirPath, name)); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error {
 	functionID := funcDef.Name
 
 	if len(funcDef.Hooks) > 0 {
 		if err := r.registrar.RegisterHooks(ctx, functionID, funcDef.Hooks); err != nil {
-			return fmt.Errorf("registering hooks: %w", err)
+			return err
 		}
 		log.Debug().Str("function", functionID).Int("count", len(funcDef.Hooks)).Msg("Auto-registered hooks")
 	}
 
 	if len(funcDef.Schedules) > 0 {
 		if err := r.registrar.RegisterSchedules(ctx, functionID, funcDef.Schedules); err != nil {
-			return fmt.Errorf("registering schedules: %w", err)
+			return err
 		}
 		log.Debug().Str("function", functionID).Int("count", len(funcDef.Schedules)).Msg("Auto-registered schedules")
 	}
@@ -260,7 +116,7 @@ func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error
 
 	if len(webhookHooks) > 0 {
 		if err := r.registrar.RegisterWebhooks(ctx, functionID, webhookHooks); err != nil {
-			return fmt.Errorf("registering webhooks: %w", err)
+			return err
 		}
 		log.Debug().Str("function", functionID).Int("count", len(webhookHooks)).Msg("Auto-registered webhooks")
 	}
@@ -268,109 +124,18 @@ func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error
 	return nil
 }
 
-// detectRuntime detects the runtime from file extension.
-func detectRuntime(ext string) Runtime {
-	switch ext {
-	case ".tsx":
-		return RuntimeBun
-	case ".ts":
-		return RuntimeNode
-	case ".js", ".mjs", ".cjs", ".mts", ".cts":
-		return RuntimeNode
-	case ".py":
-		return RuntimePython
-	case ".go":
-		return RuntimeGo
-	default:
-		return ""
-	}
-}
-
-const (
-	secondsPerMinute = 60
-	mbPerGB          = 1024
-)
-
-func parseTimeoutSeconds(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-
-	var value int
-
-	switch {
-	case strings.HasSuffix(s, "m"):
-		s = strings.TrimSuffix(s, "m")
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value * secondsPerMinute
-		}
-	case strings.HasSuffix(s, "s"):
-		s = strings.TrimSuffix(s, "s")
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value
-		}
-	default:
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value
-		}
-	}
-
-	return 0
-}
-
-func parseMemoryMB(s string) int {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return 0
-	}
-
-	var value int
-
-	switch {
-	case strings.HasSuffix(s, "gb"):
-		s = strings.TrimSuffix(s, "gb")
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value * mbPerGB
-		}
-	case strings.HasSuffix(s, "mb"):
-		s = strings.TrimSuffix(s, "mb")
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value
-		}
-	case strings.HasSuffix(s, "m"):
-		s = strings.TrimSuffix(s, "m")
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value
-		}
-	default:
-		if _, err := fmt.Sscanf(s, "%d", &value); err == nil {
-			return value
-		}
-	}
-
-	return 0
-}
-
-// expandEnv expands environment variable references in a string.
-func expandEnv(s string) string {
-	return os.ExpandEnv(s)
-}
-
 // Get returns a function definition by name.
 func (r *Registry) Get(name string) (*FunctionDef, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	fn, ok := r.functions[name]
 	return fn, ok
 }
 
-// List returns all discovered functions.
+// List returns all functions.
 func (r *Registry) List() []*FunctionDef {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	result := make([]*FunctionDef, 0, len(r.functions))
 	for _, fn := range r.functions {
 		result = append(result, fn)
@@ -378,23 +143,17 @@ func (r *Registry) List() []*FunctionDef {
 	return result
 }
 
-// Count returns the number of discovered functions.
+// Count returns the number of functions.
 func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.functions)
 }
 
-// Reload rediscovers all functions.
-func (r *Registry) Reload() error {
-	return r.Discover()
-}
-
 // GetByRuntime returns all functions for a specific runtime.
 func (r *Registry) GetByRuntime(runtime Runtime) []*FunctionDef {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	result := make([]*FunctionDef, 0)
 	for _, fn := range r.functions {
 		if fn.Runtime == runtime {
@@ -407,17 +166,4 @@ func (r *Registry) GetByRuntime(runtime Runtime) []*FunctionDef {
 // FunctionsDir returns the configured functions directory.
 func (r *Registry) FunctionsDir() string {
 	return r.functionsDir
-}
-
-// GetEntrypoint returns the appropriate entrypoint path based on dev mode.
-// In dev mode, returns the source file. In production mode with a build config,
-// returns the compiled output. Falls back to source if no build config exists.
-func (f *FunctionDef) GetEntrypoint(devMode bool) string {
-	if devMode {
-		return f.Path
-	}
-	if f.HasBuild && f.OutputPath != "" {
-		return f.OutputPath
-	}
-	return f.Path
 }

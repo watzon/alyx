@@ -225,60 +225,11 @@ func validateFunctions(cfg *FunctionsConfig) ValidationErrors {
 		})
 	}
 
-	validRuntimes := map[string]bool{"docker": true, "podman": true}
-	if !validRuntimes[cfg.Runtime] {
-		errs = append(errs, ValidationError{
-			Field:   "functions.runtime",
-			Message: "must be 'docker' or 'podman'",
-		})
-	}
-
 	if cfg.Timeout < time.Second {
 		errs = append(errs, ValidationError{
 			Field:   "functions.timeout",
 			Message: "must be at least 1 second",
 		})
-	}
-
-	if cfg.MemoryLimit < 64 {
-		errs = append(errs, ValidationError{
-			Field:   "functions.memory_limit",
-			Message: "must be at least 64 MB",
-		})
-	}
-
-	if cfg.CPULimit < 0.1 {
-		errs = append(errs, ValidationError{
-			Field:   "functions.cpu_limit",
-			Message: "must be at least 0.1 cores",
-		})
-	}
-
-	for name, pool := range cfg.Pools {
-		if pool.MaxInstances < 1 {
-			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("functions.pools.%s.max_instances", name),
-				Message: "must be at least 1",
-			})
-		}
-		if pool.MinWarm < 0 {
-			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("functions.pools.%s.min_warm", name),
-				Message: "must be non-negative",
-			})
-		}
-		if pool.MinWarm > pool.MaxInstances {
-			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("functions.pools.%s.min_warm", name),
-				Message: "must not exceed max_instances",
-			})
-		}
-		if pool.Image == "" {
-			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("functions.pools.%s.image", name),
-				Message: "required",
-			})
-		}
 	}
 
 	return errs

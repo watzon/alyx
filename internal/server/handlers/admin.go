@@ -960,6 +960,17 @@ func (h *AdminHandlers) ConfigRawUpdate(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h *AdminHandlers) ConfigSchemaGet(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	schema := config.GetConfigSchema(h.cfg, h.configPath)
+	JSON(w, http.StatusOK, schema)
+}
+
 // ValidateRuleRequest is the request body for CEL rule validation.
 type ValidateRuleRequest struct {
 	Expression string   `json:"expression"`

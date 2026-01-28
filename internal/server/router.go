@@ -113,9 +113,10 @@ func (r *Router) setupRoutes() {
 
 	if r.server.cfg.Functions.Enabled && r.server.FuncService() != nil {
 		funcHandlers := handlers.NewFunctionHandlers(r.server.FuncService())
-		r.mux.HandleFunc("POST /api/functions/{name}", r.wrap(funcHandlers.Invoke))
 		r.mux.HandleFunc("GET /api/functions", r.wrap(funcHandlers.List))
 		r.mux.HandleFunc("GET /api/functions/stats", r.wrap(funcHandlers.Stats))
+		r.mux.HandleFunc("GET /api/functions/{name}", r.wrap(funcHandlers.Get))
+		r.mux.HandleFunc("POST /api/functions/{name}", r.wrap(funcHandlers.Invoke))
 		r.mux.HandleFunc("POST /api/functions/reload", r.wrap(funcHandlers.Reload))
 
 		internalHandlers := handlers.NewInternalHandlers(
@@ -229,6 +230,7 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("DELETE /api/admin/schema/draft", r.wrap(adminHandlers.SchemaDraftCancel))
 		r.mux.HandleFunc("GET /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawGet))
 		r.mux.HandleFunc("PUT /api/admin/config/raw", r.wrap(adminHandlers.ConfigRawUpdate))
+		r.mux.HandleFunc("GET /api/admin/config/schema", r.wrap(adminHandlers.ConfigSchemaGet))
 		r.mux.HandleFunc("POST /api/admin/tokens", r.wrap(adminHandlers.TokenCreate))
 		r.mux.HandleFunc("GET /api/admin/tokens", r.wrap(adminHandlers.TokenList))
 		r.mux.HandleFunc("DELETE /api/admin/tokens/{name}", r.wrap(adminHandlers.TokenDelete))

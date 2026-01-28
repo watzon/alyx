@@ -5,89 +5,57 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/watzon/alyx/internal/schema"
 )
 
-func testRegistry(t *testing.T) *Registry {
+func testSchemaRegistry(t *testing.T, functions map[string]*schema.Function) (*Registry, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
-	return NewRegistry(tmpDir)
-}
 
-func createTestFunction(t *testing.T, registry *Registry, name string, buildConfig *BuildConfig) string {
-	t.Helper()
-
-	funcDir := filepath.Join(registry.FunctionsDir(), name)
-	if err := os.MkdirAll(funcDir, 0o755); err != nil {
-		t.Fatalf("creating function directory: %v", err)
-	}
-
-	entryFile := filepath.Join(funcDir, "index.js")
-	if err := os.WriteFile(entryFile, []byte("export default function() {}"), 0o644); err != nil {
-		t.Fatalf("creating entry file: %v", err)
-	}
-
-	if buildConfig != nil {
-		manifest := &Manifest{
-			Name:    name,
-			Runtime: "node",
-			Build:   buildConfig,
+	for name, fn := range functions {
+		funcDir := filepath.Join(tmpDir, name)
+		if err := os.MkdirAll(funcDir, 0o755); err != nil {
+			t.Fatalf("creating function directory: %v", err)
 		}
 
-		manifestData := manifestToYAML(t, manifest)
-		manifestPath := filepath.Join(funcDir, "manifest.yaml")
-		if err := os.WriteFile(manifestPath, []byte(manifestData), 0o644); err != nil {
-			t.Fatalf("creating manifest: %v", err)
+		entrypoint := fn.Entrypoint
+		if entrypoint == "" {
+			entrypoint = "index.js"
 		}
-	}
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovering functions: %v", err)
-	}
-
-	return funcDir
-}
-
-func manifestToYAML(t *testing.T, m *Manifest) string {
-	t.Helper()
-
-	yaml := "name: " + m.Name + "\n"
-	yaml += "runtime: " + m.Runtime + "\n"
-
-	if m.Build != nil {
-		yaml += "build:\n"
-		yaml += "  command: \"" + m.Build.Command + "\"\n"
-
-		if len(m.Build.Args) > 0 {
-			yaml += "  args:\n"
-			for _, arg := range m.Build.Args {
-				yaml += "    - \"" + arg + "\"\n"
-			}
+		entryFile := filepath.Join(funcDir, entrypoint)
+		if err := os.WriteFile(entryFile, []byte("export default function() {}"), 0o644); err != nil {
+			t.Fatalf("creating entry file: %v", err)
 		}
 
-		if len(m.Build.Watch) > 0 {
-			yaml += "  watch:\n"
-			for _, pattern := range m.Build.Watch {
-				yaml += "    - \"" + pattern + "\"\n"
-			}
-		}
-
-		yaml += "  output: \"" + m.Build.Output + "\"\n"
+		fn.Entrypoint = entrypoint
 	}
 
-	return yaml
+	s := &schema.Schema{Functions: functions}
+	registry, err := NewRegistryFromSchema(s, tmpDir, nil)
+	if err != nil {
+		t.Fatalf("creating registry: %v", err)
+	}
+
+	return registry, tmpDir
 }
 
 func TestSourceWatcher_DetectsChanges(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"building"},
-		Watch:   []string{"src/**/*.js"},
-		Output:  "plugin.wasm",
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"building"},
+				Watch:   []string{"src/**/*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	funcDir := createTestFunction(t, registry, "test-func", buildConfig)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir := filepath.Join(tmpDir, "test-func")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -119,16 +87,21 @@ func TestSourceWatcher_DetectsChanges(t *testing.T) {
 }
 
 func TestSourceWatcher_Debounce(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"building"},
-		Watch:   []string{"*.js"},
-		Output:  "plugin.wasm",
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"building"},
+				Watch:   []string{"*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	funcDir := createTestFunction(t, registry, "test-func", buildConfig)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir := filepath.Join(tmpDir, "test-func")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -166,16 +139,21 @@ func TestSourceWatcher_Debounce(t *testing.T) {
 }
 
 func TestSourceWatcher_BuildSuccess(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"build", "successful"},
-		Watch:   []string{"*.js"},
-		Output:  "plugin.wasm",
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"build", "successful"},
+				Watch:   []string{"*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	funcDir := createTestFunction(t, registry, "test-func", buildConfig)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir := filepath.Join(tmpDir, "test-func")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -196,16 +174,21 @@ func TestSourceWatcher_BuildSuccess(t *testing.T) {
 }
 
 func TestSourceWatcher_BuildFailure(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig := &BuildConfig{
-		Command: "false",
-		Args:    []string{},
-		Watch:   []string{"*.js"},
-		Output:  "plugin.wasm",
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "false",
+				Args:    []string{},
+				Watch:   []string{"*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	funcDir := createTestFunction(t, registry, "test-func", buildConfig)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir := filepath.Join(tmpDir, "test-func")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -271,16 +254,21 @@ func TestSourceWatcher_GlobPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := testRegistry(t)
-
-			buildConfig := &BuildConfig{
-				Command: "echo",
-				Args:    []string{"building"},
-				Watch:   tt.patterns,
-				Output:  "plugin.wasm",
+			functions := map[string]*schema.Function{
+				"test-func": {
+					Runtime:    "node",
+					Entrypoint: "index.js",
+					Build: &schema.FunctionBuild{
+						Command: "echo",
+						Args:    []string{"building"},
+						Watch:   tt.patterns,
+						Output:  "plugin.wasm",
+					},
+				},
 			}
 
-			funcDir := createTestFunction(t, registry, "test-func", buildConfig)
+			registry, tmpDir := testSchemaRegistry(t, functions)
+			funcDir := filepath.Join(tmpDir, "test-func")
 
 			watcher, err := NewSourceWatcher(registry)
 			if err != nil {
@@ -315,25 +303,33 @@ func TestSourceWatcher_GlobPattern(t *testing.T) {
 	}
 }
 
-func TestSourceWatcher_MultipleFunction(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig1 := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"building", "func1"},
-		Watch:   []string{"*.js"},
-		Output:  "plugin.wasm",
+func TestSourceWatcher_MultipleFunctions(t *testing.T) {
+	functions := map[string]*schema.Function{
+		"func1": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"building", "func1"},
+				Watch:   []string{"*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
+		"func2": {
+			Runtime:    "node",
+			Entrypoint: "index.ts",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"building", "func2"},
+				Watch:   []string{"*.ts"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	buildConfig2 := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"building", "func2"},
-		Watch:   []string{"*.ts"},
-		Output:  "plugin.wasm",
-	}
-
-	funcDir1 := createTestFunction(t, registry, "func1", buildConfig1)
-	funcDir2 := createTestFunction(t, registry, "func2", buildConfig2)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir1 := filepath.Join(tmpDir, "func1")
+	funcDir2 := filepath.Join(tmpDir, "func2")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -361,9 +357,15 @@ func TestSourceWatcher_MultipleFunction(t *testing.T) {
 }
 
 func TestSourceWatcher_NoBuildConfig(t *testing.T) {
-	registry := testRegistry(t)
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+		},
+	}
 
-	funcDir := createTestFunction(t, registry, "test-func", nil)
+	registry, tmpDir := testSchemaRegistry(t, functions)
+	funcDir := filepath.Join(tmpDir, "test-func")
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {
@@ -384,16 +386,20 @@ func TestSourceWatcher_NoBuildConfig(t *testing.T) {
 }
 
 func TestSourceWatcher_StopCleansUp(t *testing.T) {
-	registry := testRegistry(t)
-
-	buildConfig := &BuildConfig{
-		Command: "echo",
-		Args:    []string{"building"},
-		Watch:   []string{"*.js"},
-		Output:  "plugin.wasm",
+	functions := map[string]*schema.Function{
+		"test-func": {
+			Runtime:    "node",
+			Entrypoint: "index.js",
+			Build: &schema.FunctionBuild{
+				Command: "echo",
+				Args:    []string{"building"},
+				Watch:   []string{"*.js"},
+				Output:  "plugin.wasm",
+			},
+		},
 	}
 
-	createTestFunction(t, registry, "test-func", buildConfig)
+	registry, _ := testSchemaRegistry(t, functions)
 
 	watcher, err := NewSourceWatcher(registry)
 	if err != nil {

@@ -226,146 +226,159 @@
 				Failed to load users: {usersQuery.error?.message}
 			</p>
 		</Card.Root>
+	{:else if usersQuery.data?.users.length === 0}
+		<div class="flex flex-col items-center justify-center py-16 text-center rounded-md border">
+			<div class="rounded-full bg-muted p-4 mb-4">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					class="h-8 w-8 text-muted-foreground"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+					/>
+				</svg>
+			</div>
+			<h3 class="text-sm font-medium mb-1">No users yet</h3>
+			<p class="text-sm text-muted-foreground">Get started by creating your first user</p>
+		</div>
 	{:else}
-		<Card.Root class="overflow-hidden">
-			<div class="overflow-auto">
-				<Table.Root>
-					<Table.Header class="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+		<div class="rounded-md border overflow-hidden">
+			<Table.Root>
+				<Table.Header class="sticky top-0 z-20 bg-card">
+					<Table.Row>
+						<Table.Head>Email</Table.Head>
+						<Table.Head>Role</Table.Head>
+						<Table.Head>Status</Table.Head>
+						<Table.Head>Created</Table.Head>
+						<Table.Head class="w-[60px]">
+							<span class="sr-only">Actions</span>
+						</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each usersQuery.data?.users ?? [] as user (user.id)}
 						<Table.Row>
-							<Table.Head>Email</Table.Head>
-							<Table.Head>Role</Table.Head>
-							<Table.Head>Status</Table.Head>
-							<Table.Head>Created</Table.Head>
-							<Table.Head class="w-[100px]"></Table.Head>
+							<Table.Cell class="font-medium">{user.email}</Table.Cell>
+							<Table.Cell>
+								<Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
+									{user.role}
+								</Badge>
+							</Table.Cell>
+							<Table.Cell>
+								{#if user.verified}
+									<Badge variant="outline" class="border-green-500 text-green-500">Verified</Badge>
+								{:else}
+									<Badge variant="outline" class="text-muted-foreground">Unverified</Badge>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">
+								{new Date(user.created_at).toLocaleDateString()}
+							</Table.Cell>
+							<Table.Cell>
+								<div class="flex items-center justify-end gap-2">
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8"
+										title="Edit User"
+										onclick={() => openEdit(user)}
+									>
+										<PencilIcon class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8"
+										title="Set Password"
+										onclick={() => openPassword(user)}
+									>
+										<KeyIcon class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8 text-destructive hover:text-destructive"
+										title="Delete User"
+										onclick={() => (itemToDelete = user)}
+									>
+										<Trash2Icon class="h-4 w-4" />
+									</Button>
+								</div>
+							</Table.Cell>
 						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#if usersQuery.data?.users.length === 0}
-							<Table.Row>
-								<Table.Cell colspan={5} class="h-24 text-center">
-									No users found.
-								</Table.Cell>
-							</Table.Row>
-						{:else}
-							{#each usersQuery.data?.users ?? [] as user (user.id)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{user.email}</Table.Cell>
-									<Table.Cell>
-										<Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
-											{user.role}
-										</Badge>
-									</Table.Cell>
-									<Table.Cell>
-										{#if user.verified}
-											<Badge variant="outline" class="border-green-500 text-green-500">Verified</Badge>
-										{:else}
-											<Badge variant="outline" class="text-muted-foreground">Unverified</Badge>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-muted-foreground">
-										{new Date(user.created_at).toLocaleDateString()}
-									</Table.Cell>
-									<Table.Cell>
-										<div class="flex items-center justify-end gap-2">
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8"
-												title="Edit User"
-												onclick={() => openEdit(user)}
-											>
-												<PencilIcon class="h-4 w-4" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8"
-												title="Set Password"
-												onclick={() => openPassword(user)}
-											>
-												<KeyIcon class="h-4 w-4" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8 text-destructive hover:text-destructive"
-												title="Delete User"
-												onclick={() => (itemToDelete = user)}
-											>
-												<Trash2Icon class="h-4 w-4" />
-											</Button>
-										</div>
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						{/if}
-					</Table.Body>
-				</Table.Root>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
+
+		<div class="flex items-center justify-between mt-4">
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				<span>Rows per page</span>
+				<select
+					class="h-8 w-[70px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+					value={String(pageSize)}
+					onchange={(e) => {
+						pageSize = Number(e.currentTarget.value);
+						pageIndex = 1;
+					}}
+				>
+					<option value="10">10</option>
+					<option value="25">25</option>
+					<option value="50">50</option>
+					<option value="100">100</option>
+				</select>
 			</div>
 
-			<div class="flex items-center justify-between px-4 py-3 border-t bg-card">
-				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					<span>Rows per page</span>
-					<select
-						class="h-8 w-[70px] rounded-md border border-input bg-background px-2 py-1 text-sm"
-						value={String(pageSize)}
-						onchange={(e) => {
-							pageSize = Number(e.currentTarget.value);
-							pageIndex = 1;
-						}}
+			<div class="flex items-center gap-4">
+				<span class="text-sm text-muted-foreground">
+					Page {pageIndex} of {totalPages}
+				</span>
+				<div class="flex items-center gap-1">
+					<Button
+						variant="outline"
+						size="icon"
+						class="h-8 w-8"
+						onclick={() => (pageIndex = 1)}
+						disabled={pageIndex === 1}
 					>
-						<option value="10">10</option>
-						<option value="25">25</option>
-						<option value="50">50</option>
-						<option value="100">100</option>
-					</select>
-				</div>
-
-				<div class="flex items-center gap-4">
-					<span class="text-sm text-muted-foreground">
-						Page {pageIndex} of {totalPages}
-					</span>
-					<div class="flex items-center gap-1">
-						<Button
-							variant="outline"
-							size="icon"
-							class="h-8 w-8"
-							onclick={() => (pageIndex = 1)}
-							disabled={pageIndex === 1}
-						>
-							<ChevronsLeftIcon class="h-4 w-4" />
-						</Button>
-						<Button
-							variant="outline"
-							size="icon"
-							class="h-8 w-8"
-							onclick={() => pageIndex--}
-							disabled={pageIndex === 1}
-						>
-							<ChevronLeftIcon class="h-4 w-4" />
-						</Button>
-						<Button
-							variant="outline"
-							size="icon"
-							class="h-8 w-8"
-							onclick={() => pageIndex++}
-							disabled={pageIndex >= totalPages}
-						>
-							<ChevronRightIcon class="h-4 w-4" />
-						</Button>
-						<Button
-							variant="outline"
-							size="icon"
-							class="h-8 w-8"
-							onclick={() => (pageIndex = totalPages)}
-							disabled={pageIndex >= totalPages}
-						>
-							<ChevronsRightIcon class="h-4 w-4" />
-						</Button>
-					</div>
+						<ChevronsLeftIcon class="h-4 w-4" />
+					</Button>
+					<Button
+						variant="outline"
+						size="icon"
+						class="h-8 w-8"
+						onclick={() => pageIndex--}
+						disabled={pageIndex === 1}
+					>
+						<ChevronLeftIcon class="h-4 w-4" />
+					</Button>
+					<Button
+						variant="outline"
+						size="icon"
+						class="h-8 w-8"
+						onclick={() => pageIndex++}
+						disabled={pageIndex >= totalPages}
+					>
+						<ChevronRightIcon class="h-4 w-4" />
+					</Button>
+					<Button
+						variant="outline"
+						size="icon"
+						class="h-8 w-8"
+						onclick={() => (pageIndex = totalPages)}
+						disabled={pageIndex >= totalPages}
+					>
+						<ChevronsRightIcon class="h-4 w-4" />
+					</Button>
 				</div>
 			</div>
-		</Card.Root>
+		</div>
 	{/if}
 
 	<Dialog.Root bind:open={isCreateOpen}>

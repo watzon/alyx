@@ -30,11 +30,6 @@ const (
 	// Functions defaults.
 	DefaultFunctionsPath   = "functions"
 	DefaultFunctionTimeout = 30 * time.Second
-	DefaultMemoryLimit     = 256 // MB
-	DefaultCPULimit        = 1.0
-	DefaultMinWarm         = 1
-	DefaultMaxInstances    = 10
-	DefaultIdlePoolTimeout = 60 * time.Second
 
 	// Logging defaults.
 	DefaultLogLevel  = "info"
@@ -102,33 +97,10 @@ func Default() *Config {
 			OAuth:               make(map[string]OAuthProviderConfig),
 		},
 		Functions: FunctionsConfig{
-			Enabled:     true,
-			Path:        DefaultFunctionsPath,
-			Runtime:     "docker",
-			Timeout:     DefaultFunctionTimeout,
-			MemoryLimit: DefaultMemoryLimit,
-			CPULimit:    DefaultCPULimit,
-			Pools: map[string]PoolConfig{
-				"node": {
-					MinWarm:      DefaultMinWarm,
-					MaxInstances: DefaultMaxInstances,
-					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "ghcr.io/watzon/alyx-runtime-node:latest",
-				},
-				"python": {
-					MinWarm:      DefaultMinWarm,
-					MaxInstances: DefaultMaxInstances,
-					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "ghcr.io/watzon/alyx-runtime-python:latest",
-				},
-				"go": {
-					MinWarm:      0, // Go compiles, so no warm pool needed
-					MaxInstances: DefaultMaxInstances,
-					IdleTimeout:  DefaultIdlePoolTimeout,
-					Image:        "ghcr.io/watzon/alyx-runtime-go:latest",
-				},
-			},
-			Env: make(map[string]string),
+			Enabled: true,
+			Path:    DefaultFunctionsPath,
+			Timeout: DefaultFunctionTimeout,
+			Env:     make(map[string]string),
 		},
 		Logging: LoggingConfig{
 			Level:     DefaultLogLevel,

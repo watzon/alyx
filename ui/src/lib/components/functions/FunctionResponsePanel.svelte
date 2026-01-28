@@ -52,17 +52,16 @@
 	}
 
 	function syntaxHighlight(json: string): string {
-		// Basic syntax highlighting with Tailwind classes
 		return json
 			.replace(/&/g, '&amp;')
 			.replace(/</g, '&lt;')
 			.replace(/>/g, '&gt;')
 			.replace(
 				/("(?:\\.|[^"\\])*")/g,
-				'<span class="text-green-400">$1</span>'
+				'<span style="color:#4ade80">$1</span>'
 			)
-			.replace(/\b(true|false|null)\b/g, '<span class="text-purple-400">$1</span>')
-			.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="text-amber-400">$1</span>');
+			.replace(/\b(true|false|null)\b/g, '<span style="color:#c084fc">$1</span>')
+			.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color:#fbbf24">$1</span>');
 	}
 </script>
 

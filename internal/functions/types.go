@@ -120,14 +120,19 @@ type FunctionError struct {
 
 // LogEntry represents a log entry from a function.
 type LogEntry struct {
-	// Level is the log level (debug, info, warn, error).
-	Level string `json:"level"`
-	// Message is the log message.
-	Message string `json:"message"`
-	// Data contains structured log data.
-	Data map[string]any `json:"data,omitempty"`
-	// Timestamp is when the log was recorded.
-	Timestamp time.Time `json:"timestamp"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Data      map[string]any `json:"data,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+}
+
+// FileUpload represents an uploaded file passed to a function.
+type FileUpload struct {
+	Name        string `json:"name"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	Data        string `json:"data"`
 }
 
 // Executor defines the interface for executing functions.

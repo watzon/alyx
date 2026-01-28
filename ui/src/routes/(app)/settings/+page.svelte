@@ -12,6 +12,7 @@
 	import { Badge } from '$ui/badge';
 	import * as Dialog from '$ui/dialog';
 	import { YamlEditor } from '$lib/components/yaml-editor';
+	import { ConfigEditor } from '$lib/components/config-editor';
 	import { toast } from 'svelte-sonner';
 	import KeyIcon from 'lucide-svelte/icons/key';
 	import PlusIcon from 'lucide-svelte/icons/plus';
@@ -43,11 +44,22 @@
 		enabled: configStore.isDevMode
 	}));
 
+	const configSchemaQuery = createQuery(() => ({
+		queryKey: ['admin', 'config', 'schema'],
+		queryFn: async () => {
+			const result = await admin.configSchema.get();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		},
+		enabled: configStore.isDevMode
+	}));
+
 	let isCreateDialogOpen = $state(false);
 	let newTokenName = $state('');
 	let createdToken = $state<string | null>(null);
 
 	let configContent = $state('');
+	let configYamlContent = $state('');
 	let configError = $state<string | null>(null);
 	let hasConfigChanges = $state(false);
 
@@ -75,14 +87,14 @@
 		}
 	}));
 
-	function handleConfigChange(value: string) {
-		configContent = value;
-		hasConfigChanges = configContent !== configRawQuery.data?.content;
+	function handleConfigChange(yaml: string) {
+		configYamlContent = yaml;
+		hasConfigChanges = true;
 		configError = null;
 	}
 
 	function saveConfig() {
-		saveConfigMutation.mutate(configContent);
+		saveConfigMutation.mutate(configYamlContent);
 	}
 
 	function resetConfig() {
@@ -138,10 +150,10 @@
 	</div>
 
 	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="!bg-transparent !border-0 !p-0 gap-1">
+		<Tabs.List class="h-auto w-auto inline-flex bg-transparent p-0 gap-3">
 			<Tabs.Trigger 
 				value="tokens"
-				class="rounded-t-lg bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-x border-t border-b-0 border-border/20 data-[state=active]:bg-muted/30 data-[state=active]:backdrop-blur-xl data-[state=active]:border-border/40 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30"
+				class="px-4 py-2.5 rounded-lg text-sm transition-colors bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border border-border/20 hover:bg-muted/20 hover:border-border/30 data-[state=active]:bg-muted/30 data-[state=active]:border-border/40 data-[state=active]:text-foreground data-[state=active]:shadow-none"
 			>
 				<KeyIcon class="h-4 w-4 mr-2" />
 				API Tokens
@@ -149,7 +161,7 @@
 			{#if configStore.isDevMode}
 				<Tabs.Trigger 
 					value="config"
-					class="rounded-t-lg bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border-x border-t border-b-0 border-border/20 data-[state=active]:bg-muted/30 data-[state=active]:backdrop-blur-xl data-[state=active]:border-border/40 hover:bg-muted/20 hover:backdrop-blur-xl hover:border-border/30"
+					class="px-4 py-2.5 rounded-lg text-sm transition-colors bg-muted/10 backdrop-blur-lg backdrop-saturate-150 border border-border/20 hover:bg-muted/20 hover:border-border/30 data-[state=active]:bg-muted/30 data-[state=active]:border-border/40 data-[state=active]:text-foreground data-[state=active]:shadow-none"
 				>
 					<SettingsIcon class="h-4 w-4 mr-2" />
 					Configuration
@@ -301,17 +313,17 @@
 						</div>
 					</Card.Header>
 					<Card.Content>
-						{#if configRawQuery.isPending}
+						{#if configSchemaQuery.isPending}
 							<Skeleton class="h-[400px] w-full" />
-						{:else if configRawQuery.isError}
+						{:else if configSchemaQuery.isError}
 							<div class="py-8 text-center">
-								<p class="text-destructive">Failed to load configuration</p>
+								<p class="text-destructive">Failed to load configuration schema</p>
 							</div>
 						{:else}
-							<YamlEditor
-								value={configContent}
-								error={configError}
+							<ConfigEditor
+								schema={configSchemaQuery.data}
 								onchange={handleConfigChange}
+								disabled={saveConfigMutation.isPending}
 							/>
 						{/if}
 					</Card.Content>

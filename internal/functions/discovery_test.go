@@ -1,7 +1,6 @@
 package functions
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,31 +19,28 @@ func createFunctionDir(t *testing.T, baseDir, name, entryFile, code string) {
 	}
 }
 
-func createFunctionDirWithManifest(t *testing.T, baseDir, name, entryFile, code, manifest string) {
-	t.Helper()
-	createFunctionDir(t, baseDir, name, entryFile, code)
-	funcDir := filepath.Join(baseDir, name)
-	if err := os.WriteFile(filepath.Join(funcDir, "manifest.yaml"), []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRegistry_Discover(t *testing.T) {
+func TestNewRegistryFromSchema(t *testing.T) {
 	dir := t.TempDir()
 
 	createFunctionDir(t, dir, "hello", "index.js", "module.exports = {}")
-	createFunctionDir(t, dir, "greet", "index.py", "default = {}")
+	createFunctionDir(t, dir, "greet", "main.py", "def handler(): pass")
 
-	if err := os.MkdirAll(filepath.Join(dir, "_shared"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, ".hidden"), 0755); err != nil {
-		t.Fatal(err)
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"hello": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+			"greet": {
+				Runtime:    "python",
+				Entrypoint: "main.py",
+			},
+		},
 	}
 
-	registry := NewRegistry(dir)
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("Discover failed: %v", err)
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
 	}
 
 	if registry.Count() != 2 {
@@ -64,25 +60,18 @@ func TestRegistry_Discover(t *testing.T) {
 	} else if fn.Runtime != RuntimePython {
 		t.Errorf("expected runtime python, got %s", fn.Runtime)
 	}
-
-	if _, ok := registry.Get("_shared"); ok {
-		t.Error("should not discover directories starting with underscore")
-	}
-	if _, ok := registry.Get(".hidden"); ok {
-		t.Error("should not discover hidden directories")
-	}
 }
 
-func TestRegistry_DiscoverWithManifest(t *testing.T) {
-	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_EmptyDirectory(t *testing.T) {
+func TestNewRegistryFromSchema_EmptySchema(t *testing.T) {
 	dir := t.TempDir()
 
-	registry := NewRegistry(dir)
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("Discover failed: %v", err)
+	s := &schema.Schema{
+		Functions: nil,
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
 	}
 
 	if registry.Count() != 0 {
@@ -90,27 +79,168 @@ func TestRegistry_EmptyDirectory(t *testing.T) {
 	}
 }
 
-func TestRegistry_NonExistentDirectory(t *testing.T) {
-	registry := NewRegistry("/nonexistent/path")
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("Discover should not fail for nonexistent directory: %v", err)
+func TestNewRegistryFromSchema_MissingEntrypoint(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"missing": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+		},
 	}
 
-	if registry.Count() != 0 {
-		t.Errorf("expected 0 functions, got %d", registry.Count())
+	_, err := NewRegistryFromSchema(s, dir, nil)
+	if err == nil {
+		t.Error("expected error for missing entrypoint")
+	}
+}
+
+func TestNewRegistryFromSchema_WithBunRuntime(t *testing.T) {
+	dir := t.TempDir()
+
+	createFunctionDir(t, dir, "bun-func", "index.ts", "export default () => {}")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"bun-func": {
+				Runtime:    "bun",
+				Entrypoint: "index.ts",
+			},
+		},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	fn, ok := registry.Get("bun-func")
+	if !ok {
+		t.Error("expected to find 'bun-func' function")
+	} else if fn.Runtime != RuntimeBun {
+		t.Errorf("expected runtime bun, got %s", fn.Runtime)
+	}
+}
+
+func TestNewRegistryFromSchema_WithCustomPath(t *testing.T) {
+	dir := t.TempDir()
+	customDir := filepath.Join(dir, "custom-location")
+
+	createFunctionDir(t, customDir, "", "handler.js", "module.exports = {}")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"custom": {
+				Runtime:    "node",
+				Entrypoint: "handler.js",
+				Path:       customDir,
+			},
+		},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	fn, ok := registry.Get("custom")
+	if !ok {
+		t.Error("expected to find 'custom' function")
+	}
+	if fn.Path != filepath.Join(customDir, "handler.js") {
+		t.Errorf("expected custom path, got %s", fn.Path)
+	}
+}
+
+func TestRegistry_Get(t *testing.T) {
+	dir := t.TempDir()
+	createFunctionDir(t, dir, "test-func", "index.js", "module.exports = {}")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"test-func": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+		},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	fn, ok := registry.Get("test-func")
+	if !ok {
+		t.Error("expected to find function")
+	}
+	if fn.Name != "test-func" {
+		t.Errorf("expected name 'test-func', got %s", fn.Name)
+	}
+
+	_, ok = registry.Get("nonexistent")
+	if ok {
+		t.Error("should not find nonexistent function")
+	}
+}
+
+func TestRegistry_List(t *testing.T) {
+	dir := t.TempDir()
+	createFunctionDir(t, dir, "func1", "index.js", "module.exports = {}")
+	createFunctionDir(t, dir, "func2", "main.py", "def handler(): pass")
+
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"func1": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+			"func2": {
+				Runtime:    "python",
+				Entrypoint: "main.py",
+			},
+		},
+	}
+
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
+	}
+
+	funcs := registry.List()
+	if len(funcs) != 2 {
+		t.Errorf("expected 2 functions, got %d", len(funcs))
 	}
 }
 
 func TestRegistry_GetByRuntime(t *testing.T) {
 	dir := t.TempDir()
+	createFunctionDir(t, dir, "node1", "index.js", "module.exports = {}")
+	createFunctionDir(t, dir, "node2", "index.js", "module.exports = {}")
+	createFunctionDir(t, dir, "python1", "main.py", "def handler(): pass")
 
-	createFunctionDir(t, dir, "a", "index.js", "")
-	createFunctionDir(t, dir, "b", "index.js", "")
-	createFunctionDir(t, dir, "c", "index.py", "")
+	s := &schema.Schema{
+		Functions: map[string]*schema.Function{
+			"node1": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+			"node2": {
+				Runtime:    "node",
+				Entrypoint: "index.js",
+			},
+			"python1": {
+				Runtime:    "python",
+				Entrypoint: "main.py",
+			},
+		},
+	}
 
-	registry := NewRegistry(dir)
-	if err := registry.Discover(); err != nil {
-		t.Fatal(err)
+	registry, err := NewRegistryFromSchema(s, dir, nil)
+	if err != nil {
+		t.Fatalf("NewRegistryFromSchema failed: %v", err)
 	}
 
 	nodeFuncs := registry.GetByRuntime(RuntimeNode)
@@ -122,435 +252,36 @@ func TestRegistry_GetByRuntime(t *testing.T) {
 	if len(pythonFuncs) != 1 {
 		t.Errorf("expected 1 python function, got %d", len(pythonFuncs))
 	}
-}
 
-func TestParseTimeoutSeconds(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected int
-	}{
-		{"30", 30},
-		{"30s", 30},
-		{"5m", 300},
-		{"", 0},
-		{"invalid", 0},
-	}
-
-	for _, tt := range tests {
-		result := parseTimeoutSeconds(tt.input)
-		if result != tt.expected {
-			t.Errorf("parseTimeoutSeconds(%q) = %d, expected %d", tt.input, result, tt.expected)
-		}
+	goFuncs := registry.GetByRuntime(RuntimeGo)
+	if len(goFuncs) != 0 {
+		t.Errorf("expected 0 go functions, got %d", len(goFuncs))
 	}
 }
 
-func TestParseMemoryMB(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected int
-	}{
-		{"256", 256},
-		{"256mb", 256},
-		{"256MB", 256},
-		{"1gb", 1024},
-		{"1GB", 1024},
-		{"512m", 512},
-		{"", 0},
-		{"invalid", 0},
+func TestFunctionDef_GetEntrypoint(t *testing.T) {
+	fn := &FunctionDef{
+		Name:       "test",
+		Path:       "/src/index.ts",
+		OutputPath: "/dist/index.js",
+		HasBuild:   true,
 	}
 
-	for _, tt := range tests {
-		result := parseMemoryMB(tt.input)
-		if result != tt.expected {
-			t.Errorf("parseMemoryMB(%q) = %d, expected %d", tt.input, result, tt.expected)
-		}
-	}
-}
-
-func TestDetectRuntime(t *testing.T) {
-	tests := []struct {
-		ext      string
-		expected Runtime
-	}{
-		{".js", RuntimeNode},
-		{".mjs", RuntimeNode},
-		{".cjs", RuntimeNode},
-		{".ts", RuntimeNode},
-		{".mts", RuntimeNode},
-		{".cts", RuntimeNode},
-		{".py", RuntimePython},
-		{".go", RuntimeGo},
-		{".txt", ""},
-		{".rs", ""},
+	if ep := fn.GetEntrypoint(true); ep != "/src/index.ts" {
+		t.Errorf("dev mode should return source path, got %s", ep)
 	}
 
-	for _, tt := range tests {
-		result := detectRuntime(tt.ext)
-		if result != tt.expected {
-			t.Errorf("detectRuntime(%q) = %q, expected %q", tt.ext, result, tt.expected)
-		}
-	}
-}
-
-type mockRegistrar struct {
-	hooks     map[string][]HookConfig
-	schedules map[string][]ScheduleConfig
-	webhooks  map[string][]HookConfig
-}
-
-func newMockRegistrar() *mockRegistrar {
-	return &mockRegistrar{
-		hooks:     make(map[string][]HookConfig),
-		schedules: make(map[string][]ScheduleConfig),
-		webhooks:  make(map[string][]HookConfig),
-	}
-}
-
-func (m *mockRegistrar) RegisterHooks(ctx context.Context, functionID string, hooks []HookConfig) error {
-	m.hooks[functionID] = hooks
-	return nil
-}
-
-func (m *mockRegistrar) RegisterSchedules(ctx context.Context, functionID string, schedules []ScheduleConfig) error {
-	m.schedules[functionID] = schedules
-	return nil
-}
-
-func (m *mockRegistrar) RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error {
-	m.webhooks[functionID] = hooks
-	return nil
-}
-
-func TestRegistry_AutoRegistration(t *testing.T) {
-	t.Skip("Manifest-based auto-registration is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_BackwardCompatibility(t *testing.T) {
-	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_NoRegistrar(t *testing.T) {
-	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_InvalidManifest(t *testing.T) {
-	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_MultipleHookTypes(t *testing.T) {
-	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
-}
-
-func TestRegistry_DirectoryWithNoEntryFile(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	funcDir := filepath.Join(tmpDir, "no-entry")
-	if err := os.MkdirAll(funcDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(funcDir, "readme.txt"), []byte("not a function"), 0644); err != nil {
-		t.Fatal(err)
+	if ep := fn.GetEntrypoint(false); ep != "/dist/index.js" {
+		t.Errorf("prod mode with build should return output path, got %s", ep)
 	}
 
-	registry := NewRegistry(tmpDir)
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("Discover failed: %v", err)
+	fnNoBuild := &FunctionDef{
+		Name:     "test",
+		Path:     "/src/index.ts",
+		HasBuild: false,
 	}
 
-	if registry.Count() != 0 {
-		t.Errorf("expected 0 functions, got %d", registry.Count())
-	}
-}
-
-func TestRegistry_TypeScriptDiscovery(t *testing.T) {
-	tests := []struct {
-		name         string
-		files        map[string]string
-		expectedFunc string
-		expectedExt  string
-	}{
-		{
-			name: "index.ts only",
-			files: map[string]string{
-				"index.ts": "export default () => ({ message: 'hello' })",
-			},
-			expectedFunc: "ts-only",
-			expectedExt:  "index.ts",
-		},
-		{
-			name: "both index.js and index.ts - JS takes precedence",
-			files: map[string]string{
-				"index.js": "module.exports = {}",
-				"index.ts": "export default () => ({})",
-			},
-			expectedFunc: "js-ts-both",
-			expectedExt:  "index.js",
-		},
-		{
-			name: "index.mts only",
-			files: map[string]string{
-				"index.mts": "export default () => ({ message: 'hello' })",
-			},
-			expectedFunc: "mts-only",
-			expectedExt:  "index.mts",
-		},
-		{
-			name: "index.cts only",
-			files: map[string]string{
-				"index.cts": "export default () => ({ message: 'hello' })",
-			},
-			expectedFunc: "cts-only",
-			expectedExt:  "index.cts",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			funcDir := filepath.Join(tmpDir, tt.expectedFunc)
-			if err := os.MkdirAll(funcDir, 0755); err != nil {
-				t.Fatal(err)
-			}
-
-			for filename, content := range tt.files {
-				path := filepath.Join(funcDir, filename)
-				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			registry := NewRegistry(tmpDir)
-			if err := registry.Discover(); err != nil {
-				t.Fatalf("Discover failed: %v", err)
-			}
-
-			fn, ok := registry.Get(tt.expectedFunc)
-			if !ok {
-				t.Fatalf("expected to find '%s' function", tt.expectedFunc)
-			}
-
-			if fn.Runtime != RuntimeNode {
-				t.Errorf("expected runtime node, got %s", fn.Runtime)
-			}
-
-			expectedPath := filepath.Join(funcDir, tt.expectedExt)
-			if fn.Path != expectedPath {
-				t.Errorf("expected entry file %s, got %s", expectedPath, fn.Path)
-			}
-		})
-	}
-}
-
-type testRegistrar struct {
-	hooks     map[string][]HookConfig
-	schedules map[string][]ScheduleConfig
-	webhooks  map[string][]HookConfig
-}
-
-func (r *testRegistrar) RegisterHooks(ctx context.Context, functionID string, hooks []HookConfig) error {
-	if r.hooks == nil {
-		r.hooks = make(map[string][]HookConfig)
-	}
-	r.hooks[functionID] = hooks
-	return nil
-}
-
-func (r *testRegistrar) RegisterSchedules(ctx context.Context, functionID string, schedules []ScheduleConfig) error {
-	if r.schedules == nil {
-		r.schedules = make(map[string][]ScheduleConfig)
-	}
-	r.schedules[functionID] = schedules
-	return nil
-}
-
-func (r *testRegistrar) RegisterWebhooks(ctx context.Context, functionID string, hooks []HookConfig) error {
-	if r.webhooks == nil {
-		r.webhooks = make(map[string][]HookConfig)
-	}
-	r.webhooks[functionID] = hooks
-	return nil
-}
-
-func TestNewRegistryFromSchema(t *testing.T) {
-	dir := t.TempDir()
-
-	createFunctionDir(t, dir, "test_func", "index.js", "module.exports = {}")
-
-	s := &schema.Schema{
-		Functions: map[string]*schema.Function{
-			"test_func": {
-				Name:       "test_func",
-				Runtime:    "node",
-				Entrypoint: "index.js",
-				Timeout:    "60s",
-				Memory:     "256mb",
-				Env: map[string]string{
-					"TEST_VAR": "test_value",
-				},
-				Hooks: []schema.FunctionHook{
-					{Type: "database", Source: "users", Action: "insert"},
-				},
-				Schedules: []schema.FunctionSchedule{
-					{Name: "daily", Type: "cron", Expression: "0 0 * * *"},
-				},
-			},
-		},
-	}
-
-	registrar := &testRegistrar{}
-
-	registry, err := NewRegistryFromSchema(s, dir, registrar)
-	if err != nil {
-		t.Fatalf("NewRegistryFromSchema failed: %v", err)
-	}
-
-	fn, ok := registry.Get("test_func")
-	if !ok {
-		t.Fatal("function not found in registry")
-	}
-
-	if fn.Name != "test_func" {
-		t.Errorf("expected name test_func, got %s", fn.Name)
-	}
-	if fn.Runtime != RuntimeNode {
-		t.Errorf("expected runtime node, got %s", fn.Runtime)
-	}
-	if fn.Timeout != 60 {
-		t.Errorf("expected timeout 60, got %d", fn.Timeout)
-	}
-	if fn.Memory != 256 {
-		t.Errorf("expected memory 256, got %d", fn.Memory)
-	}
-	if fn.Env["TEST_VAR"] != "test_value" {
-		t.Errorf("expected TEST_VAR=test_value, got %s", fn.Env["TEST_VAR"])
-	}
-
-	if len(registrar.hooks["test_func"]) != 1 {
-		t.Errorf("expected 1 hook, got %d", len(registrar.hooks["test_func"]))
-	}
-
-	if len(registrar.schedules["test_func"]) != 1 {
-		t.Errorf("expected 1 schedule, got %d", len(registrar.schedules["test_func"]))
-	}
-}
-
-func TestNewRegistryFromSchema_WithWebhook(t *testing.T) {
-	dir := t.TempDir()
-
-	createFunctionDir(t, dir, "webhook_func", "index.js", "module.exports = {}")
-
-	s := &schema.Schema{
-		Functions: map[string]*schema.Function{
-			"webhook_func": {
-				Name:       "webhook_func",
-				Runtime:    "node",
-				Entrypoint: "index.js",
-				Hooks: []schema.FunctionHook{
-					{
-						Type:   "webhook",
-						Source: "stripe",
-						Action: "charge.succeeded",
-						Verification: &schema.FunctionWebhookVerification{
-							Type:   "hmac-sha256",
-							Header: "X-Stripe-Signature",
-							Secret: "test-secret",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	registrar := &testRegistrar{}
-
-	registry, err := NewRegistryFromSchema(s, dir, registrar)
-	if err != nil {
-		t.Fatalf("NewRegistryFromSchema failed: %v", err)
-	}
-
-	fn, ok := registry.Get("webhook_func")
-	if !ok {
-		t.Fatal("function not found in registry")
-	}
-
-	if len(fn.Hooks) != 1 {
-		t.Fatalf("expected 1 hook, got %d", len(fn.Hooks))
-	}
-
-	hook := fn.Hooks[0]
-	if hook.Type != "webhook" {
-		t.Errorf("expected hook type webhook, got %s", hook.Type)
-	}
-	if hook.Verification == nil {
-		t.Fatal("expected verification config")
-	}
-	if hook.Verification.Type != "hmac-sha256" {
-		t.Errorf("expected verification type hmac-sha256, got %s", hook.Verification.Type)
-	}
-
-	if len(registrar.webhooks["webhook_func"]) != 1 {
-		t.Errorf("expected 1 webhook, got %d", len(registrar.webhooks["webhook_func"]))
-	}
-}
-
-func TestNewRegistryFromSchema_EmptySchema(t *testing.T) {
-	dir := t.TempDir()
-
-	s := &schema.Schema{
-		Functions: map[string]*schema.Function{},
-	}
-
-	registry, err := NewRegistryFromSchema(s, dir, nil)
-	if err != nil {
-		t.Fatalf("NewRegistryFromSchema failed: %v", err)
-	}
-
-	if registry.Count() != 0 {
-		t.Errorf("expected 0 functions, got %d", registry.Count())
-	}
-}
-
-func TestNewRegistryFromSchema_MultipleFunctions(t *testing.T) {
-	dir := t.TempDir()
-
-	createFunctionDir(t, dir, "func1", "index.js", "module.exports = {}")
-	createFunctionDir(t, dir, "func2", "index.py", "def handler(): pass")
-
-	s := &schema.Schema{
-		Functions: map[string]*schema.Function{
-			"func1": {
-				Name:       "func1",
-				Runtime:    "node",
-				Entrypoint: "index.js",
-			},
-			"func2": {
-				Name:       "func2",
-				Runtime:    "python",
-				Entrypoint: "index.py",
-			},
-		},
-	}
-
-	registry, err := NewRegistryFromSchema(s, dir, nil)
-	if err != nil {
-		t.Fatalf("NewRegistryFromSchema failed: %v", err)
-	}
-
-	if registry.Count() != 2 {
-		t.Errorf("expected 2 functions, got %d", registry.Count())
-	}
-
-	fn1, ok := registry.Get("func1")
-	if !ok {
-		t.Error("func1 not found")
-	} else if fn1.Runtime != RuntimeNode {
-		t.Errorf("expected func1 runtime node, got %s", fn1.Runtime)
-	}
-
-	fn2, ok := registry.Get("func2")
-	if !ok {
-		t.Error("func2 not found")
-	} else if fn2.Runtime != RuntimePython {
-		t.Errorf("expected func2 runtime python, got %s", fn2.Runtime)
+	if ep := fnNoBuild.GetEntrypoint(false); ep != "/src/index.ts" {
+		t.Errorf("prod mode without build should return source path, got %s", ep)
 	}
 }

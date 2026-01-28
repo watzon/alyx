@@ -28,6 +28,13 @@ functions:
       watch: ["*.ts"]
       output: dist/index.js
 
+  file-info:
+    runtime: python
+    entrypoint: index.py
+    description: Analyzes uploaded files and returns metadata (size, hashes, text preview)
+    sample_input:
+      _files: []
+
 collections:
   users:
     fields:

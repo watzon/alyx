@@ -374,6 +374,7 @@ export interface FunctionDetail {
 	path: string;
 	entrypoint: string;
 	description?: string;
+	sample_input?: unknown;
 	timeout?: string;
 	memory?: string;
 	enabled: boolean;
@@ -487,6 +488,31 @@ export interface ConfigRaw {
 	path: string;
 }
 
+// Config schema types for visual editor
+export type ConfigFieldType = 'string' | 'int' | 'int64' | 'bool' | 'duration' | 'stringArray' | 'stringMap' | 'object' | 'secret';
+
+export interface ConfigFieldMeta {
+	type: ConfigFieldType;
+	description?: string;
+	default?: unknown;
+	current?: unknown;
+	sensitive?: boolean;
+	required?: boolean;
+	options?: string[];
+	fields?: Record<string, ConfigFieldMeta>;
+}
+
+export interface ConfigSectionMeta {
+	name: string;
+	description?: string;
+	fields: Record<string, ConfigFieldMeta>;
+}
+
+export interface ConfigSchemaResponse {
+	sections: Record<string, ConfigSectionMeta>;
+	path: string;
+}
+
 export interface PendingChange {
 	id: string;
 	type: string;
@@ -562,6 +588,10 @@ export const admin = {
 			api.put<{ success: boolean; message?: string }>('/admin/config/raw', { content })
 	},
 
+	configSchema: {
+		get: () => api.get<ConfigSchemaResponse>('/admin/config/schema')
+	},
+
 	users: {
 		list: (params?: {
 			limit?: number;
@@ -601,7 +631,53 @@ export const admin = {
 		list: () => api.get<{ functions: FunctionInfo[] }>('/functions'),
 		get: (name: string) => api.get<FunctionDetail>(`/functions/${name}`),
 		stats: () => api.get<Record<string, unknown>>('/functions/stats'),
-		invoke: (name: string, input?: unknown) => api.post<FunctionInvokeResponse>(`/functions/${name}`, input),
+		invoke: (name: string, input?: unknown) =>
+			api.post<FunctionInvokeResponse>(`/functions/${name}`, input),
+		invokeWithFiles: async (
+			name: string,
+			input: Record<string, unknown>,
+			files: File[]
+		): Promise<ApiResponse<FunctionInvokeResponse>> => {
+			const formData = new FormData();
+
+			for (const [key, value] of Object.entries(input)) {
+				formData.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+			}
+
+			for (const file of files) {
+				formData.append('files', file);
+			}
+
+			const headers: Record<string, string> = {};
+			const token = api.getToken();
+			if (token) {
+				headers['Authorization'] = `Bearer ${token}`;
+			}
+
+			try {
+				const response = await fetch(`${BASE_URL}/functions/${name}`, {
+					method: 'POST',
+					headers,
+					body: formData
+				});
+
+				const data = await response.json();
+
+				if (!response.ok) {
+					return { error: data as ApiError };
+				}
+
+				return { data: data as FunctionInvokeResponse };
+			} catch (error) {
+				return {
+					error: {
+						code: 'NETWORK_ERROR',
+						error: 'Network error',
+						message: error instanceof Error ? error.message : 'Unknown error'
+					}
+				};
+			}
+		},
 		reload: () => api.post('/functions/reload')
 	},
 

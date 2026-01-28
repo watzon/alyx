@@ -84,16 +84,6 @@ func TestValidate_TLSWithoutCert(t *testing.T) {
 	}
 }
 
-func TestValidate_InvalidFunctionRuntime(t *testing.T) {
-	cfg := Default()
-	cfg.Functions.Runtime = "invalid"
-
-	err := Validate(cfg)
-	if err == nil {
-		t.Error("expected validation error for invalid runtime")
-	}
-}
-
 func TestValidateJWTSecret(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -189,21 +179,6 @@ func TestValidate_OAuthProvider(t *testing.T) {
 	err := Validate(cfg)
 	if err == nil {
 		t.Error("expected validation error for missing OAuth client_id")
-	}
-}
-
-func TestValidate_FunctionPoolConfig(t *testing.T) {
-	cfg := Default()
-	cfg.Functions.Pools["test"] = PoolConfig{
-		MinWarm:      5,
-		MaxInstances: 2,
-		IdleTimeout:  time.Minute,
-		Image:        "test:latest",
-	}
-
-	err := Validate(cfg)
-	if err == nil {
-		t.Error("expected validation error for min_warm > max_instances")
 	}
 }
 

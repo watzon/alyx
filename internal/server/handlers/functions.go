@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -18,11 +21,6 @@ type FunctionHandlers struct {
 // NewFunctionHandlers creates new function handlers.
 func NewFunctionHandlers(service *functions.Service) *FunctionHandlers {
 	return &FunctionHandlers{service: service}
-}
-
-// InvokeRequest is the request body for function invocation.
-type InvokeRequest struct {
-	Input map[string]any `json:"input"`
 }
 
 // InvokeResponse is the response for function invocation.
@@ -49,10 +47,58 @@ func (h *FunctionHandlers) Invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse request body
-	var req InvokeRequest
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var input map[string]any
+	contentType := r.Header.Get("Content-Type")
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Parse multipart form (32MB max memory)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			Error(w, http.StatusBadRequest, "INVALID_MULTIPART", "Failed to parse multipart form: "+err.Error())
+			return
+		}
+
+		input = make(map[string]any)
+
+		// Extract form fields
+		for key, values := range r.MultipartForm.Value {
+			if len(values) == 1 {
+				input[key] = values[0]
+			} else {
+				input[key] = values
+			}
+		}
+
+		// Extract files and encode as base64
+		var files []functions.FileUpload
+		for fieldName, fileHeaders := range r.MultipartForm.File {
+			for _, fh := range fileHeaders {
+				file, err := fh.Open()
+				if err != nil {
+					Error(w, http.StatusBadRequest, "FILE_READ_ERROR", "Failed to read file: "+err.Error())
+					return
+				}
+				data, err := io.ReadAll(file)
+				file.Close()
+				if err != nil {
+					Error(w, http.StatusBadRequest, "FILE_READ_ERROR", "Failed to read file data: "+err.Error())
+					return
+				}
+
+				files = append(files, functions.FileUpload{
+					Name:        fieldName,
+					Filename:    fh.Filename,
+					ContentType: fh.Header.Get("Content-Type"),
+					Size:        fh.Size,
+					Data:        base64.StdEncoding.EncodeToString(data),
+				})
+			}
+		}
+
+		if len(files) > 0 {
+			input["_files"] = files
+		}
+	} else if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body: "+err.Error())
 			return
 		}
@@ -81,7 +127,7 @@ func (h *FunctionHandlers) Invoke(w http.ResponseWriter, r *http.Request) {
 		Msg("Invoking function")
 
 	// Invoke function
-	resp, err := h.service.Invoke(r.Context(), functionName, req.Input, authCtx)
+	resp, err := h.service.Invoke(r.Context(), functionName, input, authCtx)
 	if err != nil {
 		log.Error().Err(err).Str("function", functionName).Msg("Function invocation failed")
 		Error(w, http.StatusInternalServerError, "INVOCATION_ERROR", "Failed to invoke function: "+err.Error())
@@ -95,6 +141,34 @@ func (h *FunctionHandlers) Invoke(w http.ResponseWriter, r *http.Request) {
 		Error:      resp.Error,
 		Logs:       resp.Logs,
 		DurationMs: resp.DurationMs,
+	})
+}
+
+// Get handles GET /api/functions/:name.
+func (h *FunctionHandlers) Get(w http.ResponseWriter, r *http.Request) {
+	functionName := r.PathValue("name")
+	if functionName == "" {
+		Error(w, http.StatusBadRequest, "MISSING_FUNCTION_NAME", "Function name is required")
+		return
+	}
+
+	funcDef, ok := h.service.GetFunction(functionName)
+	if !ok {
+		Error(w, http.StatusNotFound, "FUNCTION_NOT_FOUND", "Function not found: "+functionName)
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"name":         funcDef.Name,
+		"runtime":      funcDef.Runtime,
+		"path":         funcDef.Path,
+		"entrypoint":   funcDef.Path,
+		"description":  funcDef.Description,
+		"sample_input": funcDef.SampleInput,
+		"enabled":      true,
+		"timeout":      funcDef.Timeout,
+		"memory":       funcDef.Memory,
+		"env":          funcDef.Env,
 	})
 }
 

@@ -7,6 +7,8 @@ This example demonstrates Alyx's polyglot serverless functions using the subproc
 - **hello-deno** - Deno TypeScript function
 - **hello-node** - Node.js JavaScript function  
 - **hello-python** - Python 3 function
+- **hello-typescript** - TypeScript function with build step
+- **file-info** - Python function demonstrating file upload handling
 
 ## Running
 
@@ -36,6 +38,11 @@ curl -X POST http://localhost:8090/api/functions/hello-node \
 curl -X POST http://localhost:8090/api/functions/hello-python \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
+
+# Test file upload function (multipart/form-data)
+curl -X POST http://localhost:8090/api/functions/file-info \
+  -F "files=@README.md" \
+  -F "files=@schema.yaml"
 ```
 
 ## Function Structure

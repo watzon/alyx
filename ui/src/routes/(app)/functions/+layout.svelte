@@ -6,12 +6,10 @@
 	import { base } from '$app/paths';
 	import { Button } from '$ui/button';
 	import { Input } from '$ui/input';
-	import { Badge } from '$ui/badge';
 	import { Skeleton } from '$ui/skeleton';
 	import RefreshCwIcon from 'lucide-svelte/icons/refresh-cw';
 	import SearchIcon from 'lucide-svelte/icons/search';
 	import CodeIcon from 'lucide-svelte/icons/code';
-	import { toast } from 'svelte-sonner';
 
 	let { children } = $props();
 
@@ -34,103 +32,88 @@
 
 	const currentFunctionName = $derived((page.params as { name?: string }).name);
 
-	async function handleRefresh() {
+	function handleRefresh() {
 		functionsQuery.refetch();
-		toast.success('Functions refreshed');
 	}
 
 	function handleFunctionClick(name: string) {
 		goto(`${base}/functions/${name}`);
 	}
 
-	function getRuntimeColor(runtime: string): string {
+	function getRuntimeLabel(runtime: string): string {
 		switch (runtime) {
 			case 'node':
 			case 'nodejs':
-				return 'bg-green-500/10 text-green-500 border-green-500/20';
+				return 'Node.js';
 			case 'python':
-				return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+				return 'Python';
 			case 'go':
-				return 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20';
+				return 'Go';
 			case 'deno':
-				return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+				return 'Deno';
 			case 'bun':
-				return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+				return 'Bun';
 			default:
-				return 'bg-muted text-muted-foreground border-transparent';
+				return runtime;
 		}
 	}
 </script>
 
-<div class="flex h-[calc(100vh-8rem)]">
-	<aside class="w-60 flex flex-col border-r bg-background">
-		<div class="flex items-center justify-between border-b px-3 py-2">
-			<h2 class="text-sm font-semibold">Functions</h2>
-			<Button variant="ghost" size="icon" class="h-7 w-7" onclick={handleRefresh}>
-				<RefreshCwIcon class="h-3.5 w-3.5" />
-			</Button>
-		</div>
-
-		<div class="border-b p-2">
+<div class="flex h-[calc(100vh-6.5rem)] -mt-6 -mx-4 sm:-mx-6 lg:-mx-8">
+	<aside class="w-72 flex-shrink-0 flex flex-col">
+		<div class="p-6">
 			<div class="relative">
-				<SearchIcon class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+				<SearchIcon class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 				<Input
 					type="text"
-					placeholder="Search functions..."
-					class="h-8 pl-8 text-sm"
+					placeholder="Search..."
+					class="h-10 pl-9 text-sm bg-muted/40 border-border/50 focus:bg-background"
 					bind:value={searchQuery}
 				/>
 			</div>
 		</div>
 
-		<div class="flex-1 overflow-auto">
+		<nav class="flex-1 overflow-auto px-4 pb-6">
 			{#if functionsQuery.isPending}
-				<div class="space-y-2 p-2">
+				<div class="space-y-1 px-2">
 					{#each Array(5) as _}
-						<Skeleton class="h-10 w-full" />
+						<Skeleton class="h-10 w-full rounded-lg" />
 					{/each}
 				</div>
 			{:else if functionsQuery.isError}
-				<div class="p-4 text-center">
-					<p class="text-xs text-destructive">Failed to load functions</p>
+				<div class="px-2 py-8 text-center">
+					<p class="text-sm text-muted-foreground">Failed to load</p>
+					<Button variant="ghost" size="sm" class="mt-2" onclick={handleRefresh}>
+						<RefreshCwIcon class="h-3.5 w-3.5 mr-1.5" />
+						Retry
+					</Button>
 				</div>
 			{:else if filteredFunctions.length === 0}
-				<div class="flex flex-col items-center justify-center p-6 text-center">
-					<CodeIcon class="h-8 w-8 text-muted-foreground/50" />
-					<p class="mt-2 text-xs text-muted-foreground">
-						{searchQuery ? 'No functions match your search' : 'No functions found'}
+				<div class="flex flex-col items-center justify-center py-16 text-center">
+					<CodeIcon class="h-10 w-10 text-muted-foreground/20" />
+					<p class="mt-4 text-sm text-muted-foreground">
+						{searchQuery ? 'No matches found' : 'No functions'}
 					</p>
 				</div>
 			{:else}
-				<div class="p-1">
+				<div class="space-y-0.5">
 					{#each filteredFunctions as func}
 						<button
-							class="w-full rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent {currentFunctionName ===
-							func.name
-								? 'bg-accent'
-								: ''}"
+							class="group w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-colors {currentFunctionName === func.name
+								? 'bg-muted text-foreground'
+								: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 							onclick={() => handleFunctionClick(func.name)}
 						>
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate text-sm font-medium">{func.name}</span>
-								{#if !func.enabled}
-									<span class="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/30"
-									></span>
-								{/if}
-							</div>
-							<div class="mt-1 flex items-center gap-2">
-								<Badge variant="outline" class="text-xs {getRuntimeColor(func.runtime)}">
-									{func.runtime}
-								</Badge>
-							</div>
+							<span class="truncate text-sm {currentFunctionName === func.name ? 'font-medium' : ''}">{func.name}</span>
+							<span class="text-xs text-muted-foreground/70 ml-2 shrink-0">{getRuntimeLabel(func.runtime)}</span>
 						</button>
 					{/each}
 				</div>
 			{/if}
-		</div>
+		</nav>
 	</aside>
 
-	<main class="flex-1 overflow-auto">
+	<main class="flex-1 overflow-auto border-l border-border/50">
 		{@render children()}
 	</main>
 </div>

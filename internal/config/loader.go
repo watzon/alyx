@@ -114,10 +114,7 @@ func setViperDefaults(v *viper.Viper, cfg *Config) {
 
 	v.SetDefault("functions.enabled", cfg.Functions.Enabled)
 	v.SetDefault("functions.path", cfg.Functions.Path)
-	v.SetDefault("functions.runtime", cfg.Functions.Runtime)
 	v.SetDefault("functions.timeout", cfg.Functions.Timeout)
-	v.SetDefault("functions.memory_limit", cfg.Functions.MemoryLimit)
-	v.SetDefault("functions.cpu_limit", cfg.Functions.CPULimit)
 
 	v.SetDefault("logging.level", cfg.Logging.Level)
 	v.SetDefault("logging.format", cfg.Logging.Format)

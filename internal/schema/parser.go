@@ -89,6 +89,7 @@ type rawFunction struct {
 	Entrypoint   string             `yaml:"entrypoint"`
 	Path         string             `yaml:"path,omitempty"`
 	Description  string             `yaml:"description,omitempty"`
+	SampleInput  any                `yaml:"sample_input,omitempty"`
 	Timeout      string             `yaml:"timeout,omitempty"`
 	Memory       string             `yaml:"memory,omitempty"`
 	Env          map[string]string  `yaml:"env,omitempty"`
@@ -169,6 +170,7 @@ func parseFunctions(raw map[string]*rawFunction) (map[string]*Function, error) {
 			Entrypoint:   rawFunc.Entrypoint,
 			Path:         rawFunc.Path,
 			Description:  rawFunc.Description,
+			SampleInput:  rawFunc.SampleInput,
 			Timeout:      rawFunc.Timeout,
 			Memory:       rawFunc.Memory,
 			Env:          rawFunc.Env,

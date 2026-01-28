@@ -553,6 +553,7 @@ type Function struct {
 	Entrypoint   string             `yaml:"entrypoint"`
 	Path         string             `yaml:"path,omitempty"`
 	Description  string             `yaml:"description,omitempty"`
+	SampleInput  any                `yaml:"sample_input,omitempty" json:"sample_input,omitempty"`
 	Timeout      string             `yaml:"timeout,omitempty"`
 	Memory       string             `yaml:"memory,omitempty"`
 	Env          map[string]string  `yaml:"env,omitempty"`
