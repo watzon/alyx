@@ -48,6 +48,7 @@
       timestamp: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
       json: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300',
       blob: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300',
+      file: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
   }

@@ -6,7 +6,7 @@
   import { Button } from '$ui/button';
   import { Separator } from '$ui/separator';
   import { FieldInput } from '$lib/components/fields';
-  import { collections, type Collection } from '$lib/api/client';
+  import { collections, files, type Collection } from '$lib/api/client';
   import { collectionToZod } from '$lib/validation/collection-schema';
   import { toast } from 'svelte-sonner';
   import { XIcon, SaveIcon, Loader2Icon } from 'lucide-svelte';
@@ -100,9 +100,34 @@
     }
   });
 
+  async function processFileFields(data: Record<string, any>): Promise<Record<string, any>> {
+    const processed = { ...data };
+    const fileFields = (collection.fields || []).filter(f => f.type === 'file');
+    
+    for (const field of fileFields) {
+      const value = processed[field.name];
+      if (value instanceof File) {
+        const bucket = field.file?.bucket;
+        if (!bucket) {
+          throw new Error(`No bucket configured for file field: ${field.name}`);
+        }
+        const uploadResult = await files.upload(bucket, value);
+        if (uploadResult.error) {
+          throw new Error(`Failed to upload file for ${field.name}: ${uploadResult.error.message}`);
+        }
+        processed[field.name] = uploadResult.data!.id;
+      } else if (value === null || value === undefined || value === '') {
+        processed[field.name] = null;
+      }
+    }
+    
+    return processed;
+  }
+
   const createDocMutation = createMutation(() => ({
     mutationFn: async (data: Record<string, any>) => {
-      const result = await collections.create(collection.name, data);
+      const processedData = await processFileFields(data);
+      const result = await collections.create(collection.name, processedData);
       if (result.error) throw result.error;
       return result.data;
     },
@@ -121,7 +146,8 @@
 
   const updateDocMutation = createMutation(() => ({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, any> }) => {
-      const result = await collections.update(collection.name, id, data);
+      const processedData = await processFileFields(data);
+      const result = await collections.update(collection.name, id, processedData);
       if (result.error) throw result.error;
       return result.data;
     },
