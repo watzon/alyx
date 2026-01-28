@@ -10,15 +10,25 @@ import (
 )
 
 // FilesystemBackend implements Backend interface for local filesystem storage.
-// Files are organized as: {basePath}/{bucket}/{key}
+// Files are organized as: {basePath}/{bucketPrefix}{bucket}/{key}
 type FilesystemBackend struct {
-	basePath string
+	basePath     string
+	bucketPrefix string
 }
 
 // NewFilesystemBackend creates a new filesystem backend with the given base path.
 func NewFilesystemBackend(basePath string) *FilesystemBackend {
 	return &FilesystemBackend{
-		basePath: basePath,
+		basePath:     basePath,
+		bucketPrefix: "",
+	}
+}
+
+// NewFilesystemBackendWithPrefix creates a new filesystem backend with base path and bucket prefix.
+func NewFilesystemBackendWithPrefix(basePath, bucketPrefix string) *FilesystemBackend {
+	return &FilesystemBackend{
+		basePath:     basePath,
+		bucketPrefix: bucketPrefix,
 	}
 }
 
@@ -66,10 +76,10 @@ func (f *FilesystemBackend) buildPath(bucket, key string) (string, error) {
 		return "", err
 	}
 
-	// Use filepath.Join to handle OS-specific separators
-	fullPath := filepath.Join(f.basePath, bucket, key)
+	prefixedBucket := f.bucketPrefix + bucket
 
-	// Final safety check: ensure path is within basePath
+	fullPath := filepath.Join(f.basePath, prefixedBucket, key)
+
 	cleanPath := filepath.Clean(fullPath)
 	cleanBase := filepath.Clean(f.basePath)
 

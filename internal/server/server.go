@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -17,23 +18,28 @@ import (
 	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/schema"
 	"github.com/watzon/alyx/internal/server/requestlog"
+	"github.com/watzon/alyx/internal/storage"
 )
 
 type Server struct {
-	cfg           *config.Config
-	db            *database.DB
-	schema        *schema.Schema
-	schemaPath    string
-	configPath    string
-	rules         *rules.Engine
-	broker        *realtime.Broker
-	funcService   *functions.Service
-	dbHookTrigger *DatabaseHookTrigger
-	deployService *deploy.Service
-	requestLogs   *requestlog.Store
-	httpServer    *http.Server
-	router        *Router
-	mu            sync.RWMutex
+	cfg            *config.Config
+	db             *database.DB
+	schema         *schema.Schema
+	schemaPath     string
+	configPath     string
+	rules          *rules.Engine
+	broker         *realtime.Broker
+	funcService    *functions.Service
+	dbHookTrigger  *DatabaseHookTrigger
+	deployService  *deploy.Service
+	requestLogs    *requestlog.Store
+	httpServer     *http.Server
+	router         *Router
+	storageService *storage.Service
+	tusService     *storage.TUSService
+	signedService  *storage.SignedURLService
+	cleanupService *storage.CleanupService
+	mu             sync.RWMutex
 }
 
 const defaultRequestLogCapacity = 1000
@@ -106,6 +112,58 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 		srv.deployService = deployService
 	}
 
+	// Initialize storage service if buckets are defined in schema
+	if len(s.Buckets) > 0 && len(cfg.Storage.Backends) > 0 {
+		backends := make(map[string]storage.Backend)
+
+		for name, backendCfg := range cfg.Storage.Backends {
+			var backend storage.Backend
+			var err error
+
+			switch backendCfg.Type {
+			case "filesystem":
+				if backendCfg.Filesystem == nil {
+					log.Warn().Str("backend", name).Msg("Filesystem backend config missing, skipping")
+					continue
+				}
+				if backendCfg.Filesystem.Path == "" {
+					log.Warn().Str("backend", name).Msg("Filesystem backend path is required, skipping")
+					continue
+				}
+				if backendCfg.Filesystem.BasePath != "" {
+					backend = storage.NewFilesystemBackendWithPrefix(backendCfg.Filesystem.Path, backendCfg.Filesystem.BasePath)
+				} else {
+					backend = storage.NewFilesystemBackend(backendCfg.Filesystem.Path)
+				}
+
+			case "s3":
+				if backendCfg.S3 == nil {
+					log.Warn().Str("backend", name).Msg("S3 backend config missing, skipping")
+					continue
+				}
+				backend, err = storage.NewS3Backend(context.Background(), *backendCfg.S3)
+
+			default:
+				log.Warn().Str("backend", name).Str("type", backendCfg.Type).Msg("Unknown backend type, skipping")
+				continue
+			}
+
+			if err != nil {
+				log.Warn().Err(err).Str("backend", name).Msg("Failed to create backend")
+				continue
+			}
+
+			backends[name] = backend
+		}
+
+		if len(backends) > 0 {
+			srv.storageService = storage.NewService(db, backends, s, cfg, rulesEngine)
+			srv.tusService = storage.NewTUSService(db, backends, s, cfg, "./tmp")
+			srv.signedService = storage.NewSignedURLService([]byte(cfg.Auth.JWT.Secret))
+			srv.cleanupService = storage.NewCleanupService(storage.NewTUSStore(db), "./tmp", 1*time.Hour)
+		}
+	}
+
 	srv.router = NewRouter(srv)
 	srv.httpServer = &http.Server{
 		Addr:         cfg.Server.Address(),
@@ -140,6 +198,11 @@ func (s *Server) Start(ctx context.Context) error {
 		s.router.SetHookTrigger(s.dbHookTrigger)
 	}
 
+	if s.cleanupService != nil {
+		s.cleanupService.Start(ctx)
+		log.Info().Msg("Storage cleanup service started")
+	}
+
 	err := s.httpServer.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -160,6 +223,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			log.Warn().Err(err).Msg("Error closing function service")
 		}
 		log.Info().Msg("Function service stopped")
+	}
+
+	if s.cleanupService != nil {
+		s.cleanupService.Stop()
+		log.Info().Msg("Storage cleanup service stopped")
 	}
 
 	return s.httpServer.Shutdown(ctx)
@@ -187,6 +255,22 @@ func (s *Server) Rules() *rules.Engine {
 
 func (s *Server) FuncService() *functions.Service {
 	return s.funcService
+}
+
+func (s *Server) StorageService() *storage.Service {
+	return s.storageService
+}
+
+func (s *Server) TUSService() *storage.TUSService {
+	return s.tusService
+}
+
+func (s *Server) SignedService() *storage.SignedURLService {
+	return s.signedService
+}
+
+func (s *Server) CleanupService() *storage.CleanupService {
+	return s.cleanupService
 }
 
 func (s *Server) SchemaPath() string {
