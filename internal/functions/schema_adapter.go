@@ -184,3 +184,11 @@ func parseMemory(s string) (int, error) {
 
 	return 0, fmt.Errorf("invalid memory format: %s (use 128mb, 1gb, or 128)", s)
 }
+
+func newRegistryFromSchemaInterface(schemaInterface interface{}, functionsDir string, registrar Registrar) (*Registry, error) {
+	s, ok := schemaInterface.(*schema.Schema)
+	if !ok {
+		return nil, fmt.Errorf("invalid schema type: expected *schema.Schema")
+	}
+	return NewRegistryFromSchema(s, functionsDir, registrar)
+}

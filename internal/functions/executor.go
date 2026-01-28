@@ -21,6 +21,10 @@ type ServiceConfig struct {
 	ServerPort int
 	// DevMode indicates whether the service is running in development mode.
 	DevMode bool
+	// Schema is the parsed schema containing function definitions.
+	Schema interface{} // *schema.Schema, but avoiding import cycle
+	// Registrar is used to auto-register hooks, schedules, and webhooks.
+	Registrar Registrar
 }
 
 // Service manages function execution using subprocess runtime.
@@ -41,12 +45,19 @@ func NewService(cfg *ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("service config is required")
 	}
 
-	// Create function registry
-	registry := NewRegistry(cfg.FunctionsDir)
+	var registry *Registry
+	var err error
 
-	// Discover functions
-	if err := registry.Discover(); err != nil {
-		return nil, fmt.Errorf("discovering functions: %w", err)
+	if cfg.Schema != nil {
+		registry, err = newRegistryFromSchemaInterface(cfg.Schema, cfg.FunctionsDir, cfg.Registrar)
+		if err != nil {
+			return nil, fmt.Errorf("loading functions from schema: %w", err)
+		}
+	} else {
+		registry = NewRegistry(cfg.FunctionsDir)
+		if err := registry.Discover(); err != nil {
+			return nil, fmt.Errorf("discovering functions: %w", err)
+		}
 	}
 
 	// Create subprocess runtimes for each runtime type

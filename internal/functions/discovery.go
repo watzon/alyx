@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/watzon/alyx/internal/schema"
-	"gopkg.in/yaml.v3"
 )
 
 var errNotAFunction = errors.New("not a function file")
@@ -72,6 +71,9 @@ type Registry struct {
 }
 
 // NewRegistry creates a new function registry.
+// Deprecated: Use NewRegistryFromSchema instead. This function will be removed
+// in a future version. Functions should be defined in schema.yaml, not discovered
+// from the filesystem.
 func NewRegistry(functionsDir string) *Registry {
 	return &Registry{
 		functionsDir: functionsDir,
@@ -182,14 +184,6 @@ func (r *Registry) parseFunctionDirectory(dirName string) (*FunctionDef, error) 
 		Env:     make(map[string]string),
 	}
 
-	manifestPath := filepath.Join(dirPath, "manifest.yaml")
-	if _, err := os.Stat(manifestPath); err == nil {
-		if err := r.loadManifest(funcDef, manifestPath); err != nil {
-			return nil, fmt.Errorf("loading manifest: %w", err)
-		}
-		funcDef.HasManifest = true
-	}
-
 	return funcDef, nil
 }
 
@@ -238,65 +232,6 @@ func (r *Registry) hasDenoConfig(dirPath string) bool {
 }
 
 // loadManifest loads a function manifest file.
-func (r *Registry) loadManifest(funcDef *FunctionDef, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	var manifest Manifest
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("parsing manifest: %w", err)
-	}
-
-	if err := manifest.Validate(); err != nil {
-		return fmt.Errorf("validating manifest: %w", err)
-	}
-
-	if manifest.Runtime != "" {
-		funcDef.Runtime = Runtime(manifest.Runtime)
-	}
-	if manifest.Timeout != "" {
-		funcDef.Timeout = parseTimeoutSeconds(manifest.Timeout)
-	}
-	if manifest.Memory != "" {
-		funcDef.Memory = parseMemoryMB(manifest.Memory)
-	}
-	if manifest.Env != nil {
-		for k, v := range manifest.Env {
-			funcDef.Env[k] = expandEnv(v)
-		}
-	}
-
-	funcDef.Routes = manifest.Routes
-	funcDef.Hooks = manifest.Hooks
-	funcDef.Schedules = manifest.Schedules
-
-	// Handle build configuration
-	if manifest.Build != nil {
-		funcDef.HasBuild = true
-
-		// Resolve output path relative to function directory
-		dirPath := filepath.Dir(path) // path is the manifest.yaml path
-		funcDef.OutputPath = filepath.Join(dirPath, manifest.Build.Output)
-
-		// Check if output exists (warning only, not error)
-		if _, err := os.Stat(funcDef.OutputPath); os.IsNotExist(err) {
-			log.Warn().
-				Str("function", funcDef.Name).
-				Str("output", funcDef.OutputPath).
-				Msg("Build output file not found (will be created on build)")
-		}
-	}
-
-	if r.registrar != nil {
-		if err := r.autoRegister(context.Background(), funcDef); err != nil {
-			log.Warn().Err(err).Str("function", funcDef.Name).Msg("Failed to auto-register manifest components")
-		}
-	}
-
-	return nil
-}
 
 func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error {
 	functionID := funcDef.Name

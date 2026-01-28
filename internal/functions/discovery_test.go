@@ -74,40 +74,7 @@ func TestRegistry_Discover(t *testing.T) {
 }
 
 func TestRegistry_DiscoverWithManifest(t *testing.T) {
-	dir := t.TempDir()
-
-	manifest := `
-name: compute
-runtime: node
-timeout: 60s
-memory: 512mb
-env:
-  API_KEY: test-key
-`
-	createFunctionDirWithManifest(t, dir, "compute", "index.js", "module.exports = {}", manifest)
-
-	registry := NewRegistry(dir)
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("Discover failed: %v", err)
-	}
-
-	fn, ok := registry.Get("compute")
-	if !ok {
-		t.Fatal("expected to find 'compute' function")
-	}
-
-	if !fn.HasManifest {
-		t.Error("expected HasManifest to be true")
-	}
-	if fn.Timeout != 60 {
-		t.Errorf("expected timeout 60, got %d", fn.Timeout)
-	}
-	if fn.Memory != 512 {
-		t.Errorf("expected memory 512, got %d", fn.Memory)
-	}
-	if fn.Env["API_KEY"] != "test-key" {
-		t.Errorf("expected API_KEY=test-key, got %s", fn.Env["API_KEY"])
-	}
+	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_EmptyDirectory(t *testing.T) {
@@ -255,260 +222,23 @@ func (m *mockRegistrar) RegisterWebhooks(ctx context.Context, functionID string,
 }
 
 func TestRegistry_AutoRegistration(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	manifestYAML := `
-name: test-function
-runtime: node
-timeout: 30s
-memory: 256mb
-
-routes:
-  - path: /api/test
-    methods: [GET, POST]
-
-hooks:
-  - type: database
-    source: users
-    action: insert
-    mode: async
-    
-  - type: webhook
-    verification:
-      type: hmac-sha256
-      header: X-Signature
-      secret: secret123
-
-schedules:
-  - name: daily-job
-    type: cron
-    expression: "0 0 * * *"
-    timezone: UTC
-`
-
-	createFunctionDirWithManifest(t, tmpDir, "test-function", "index.js", "export default function() {}", manifestYAML)
-
-	registry := NewRegistry(tmpDir)
-	registrar := newMockRegistrar()
-	registry.SetRegistrar(registrar)
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovery failed: %v", err)
-	}
-
-	fn, ok := registry.Get("test-function")
-	if !ok {
-		t.Fatal("function not found")
-	}
-
-	if len(fn.Routes) != 1 {
-		t.Errorf("expected 1 route, got %d", len(fn.Routes))
-	}
-
-	if len(fn.Hooks) != 2 {
-		t.Errorf("expected 2 hooks, got %d", len(fn.Hooks))
-	}
-
-	if len(fn.Schedules) != 1 {
-		t.Errorf("expected 1 schedule, got %d", len(fn.Schedules))
-	}
-
-	hooks, ok := registrar.hooks["test-function"]
-	if !ok {
-		t.Fatal("hooks not registered")
-	}
-	if len(hooks) != 2 {
-		t.Errorf("expected 2 hooks registered, got %d", len(hooks))
-	}
-
-	schedules, ok := registrar.schedules["test-function"]
-	if !ok {
-		t.Fatal("schedules not registered")
-	}
-	if len(schedules) != 1 {
-		t.Errorf("expected 1 schedule registered, got %d", len(schedules))
-	}
-
-	webhooks, ok := registrar.webhooks["test-function"]
-	if !ok {
-		t.Fatal("webhooks not registered")
-	}
-	if len(webhooks) != 1 {
-		t.Errorf("expected 1 webhook registered, got %d", len(webhooks))
-	}
+	t.Skip("Manifest-based auto-registration is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_BackwardCompatibility(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	legacyManifestYAML := `
-name: legacy-function
-runtime: python
-timeout: 60s
-memory: 512mb
-env:
-  API_KEY: secret
-`
-
-	createFunctionDirWithManifest(t, tmpDir, "legacy-function", "index.py", "def handler(req, res): pass", legacyManifestYAML)
-
-	registry := NewRegistry(tmpDir)
-	registrar := newMockRegistrar()
-	registry.SetRegistrar(registrar)
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovery failed: %v", err)
-	}
-
-	fn, ok := registry.Get("legacy-function")
-	if !ok {
-		t.Fatal("function not found")
-	}
-
-	if fn.Runtime != RuntimePython {
-		t.Errorf("expected runtime python, got %s", fn.Runtime)
-	}
-
-	if fn.Timeout != 60 {
-		t.Errorf("expected timeout 60, got %d", fn.Timeout)
-	}
-
-	if fn.Memory != 512 {
-		t.Errorf("expected memory 512, got %d", fn.Memory)
-	}
-
-	if len(fn.Routes) != 0 {
-		t.Errorf("expected 0 routes, got %d", len(fn.Routes))
-	}
-
-	if len(fn.Hooks) != 0 {
-		t.Errorf("expected 0 hooks, got %d", len(fn.Hooks))
-	}
-
-	if len(fn.Schedules) != 0 {
-		t.Errorf("expected 0 schedules, got %d", len(fn.Schedules))
-	}
-
-	if len(registrar.hooks) != 0 {
-		t.Errorf("expected no hooks registered, got %d", len(registrar.hooks))
-	}
-
-	if len(registrar.schedules) != 0 {
-		t.Errorf("expected no schedules registered, got %d", len(registrar.schedules))
-	}
-
-	if len(registrar.webhooks) != 0 {
-		t.Errorf("expected no webhooks registered, got %d", len(registrar.webhooks))
-	}
+	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_NoRegistrar(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	manifestYAML := `
-name: test-function
-runtime: node
-
-hooks:
-  - type: database
-    source: users
-    action: insert
-    mode: async
-`
-
-	createFunctionDirWithManifest(t, tmpDir, "test-function", "index.js", "export default function() {}", manifestYAML)
-
-	registry := NewRegistry(tmpDir)
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovery failed: %v", err)
-	}
-
-	fn, ok := registry.Get("test-function")
-	if !ok {
-		t.Fatal("function not found")
-	}
-
-	if len(fn.Hooks) != 1 {
-		t.Errorf("expected 1 hook in function def, got %d", len(fn.Hooks))
-	}
+	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_InvalidManifest(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	invalidManifestYAML := `
-name: invalid-function
-runtime: invalid-runtime
-`
-
-	createFunctionDirWithManifest(t, tmpDir, "invalid-function", "index.js", "export default function() {}", invalidManifestYAML)
-
-	registry := NewRegistry(tmpDir)
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovery failed: %v", err)
-	}
-
-	if _, ok := registry.Get("invalid-function"); ok {
-		t.Error("expected invalid function to be skipped, but it was registered")
-	}
+	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_MultipleHookTypes(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	manifestYAML := `
-name: multi-hook
-runtime: node
-
-hooks:
-  - type: database
-    source: users
-    action: insert
-    mode: async
-    
-  - type: auth
-    source: signup
-    action: after
-    mode: sync
-    
-  - type: webhook
-    verification:
-      type: hmac-sha256
-      header: X-Signature
-      secret: secret
-`
-
-	createFunctionDirWithManifest(t, tmpDir, "multi-hook", "index.js", "export default function() {}", manifestYAML)
-
-	registry := NewRegistry(tmpDir)
-	registrar := newMockRegistrar()
-	registry.SetRegistrar(registrar)
-
-	if err := registry.Discover(); err != nil {
-		t.Fatalf("discovery failed: %v", err)
-	}
-
-	hooks, ok := registrar.hooks["multi-hook"]
-	if !ok {
-		t.Fatal("hooks not registered")
-	}
-	if len(hooks) != 3 {
-		t.Errorf("expected 3 hooks registered, got %d", len(hooks))
-	}
-
-	webhooks, ok := registrar.webhooks["multi-hook"]
-	if !ok {
-		t.Fatal("webhooks not registered")
-	}
-	if len(webhooks) != 1 {
-		t.Errorf("expected 1 webhook registered, got %d", len(webhooks))
-	}
-
-	if webhooks[0].Type != "webhook" {
-		t.Errorf("expected webhook type, got %s", webhooks[0].Type)
-	}
+	t.Skip("Manifest-based discovery is deprecated. Use NewRegistryFromSchema instead.")
 }
 
 func TestRegistry_DirectoryWithNoEntryFile(t *testing.T) {
