@@ -178,6 +178,7 @@ type Schema struct {
 	Version     int                    `yaml:"version"`
 	Collections map[string]*Collection `yaml:"collections"`
 	Buckets     map[string]*Bucket     `yaml:"buckets"`
+	Functions   map[string]*Function   `yaml:"functions,omitempty"`
 }
 
 type Collection struct {
@@ -543,4 +544,67 @@ type BucketRules struct {
 	Read   string `yaml:"read"`
 	Update string `yaml:"update"`
 	Delete string `yaml:"delete"`
+}
+
+// Function represents a serverless function definition in schema.
+type Function struct {
+	Name         string             `yaml:"-"`
+	Runtime      string             `yaml:"runtime"`
+	Entrypoint   string             `yaml:"entrypoint"`
+	Path         string             `yaml:"path,omitempty"`
+	Description  string             `yaml:"description,omitempty"`
+	Timeout      string             `yaml:"timeout,omitempty"`
+	Memory       string             `yaml:"memory,omitempty"`
+	Env          map[string]string  `yaml:"env,omitempty"`
+	Dependencies []string           `yaml:"dependencies,omitempty"`
+	Hooks        []FunctionHook     `yaml:"hooks,omitempty"`
+	Schedules    []FunctionSchedule `yaml:"schedules,omitempty"`
+	Routes       []FunctionRoute    `yaml:"routes,omitempty"`
+	Build        *FunctionBuild     `yaml:"build,omitempty"`
+	Rules        *FunctionRules     `yaml:"rules,omitempty"`
+}
+
+// FunctionRules defines CEL-based access control for function invocation.
+type FunctionRules struct {
+	Invoke string `yaml:"invoke,omitempty"`
+}
+
+// FunctionHook represents a database/auth/webhook hook trigger.
+type FunctionHook struct {
+	Type         string                       `yaml:"type"`
+	Source       string                       `yaml:"source,omitempty"`
+	Action       string                       `yaml:"action,omitempty"`
+	Mode         string                       `yaml:"mode,omitempty"`
+	Verification *FunctionWebhookVerification `yaml:"verification,omitempty"`
+}
+
+// FunctionSchedule represents a cron/interval/one_time schedule trigger.
+type FunctionSchedule struct {
+	Name       string                 `yaml:"name"`
+	Type       string                 `yaml:"type"`
+	Expression string                 `yaml:"expression,omitempty"`
+	Timezone   string                 `yaml:"timezone,omitempty"`
+	Config     map[string]interface{} `yaml:"config,omitempty"`
+	Input      map[string]interface{} `yaml:"input,omitempty"`
+}
+
+// FunctionRoute represents an HTTP route trigger.
+type FunctionRoute struct {
+	Path    string   `yaml:"path"`
+	Methods []string `yaml:"methods,omitempty"`
+}
+
+// FunctionBuild represents build configuration for a function.
+type FunctionBuild struct {
+	Command string   `yaml:"command,omitempty"`
+	Args    []string `yaml:"args,omitempty"`
+	Watch   []string `yaml:"watch,omitempty"`
+	Output  string   `yaml:"output,omitempty"`
+}
+
+// FunctionWebhookVerification represents HMAC verification config.
+type FunctionWebhookVerification struct {
+	Type   string `yaml:"type"`
+	Header string `yaml:"header"`
+	Secret string `yaml:"secret"`
 }
