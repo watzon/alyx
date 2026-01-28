@@ -67,7 +67,7 @@
 	}
 </script>
 
-{#if files.length === 0}
+{#if !files || files.length === 0}
 	<Card.Root>
 		<Card.Content class="py-10 text-center">
 			<FileIcon class="mx-auto h-10 w-10 text-muted-foreground/50" />
