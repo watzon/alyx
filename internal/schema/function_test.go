@@ -788,7 +788,7 @@ func TestValidation_InvalidFunctionName(t *testing.T) {
 	}{
 		{"uppercase", "MyFunction", true},
 		{"starts with number", "1function", true},
-		{"special chars dash", "my-function", true},
+		{"hyphens allowed", "my-function", false},
 		{"special chars space", "my function", true},
 		{"valid lowercase", "my_function", false},
 		{"valid with numbers", "function_123", false},

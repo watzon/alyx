@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 )
 
 func ParseFile(path string) (*Schema, error) {

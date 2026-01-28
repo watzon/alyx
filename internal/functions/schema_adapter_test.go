@@ -55,8 +55,9 @@ func TestSchemaToFunctionDefs_Minimal(t *testing.T) {
 	if def.Runtime != RuntimeNode {
 		t.Errorf("expected runtime 'node', got %q", def.Runtime)
 	}
-	if def.Path != funcDir {
-		t.Errorf("expected path %q, got %q", funcDir, def.Path)
+	expectedPath := filepath.Join(funcDir, "index.js")
+	if def.Path != expectedPath {
+		t.Errorf("expected path %q, got %q", expectedPath, def.Path)
 	}
 	if def.Timeout != 30 {
 		t.Errorf("expected timeout 30, got %d", def.Timeout)
@@ -205,8 +206,9 @@ func TestSchemaToFunctionDefs_CustomPath(t *testing.T) {
 		t.Fatalf("expected 1 def, got %d", len(defs))
 	}
 
-	if defs[0].Path != customDir {
-		t.Errorf("expected path %q, got %q", customDir, defs[0].Path)
+	expectedPath := filepath.Join(customDir, "index.ts")
+	if defs[0].Path != expectedPath {
+		t.Errorf("expected path %q, got %q", expectedPath, defs[0].Path)
 	}
 }
 

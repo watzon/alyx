@@ -28,6 +28,8 @@ type FunctionDef struct {
 	OutputPath string `json:"output_path,omitempty"`
 	// HasBuild indicates if this function has a build configuration.
 	HasBuild bool `json:"has_build"`
+	// Build contains the build configuration (if HasBuild is true).
+	Build *BuildConfig `json:"build,omitempty"`
 	// Timeout overrides the default timeout (optional).
 	Timeout int `json:"timeout,omitempty"`
 	// Memory overrides the default memory limit in MB (optional).
@@ -230,8 +232,6 @@ func (r *Registry) hasDenoConfig(dirPath string) bool {
 	}
 	return false
 }
-
-// loadManifest loads a function manifest file.
 
 func (r *Registry) autoRegister(ctx context.Context, funcDef *FunctionDef) error {
 	functionID := funcDef.Name

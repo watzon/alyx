@@ -114,9 +114,10 @@ func convertFunction(name string, fn *schema.Function, functionsDir string) (*Fu
 	return &FunctionDef{
 		Name:        name,
 		Runtime:     runtime,
-		Path:        path,
+		Path:        entrypointPath,
 		OutputPath:  outputPath,
 		HasBuild:    build != nil,
+		Build:       build,
 		Timeout:     timeout,
 		Memory:      memory,
 		Env:         fn.Env,

@@ -4,7 +4,6 @@ package functions
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -13,7 +12,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gobwas/glob"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -63,31 +61,20 @@ func (sw *SourceWatcher) Start() error {
 	functions := sw.registry.List()
 
 	for _, fn := range functions {
+		if fn.Build == nil {
+			continue
+		}
+
 		funcDir := filepath.Dir(fn.Path)
 
-		manifestPath := filepath.Join(funcDir, "manifest.yaml")
-		if _, err := os.Stat(manifestPath); err != nil {
-			continue
-		}
-
-		manifest, err := sw.loadManifest(manifestPath)
-		if err != nil {
-			log.Warn().Err(err).Str("function", fn.Name).Msg("Failed to load manifest")
-			continue
-		}
-
-		if manifest.Build == nil {
-			continue
-		}
-
-		if err := sw.addWatchPatterns(funcDir, manifest.Build.Watch); err != nil {
+		if err := sw.addWatchPatterns(funcDir, fn.Build.Watch); err != nil {
 			log.Warn().Err(err).Str("function", fn.Name).Msg("Failed to add watch patterns")
 			continue
 		}
 
 		log.Debug().
 			Str("function", fn.Name).
-			Strs("patterns", manifest.Build.Watch).
+			Strs("patterns", fn.Build.Watch).
 			Msg("Watching source files")
 	}
 
@@ -109,24 +96,6 @@ func (sw *SourceWatcher) Stop() error {
 	sw.mu.Unlock()
 
 	return sw.watcher.Close()
-}
-
-func (sw *SourceWatcher) loadManifest(path string) (*Manifest, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading manifest: %w", err)
-	}
-
-	var manifest Manifest
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		return nil, fmt.Errorf("parsing manifest: %w", err)
-	}
-
-	if err := manifest.Validate(); err != nil {
-		return nil, fmt.Errorf("validating manifest: %w", err)
-	}
-
-	return &manifest, nil
 }
 
 func (sw *SourceWatcher) addWatchPatterns(funcDir string, patterns []string) error {
@@ -234,13 +203,13 @@ func (sw *SourceWatcher) findFunctionForFile(filePath string) (*FunctionDef, []s
 			continue
 		}
 
-		manifestPath := filepath.Join(funcDir, "manifest.yaml")
-		manifest, err := sw.loadManifest(manifestPath)
-		if err != nil || manifest.Build == nil {
+		if fn.Build == nil || fn.Build.Watch == nil {
 			continue
 		}
 
-		return fn, manifest.Build.Watch
+		if sw.matchesPattern(filePath, funcDir, fn.Build.Watch) {
+			return fn, fn.Build.Watch
+		}
 	}
 
 	return nil, nil
@@ -286,29 +255,22 @@ func (sw *SourceWatcher) debounceBuild(fn *FunctionDef) {
 
 func (sw *SourceWatcher) executeBuild(fn *FunctionDef) {
 	funcDir := filepath.Dir(fn.Path)
-	manifestPath := filepath.Join(funcDir, "manifest.yaml")
 
-	manifest, err := sw.loadManifest(manifestPath)
-	if err != nil {
-		log.Error().Err(err).Str("function", fn.Name).Msg("Failed to load manifest for build")
-		return
-	}
-
-	if manifest.Build == nil {
+	if fn.Build == nil {
 		return
 	}
 
 	log.Info().
 		Str("function", fn.Name).
-		Str("command", manifest.Build.Command).
+		Str("command", fn.Build.Command).
 		Msg("Building function")
 
 	const buildTimeout = 5 * time.Minute
 	ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
 	defer cancel()
 
-	//nolint:gosec // Build command is from trusted manifest file
-	cmd := exec.CommandContext(ctx, manifest.Build.Command, manifest.Build.Args...)
+	//nolint:gosec // Build command is from trusted schema configuration
+	cmd := exec.CommandContext(ctx, fn.Build.Command, fn.Build.Args...)
 	cmd.Dir = funcDir
 
 	output, err := cmd.CombinedOutput()

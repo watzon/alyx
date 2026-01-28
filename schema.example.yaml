@@ -172,3 +172,93 @@ collections:
       read: "true"
       update: "auth.id == doc.author_id"
       delete: "auth.id == doc.author_id || auth.role in ['moderator', 'admin']"
+
+# Serverless functions (optional)
+# Functions can be written in Node.js, Python, Go, Deno, or Bun
+# Each function runs as a subprocess with JSON stdin/stdout protocol
+functions:
+  # Simple function with basic configuration
+  hello-node:
+    runtime: node              # Required: node, python, go, deno, bun
+    entrypoint: index.js       # Required: entry file (relative to function directory)
+    description: Simple Node.js function that returns a greeting
+
+  # Python function example
+  hello-python:
+    runtime: python
+    entrypoint: index.py
+    description: Simple Python function demonstrating JSON protocol
+
+  # Function with advanced configuration
+  process-data:
+    runtime: node
+    entrypoint: handler.js
+    description: Processes data with external API calls
+    timeout: 60s               # Optional: execution timeout (30s, 5m, etc.)
+    memory: 256mb              # Optional: memory limit (128mb, 1gb, etc.)
+    env:                       # Optional: environment variables
+      API_URL: ${API_URL}
+      API_KEY: ${API_KEY}
+    dependencies:              # Optional: package dependencies (for build step)
+      - axios
+      - lodash
+    rules:                     # Optional: CEL-based access control
+      invoke: "auth.id != null"
+
+  # Function with database hook
+  notify-on-user-create:
+    runtime: node
+    entrypoint: notify.js
+    description: Sends notification when new user is created
+    hooks:                     # Optional: trigger functions on events
+      - type: database
+        source: users
+        action: insert
+        mode: async            # async (queued) or sync (blocking)
+
+  # Function with scheduled execution
+  daily-report:
+    runtime: python
+    entrypoint: report.py
+    description: Generates daily analytics report
+    schedules:                 # Optional: cron/interval/one-time schedules
+      - name: daily-summary
+        type: cron
+        expression: "0 8 * * *"  # Daily at 8 AM
+        timezone: America/New_York
+        input:                   # Optional: static input passed to function
+        report_type: summary
+
+  # Function with custom HTTP routes
+  api-gateway:
+    runtime: node
+    entrypoint: api.js
+    description: Custom API endpoints
+    routes:                   # Optional: custom HTTP routes (overrides default /api/functions/:name)
+      - path: /api/custom
+        methods: [GET, POST]
+      - path: /api/health
+        methods: [GET]
+
+  # Function with build configuration (for TypeScript or compiled languages)
+  typescript-function:
+    runtime: node
+    entrypoint: dist/index.js
+    description: TypeScript function with build step
+    build:                   # Optional: build configuration
+      command: npm
+      args: ["run", "build"]
+      watch: ["src/**/*.ts"]
+      output: dist/index.js
+
+  # Function with webhook verification
+  stripe-webhook:
+    runtime: node
+    entrypoint: webhook.js
+    description: Handles Stripe webhook events
+    hooks:
+      - type: webhook
+        verification:
+          type: hmac-sha256
+          header: X-Stripe-Signature
+          secret: ${STRIPE_WEBHOOK_SECRET}

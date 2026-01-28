@@ -148,7 +148,7 @@ func TestValidation_InvalidBucketName(t *testing.T) {
 	}{
 		{"uppercase", "MyBucket", true},
 		{"starts with number", "1bucket", true},
-		{"special chars", "my-bucket", true},
+		{"hyphens allowed", "my-bucket", false},
 		{"spaces", "my bucket", true},
 		{"valid lowercase", "my_bucket", false},
 		{"valid with numbers", "bucket_123", false},
