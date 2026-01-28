@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { files, type FileMetadata } from '$lib/api/client';
+	import { files, type FileMetadata, type Bucket } from '$lib/api/client';
 	import { Button } from '$ui/button';
 	import * as Card from '$ui/card';
 	import { toast } from 'svelte-sonner';
@@ -7,9 +7,15 @@
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 
 	let { bucket, onUploadComplete } = $props<{
-		bucket: string;
+		bucket: Bucket;
 		onUploadComplete: (file: FileMetadata) => void;
 	}>();
+
+	let acceptTypes = $derived(
+		bucket.allowedTypes && bucket.allowedTypes.length > 0
+			? bucket.allowedTypes.join(',')
+			: undefined
+	);
 
 	let isDragging = $state(false);
 	let uploading = $state(false);
@@ -55,7 +61,7 @@
 				uploadProgress.set(file.name, 0);
 				uploadProgress = uploadProgress;
 
-				const result = await files.upload(bucket, file);
+				const result = await files.upload(bucket.name, file);
 
 				if (result.error) {
 					toast.error(`Failed to upload ${file.name}: ${result.error.message}`);
@@ -117,6 +123,7 @@
 	bind:this={fileInput}
 	type="file"
 	multiple
+	accept={acceptTypes}
 	class="hidden"
 	onchange={handleFileSelect}
 />

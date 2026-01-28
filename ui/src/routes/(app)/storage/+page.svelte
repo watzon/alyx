@@ -33,6 +33,12 @@
 		}
 	}));
 
+	let selectedBucketObj = $derived(
+		selectedBucket && schemaQuery.data?.buckets
+			? schemaQuery.data.buckets.find(b => b.name === selectedBucket)
+			: undefined
+	);
+
 	const filesQuery = createQuery(() => ({
 		queryKey: ['files', selectedBucket, search, mimeType],
 		queryFn: async () => {
@@ -141,7 +147,9 @@
 
 	{#if selectedBucket}
 		<div class="space-y-4">
-			<UploadZone bucket={selectedBucket} onUploadComplete={handleUploadComplete} />
+			{#if selectedBucketObj}
+				<UploadZone bucket={selectedBucketObj} onUploadComplete={handleUploadComplete} />
+			{/if}
 
 			<FileFilters
 				{search}
