@@ -49,6 +49,12 @@ func Parse(data []byte) (*Schema, error) {
 		schema.Buckets[name] = bkt
 	}
 
+	var err error
+	schema.Functions, err = parseFunctions(raw.Functions)
+	if err != nil {
+		return nil, fmt.Errorf("parsing functions: %w", err)
+	}
+
 	if err := Validate(schema); err != nil {
 		return nil, err
 	}
@@ -60,6 +66,7 @@ type rawSchema struct {
 	Version     int                       `yaml:"version"`
 	Collections map[string]*rawCollection `yaml:"collections"`
 	Buckets     map[string]*rawBucket     `yaml:"buckets"`
+	Functions   map[string]*rawFunction   `yaml:"functions,omitempty"`
 }
 
 type rawCollection struct {
@@ -75,6 +82,22 @@ type rawBucket struct {
 	AllowedTypes []string `yaml:"allowed_types"`
 	Compression  bool     `yaml:"compression"`
 	Rules        *Rules   `yaml:"rules"`
+}
+
+type rawFunction struct {
+	Runtime      string     `yaml:"runtime"`
+	Entrypoint   string     `yaml:"entrypoint"`
+	Path         string     `yaml:"path,omitempty"`
+	Description  string     `yaml:"description,omitempty"`
+	Timeout      string     `yaml:"timeout,omitempty"`
+	Memory       string     `yaml:"memory,omitempty"`
+	Env          *yaml.Node `yaml:"env,omitempty"`
+	Dependencies *yaml.Node `yaml:"dependencies,omitempty"`
+	Hooks        *yaml.Node `yaml:"hooks,omitempty"`
+	Schedules    *yaml.Node `yaml:"schedules,omitempty"`
+	Routes       *yaml.Node `yaml:"routes,omitempty"`
+	Build        *yaml.Node `yaml:"build,omitempty"`
+	Rules        *yaml.Node `yaml:"rules,omitempty"`
 }
 
 func parseCollection(name string, raw *rawCollection) (*Collection, error) {
@@ -131,6 +154,73 @@ func parseBucket(name string, raw *rawBucket) (*Bucket, error) {
 	}
 
 	return bucket, nil
+}
+
+func parseFunctions(raw map[string]*rawFunction) (map[string]*Function, error) {
+	if raw == nil {
+		return make(map[string]*Function), nil
+	}
+
+	functions := make(map[string]*Function)
+	for name, rawFunc := range raw {
+		fn := &Function{
+			Name:        name,
+			Runtime:     rawFunc.Runtime,
+			Entrypoint:  rawFunc.Entrypoint,
+			Path:        rawFunc.Path,
+			Description: rawFunc.Description,
+			Timeout:     rawFunc.Timeout,
+			Memory:      rawFunc.Memory,
+		}
+
+		if rawFunc.Env != nil {
+			if err := rawFunc.Env.Decode(&fn.Env); err != nil {
+				return nil, fmt.Errorf("functions.%s.env: %w", name, err)
+			}
+		}
+
+		if rawFunc.Dependencies != nil {
+			if err := rawFunc.Dependencies.Decode(&fn.Dependencies); err != nil {
+				return nil, fmt.Errorf("functions.%s.dependencies: %w", name, err)
+			}
+		}
+
+		if rawFunc.Hooks != nil {
+			if err := rawFunc.Hooks.Decode(&fn.Hooks); err != nil {
+				return nil, fmt.Errorf("functions.%s.hooks: %w", name, err)
+			}
+		}
+
+		if rawFunc.Schedules != nil {
+			if err := rawFunc.Schedules.Decode(&fn.Schedules); err != nil {
+				return nil, fmt.Errorf("functions.%s.schedules: %w", name, err)
+			}
+		}
+
+		if rawFunc.Routes != nil {
+			if err := rawFunc.Routes.Decode(&fn.Routes); err != nil {
+				return nil, fmt.Errorf("functions.%s.routes: %w", name, err)
+			}
+		}
+
+		if rawFunc.Build != nil {
+			fn.Build = &FunctionBuild{}
+			if err := rawFunc.Build.Decode(fn.Build); err != nil {
+				return nil, fmt.Errorf("functions.%s.build: %w", name, err)
+			}
+		}
+
+		if rawFunc.Rules != nil {
+			fn.Rules = &FunctionRules{}
+			if err := rawFunc.Rules.Decode(fn.Rules); err != nil {
+				return nil, fmt.Errorf("functions.%s.rules: %w", name, err)
+			}
+		}
+
+		functions[name] = fn
+	}
+
+	return functions, nil
 }
 
 type ValidationError struct {
