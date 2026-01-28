@@ -21,12 +21,13 @@ const (
 )
 
 type Spec struct {
-	OpenAPI    string               `json:"openapi"`
-	Info       Info                 `json:"info"`
-	Servers    []Server             `json:"servers,omitempty"`
-	Paths      map[string]*PathItem `json:"paths"`
-	Components *Components          `json:"components,omitempty"`
-	Tags       []Tag                `json:"tags,omitempty"`
+	OpenAPI    string                `json:"openapi"`
+	Info       Info                  `json:"info"`
+	Servers    []Server              `json:"servers,omitempty"`
+	Paths      map[string]*PathItem  `json:"paths"`
+	Components *Components           `json:"components,omitempty"`
+	Tags       []Tag                 `json:"tags,omitempty"`
+	Security   []SecurityRequirement `json:"security,omitempty"`
 }
 
 type Info struct {
@@ -62,13 +63,14 @@ type PathItem struct {
 }
 
 type Operation struct {
-	Tags        []string            `json:"tags,omitempty"`
-	Summary     string              `json:"summary,omitempty"`
-	Description string              `json:"description,omitempty"`
-	OperationID string              `json:"operationId,omitempty"`
-	Parameters  []Parameter         `json:"parameters,omitempty"`
-	RequestBody *RequestBody        `json:"requestBody,omitempty"`
-	Responses   map[string]Response `json:"responses"`
+	Tags        []string              `json:"tags,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	OperationID string                `json:"operationId,omitempty"`
+	Parameters  []Parameter           `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]Response   `json:"responses"`
+	Security    []SecurityRequirement `json:"security,omitempty"`
 }
 
 type Parameter struct {
@@ -95,7 +97,8 @@ type Response struct {
 }
 
 type Components struct {
-	Schemas map[string]*Schema `json:"schemas,omitempty"`
+	Schemas         map[string]*Schema         `json:"schemas,omitempty"`
+	SecuritySchemes map[string]*SecurityScheme `json:"securitySchemes,omitempty"`
 }
 
 type Schema struct {
@@ -121,6 +124,15 @@ type Tag struct {
 	Description string `json:"description,omitempty"`
 }
 
+type SecurityScheme struct {
+	Type         string `json:"type"`
+	Scheme       string `json:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty"`
+	Description  string `json:"description,omitempty"`
+}
+
+type SecurityRequirement map[string][]string
+
 type GeneratorConfig struct {
 	Title       string
 	Description string
@@ -138,12 +150,24 @@ func Generate(s *schema.Schema, cfg GeneratorConfig) *Spec {
 		},
 		Paths: make(map[string]*PathItem),
 		Components: &Components{
-			Schemas: make(map[string]*Schema),
+			Schemas:         make(map[string]*Schema),
+			SecuritySchemes: make(map[string]*SecurityScheme),
+		},
+		Security: []SecurityRequirement{
+			{"bearerAuth": []string{}},
 		},
 	}
 
 	if cfg.ServerURL != "" {
 		spec.Servers = []Server{{URL: cfg.ServerURL}}
+	}
+
+	// Add JWT Bearer authentication security scheme
+	spec.Components.SecuritySchemes["bearerAuth"] = &SecurityScheme{
+		Type:         "http",
+		Scheme:       "bearer",
+		BearerFormat: "JWT",
+		Description:  "JWT access token obtained from /api/auth/login or /api/auth/register",
 	}
 
 	collectionNames := make([]string, 0, len(s.Collections))
@@ -242,6 +266,7 @@ func addHealthEndpoints(spec *Spec) {
 			Summary:     "Comprehensive health check",
 			Description: "Returns detailed health status including all components (database, realtime, functions)",
 			OperationID: "health",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "Healthy", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/HealthResponse"}}}},
 				"503": {Description: "Unhealthy", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/HealthResponse"}}}},
@@ -255,6 +280,7 @@ func addHealthEndpoints(spec *Spec) {
 			Summary:     "Liveness probe",
 			Description: "Simple liveness check for Kubernetes. Returns 200 if the server is running.",
 			OperationID: "liveness",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "Server is alive", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}}}}}},
 			},
@@ -267,6 +293,7 @@ func addHealthEndpoints(spec *Spec) {
 			Summary:     "Readiness probe",
 			Description: "Readiness check for Kubernetes. Returns 200 if the server can handle requests (database connected).",
 			OperationID: "readiness",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "Server is ready", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}}}}}},
 				"503": {Description: "Server is not ready", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object", Properties: map[string]*Schema{"status": {Type: "string"}, "reason": {Type: "string"}}}}}},
@@ -280,6 +307,7 @@ func addHealthEndpoints(spec *Spec) {
 			Summary:     "Runtime statistics",
 			Description: "Returns detailed runtime statistics including memory usage, goroutines, database pool stats, and function pool stats.",
 			OperationID: "stats",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "Runtime statistics", Content: map[string]MediaType{"application/json": {Schema: &Schema{Type: "object"}}}},
 			},
@@ -292,6 +320,7 @@ func addHealthEndpoints(spec *Spec) {
 			Summary:     "Prometheus metrics",
 			Description: "Returns metrics in Prometheus text format",
 			OperationID: "metrics",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "Prometheus metrics", Content: map[string]MediaType{"text/plain": {Schema: &Schema{Type: "string"}}}},
 			},
@@ -372,6 +401,7 @@ func addAuthEndpoints(spec *Spec) {
 			Summary:     "Register a new user",
 			Description: "Create a new user account and return authentication tokens",
 			OperationID: "register",
+			Security:    []SecurityRequirement{},
 			RequestBody: &RequestBody{
 				Required:    true,
 				Description: "User registration data",
@@ -394,6 +424,7 @@ func addAuthEndpoints(spec *Spec) {
 			Summary:     "Login",
 			Description: "Authenticate with email and password",
 			OperationID: "login",
+			Security:    []SecurityRequirement{},
 			RequestBody: &RequestBody{
 				Required:    true,
 				Description: "Login credentials",
@@ -476,6 +507,7 @@ func addAuthEndpoints(spec *Spec) {
 			Summary:     "List OAuth providers",
 			Description: "Get a list of enabled OAuth providers",
 			OperationID: "listOAuthProviders",
+			Security:    []SecurityRequirement{},
 			Responses: map[string]Response{
 				"200": {Description: "List of enabled OAuth providers", Content: map[string]MediaType{"application/json": {Schema: &Schema{Ref: "#/components/schemas/ProvidersResponse"}}}},
 			},
@@ -488,6 +520,7 @@ func addAuthEndpoints(spec *Spec) {
 			Summary:     "OAuth redirect",
 			Description: "Initiates the OAuth flow by redirecting to the provider's authorization URL",
 			OperationID: "oauthRedirect",
+			Security:    []SecurityRequirement{},
 			Parameters: []Parameter{
 				{Name: "provider", In: "path", Required: true, Description: "OAuth provider name (e.g., github, google)", Schema: &Schema{Type: "string"}},
 			},
@@ -505,6 +538,7 @@ func addAuthEndpoints(spec *Spec) {
 			Summary:     "OAuth callback",
 			Description: "Handles the OAuth callback from the provider and completes authentication",
 			OperationID: "oauthCallback",
+			Security:    []SecurityRequirement{},
 			Parameters: []Parameter{
 				{Name: "provider", In: "path", Required: true, Description: "OAuth provider name", Schema: &Schema{Type: "string"}},
 				{Name: "code", In: "query", Required: true, Description: "Authorization code from provider", Schema: &Schema{Type: "string"}},
