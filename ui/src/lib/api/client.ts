@@ -708,5 +708,8 @@ export const files = {
 		api.request<{
 			deleted: number;
 			failed: Array<{ id: string; error: string }>;
-		}>('DELETE', `/files/${bucket}/batch`, { ids })
+		}>('DELETE', `/files/${bucket}/batch`, { ids }),
+
+	generateSignedUrl: (bucket: string, id: string, params?: { operation?: 'download' | 'view'; expiry?: string }) =>
+		api.get<{ url: string; token: string; expires_at: string }>(`/files/${bucket}/${id}/sign${params ? '?' + new URLSearchParams(params as any).toString() : ''}`)
 };

@@ -1,11 +1,14 @@
 <script lang="ts">
 	import type { FileMetadata } from '$lib/api/client';
+	import { files as filesApi } from '$lib/api/client';
+	import { toast } from 'svelte-sonner';
 	import * as Table from '$ui/table';
 	import { Button } from '$ui/button';
 	import * as Card from '$ui/card';
 	import * as Tooltip from '$ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import LinkIcon from '@lucide/svelte/icons/link';
 
 	interface Props {
 		bucket: string;
@@ -45,6 +48,22 @@
 	function getFileIcon(mimeType: string) {
 		// Could be extended to return different icons based on mime type
 		return FileIcon;
+	}
+
+	let isGenerating = $state<string | null>(null);
+
+	async function handleCopySignedUrl(file: FileMetadata) {
+		isGenerating = file.id;
+		try {
+			const result = await filesApi.generateSignedUrl(bucket, file.id);
+			if (result.error) throw new Error(result.error.message);
+			await navigator.clipboard.writeText(result.data!.url);
+			toast.success('Signed URL copied to clipboard');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to generate signed URL');
+		} finally {
+			isGenerating = null;
+		}
 	}
 </script>
 
@@ -125,11 +144,31 @@
 						<Table.Cell class="text-muted-foreground text-xs">{file.mime_type}</Table.Cell>
 						<Table.Cell class="text-muted-foreground text-xs">{new Date(file.created_at).toLocaleDateString()}</Table.Cell>
 						<Table.Cell>
-							{#if onDelete}
-								<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => onDelete([file.id])}>
-									<TrashIcon class="h-4 w-4 text-destructive" />
-								</Button>
-							{/if}
+							<div class="flex items-center gap-1">
+								<Tooltip.Provider>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => handleCopySignedUrl(file)} disabled={isGenerating === file.id}>
+												<LinkIcon class="h-4 w-4" />
+											</Button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>Copy signed URL</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
+
+								{#if onDelete}
+									<Tooltip.Provider>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<Button variant="ghost" size="icon" class="h-8 w-8" onclick={() => onDelete([file.id])}>
+													<TrashIcon class="h-4 w-4 text-destructive" />
+												</Button>
+											</Tooltip.Trigger>
+											<Tooltip.Content>Delete file</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+								{/if}
+							</div>
 						</Table.Cell>
 					</Table.Row>
 				{/each}

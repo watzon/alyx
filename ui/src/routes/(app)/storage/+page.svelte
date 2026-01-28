@@ -53,7 +53,7 @@
 		},
 		onSuccess: (data) => {
 			toast.success(`Deleted ${data.deleted} file(s)`);
-			if (data.failed.length > 0) {
+			if (data.failed && data.failed.length > 0) {
 				toast.error(`Failed to delete ${data.failed.length} file(s)`);
 			}
 			queryClient.invalidateQueries({ queryKey: ['files', selectedBucket] });
