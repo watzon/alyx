@@ -8,6 +8,7 @@ import (
 type FieldType string
 
 const (
+	FieldTypeID        FieldType = "id"
 	FieldTypeUUID      FieldType = "uuid"
 	FieldTypeString    FieldType = "string"
 	FieldTypeText      FieldType = "text"
@@ -28,7 +29,7 @@ const (
 
 func (t FieldType) IsValid() bool {
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeInt,
+	case FieldTypeID, FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeInt,
 		FieldTypeFloat, FieldTypeBool, FieldTypeTimestamp, FieldTypeJSON, FieldTypeBlob,
 		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation, FieldTypeFile:
 		return true
@@ -38,7 +39,7 @@ func (t FieldType) IsValid() bool {
 
 func (t FieldType) SQLiteType() string {
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp,
+	case FieldTypeID, FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeTimestamp,
 		FieldTypeJSON, FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeSelect, FieldTypeRelation, FieldTypeFile:
 		return "TEXT"
 	case FieldTypeInt, FieldTypeBool:
@@ -57,7 +58,7 @@ func (t FieldType) GoType(nullable bool) string {
 		prefix = "*"
 	}
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+	case FieldTypeID, FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
 		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation, FieldTypeFile:
 		return prefix + "string"
 	case FieldTypeInt:
@@ -84,7 +85,7 @@ func (t FieldType) GoType(nullable bool) string {
 func (t FieldType) TypeScriptType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+	case FieldTypeID, FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
 		FieldTypeEmail, FieldTypeURL, FieldTypeDate, FieldTypeRelation, FieldTypeFile:
 		base = "string"
 	case FieldTypeInt, FieldTypeFloat:
@@ -111,7 +112,7 @@ func (t FieldType) TypeScriptType(nullable bool) string {
 func (t FieldType) PythonType(nullable bool) string {
 	var base string
 	switch t {
-	case FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
+	case FieldTypeID, FieldTypeUUID, FieldTypeString, FieldTypeText, FieldTypeRichText,
 		FieldTypeEmail, FieldTypeURL, FieldTypeRelation, FieldTypeFile:
 		base = "str"
 	case FieldTypeInt:
@@ -276,6 +277,30 @@ func (f *Field) IsTimestampNow() bool {
 	return f.Default == string(DefaultNow)
 }
 
+func (f *Field) HasStaticDefault() bool {
+	return f.Default != "" && f.Default != string(DefaultAuto) && f.Default != string(DefaultNow)
+}
+
+func (f *Field) StaticDefault() any {
+	if !f.HasStaticDefault() {
+		return nil
+	}
+	switch f.Type {
+	case FieldTypeBool:
+		return f.Default == "true"
+	case FieldTypeInt:
+		var v int64
+		fmt.Sscanf(f.Default, "%d", &v)
+		return v
+	case FieldTypeFloat:
+		var v float64
+		fmt.Sscanf(f.Default, "%f", &v)
+		return v
+	default:
+		return f.Default
+	}
+}
+
 func (f *Field) IsAutoUpdateTimestamp() bool {
 	return f.OnUpdate == string(DefaultNow)
 }
@@ -297,7 +322,7 @@ func (f *Field) SQLDefault() string {
 	}
 	switch f.Default {
 	case string(DefaultAuto):
-		if f.Type == FieldTypeUUID {
+		if f.Type == FieldTypeID || f.Type == FieldTypeUUID {
 			return ""
 		}
 		return ""
@@ -305,7 +330,7 @@ func (f *Field) SQLDefault() string {
 		return "(datetime('now'))"
 	default:
 		switch f.Type {
-		case FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeUUID:
+		case FieldTypeID, FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeUUID:
 			return fmt.Sprintf("'%s'", strings.ReplaceAll(f.Default, "'", "''"))
 		case FieldTypeBool:
 			if f.Default == "true" {

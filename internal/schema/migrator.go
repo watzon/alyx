@@ -302,6 +302,411 @@ func (m *Migrator) changeToSQL(change *Change) ([]string, error) {
 	}
 }
 
+func (m *Migrator) ApplyUnsafeChanges(changes []*Change) error {
+	if _, err := m.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("disabling foreign keys: %w", err)
+	}
+	defer func() { _, _ = m.db.Exec("PRAGMA foreign_keys = ON") }()
+
+	tx, err := m.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, change := range changes {
+		if change.Safe {
+			continue
+		}
+
+		stmts, err := m.unsafeChangeToSQLWithTx(tx, change)
+		if err != nil {
+			return fmt.Errorf("generating SQL for %s: %w", change, err)
+		}
+
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("executing %q: %w", truncate(stmt, 100), err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	if _, err := m.db.Exec("PRAGMA foreign_key_check"); err != nil {
+		return fmt.Errorf("foreign key check failed after migration: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Migrator) unsafeChangeToSQL(change *Change) ([]string, error) {
+	switch change.Type {
+	case ChangeDropCollection:
+		return []string{
+			fmt.Sprintf("DROP TABLE IF EXISTS %s", change.Collection),
+		}, nil
+
+	case ChangeDropField:
+		return m.dropColumnSQL(change.Collection, change.OldField.Name)
+
+	case ChangeModifyField:
+		return m.modifyFieldSQL(change)
+
+	default:
+		return nil, fmt.Errorf("unsupported unsafe change type: %s", change.Type)
+	}
+}
+
+func (m *Migrator) unsafeChangeToSQLWithTx(tx *sql.Tx, change *Change) ([]string, error) {
+	switch change.Type {
+	case ChangeDropCollection:
+		return []string{
+			fmt.Sprintf("DROP TABLE IF EXISTS %s", change.Collection),
+		}, nil
+
+	case ChangeDropField:
+		return m.dropColumnSQLWithTx(tx, change.Collection, change.OldField.Name)
+
+	case ChangeModifyField:
+		return m.modifyFieldSQLWithTx(tx, change)
+
+	default:
+		return nil, fmt.Errorf("unsupported unsafe change type: %s", change.Type)
+	}
+}
+
+func (m *Migrator) dropColumnSQL(table, column string) ([]string, error) {
+	stmts := m.dropTriggersSQL(table)
+
+	indexStmts, err := m.dropIndexesForColumnSQL(table, column)
+	if err != nil {
+		return nil, fmt.Errorf("getting indexes for column: %w", err)
+	}
+	stmts = append(stmts, indexStmts...)
+
+	stmts = append(stmts, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, column))
+	return stmts, nil
+}
+
+func (m *Migrator) dropColumnSQLWithTx(tx *sql.Tx, table, column string) ([]string, error) {
+	stmts := m.dropTriggersSQL(table)
+
+	indexStmts, err := m.dropIndexesForColumnSQLWithTx(tx, table, column)
+	if err != nil {
+		return nil, fmt.Errorf("getting indexes for column: %w", err)
+	}
+	stmts = append(stmts, indexStmts...)
+
+	stmts = append(stmts, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, column))
+	return stmts, nil
+}
+
+func (m *Migrator) dropTriggersSQL(table string) []string {
+	return []string{
+		fmt.Sprintf("DROP TRIGGER IF EXISTS %s_after_insert", table),
+		fmt.Sprintf("DROP TRIGGER IF EXISTS %s_after_update", table),
+		fmt.Sprintf("DROP TRIGGER IF EXISTS %s_after_delete", table),
+		fmt.Sprintf("DROP TRIGGER IF EXISTS %s_auto_update_timestamp", table),
+	}
+}
+
+func (m *Migrator) dropIndexesForColumnSQL(table, column string) ([]string, error) {
+	rows, err := m.db.Query(`
+		SELECT name 
+		FROM sqlite_master 
+		WHERE type = 'index' 
+			AND tbl_name = ?
+			AND name NOT LIKE 'sqlite_%'
+	`, table)
+	if err != nil {
+		return nil, fmt.Errorf("querying indexes: %w", err)
+	}
+	defer rows.Close()
+
+	var indexNames []string
+	for rows.Next() {
+		var indexName string
+		if err := rows.Scan(&indexName); err != nil {
+			return nil, fmt.Errorf("scanning index name: %w", err)
+		}
+		indexNames = append(indexNames, indexName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var stmts []string
+	for _, indexName := range indexNames {
+		indexRows, err := m.db.Query("PRAGMA index_info(?)", indexName)
+		if err != nil {
+			continue
+		}
+
+		var referencesColumn bool
+		for indexRows.Next() {
+			var seqno int
+			var cid int
+			var name string
+			if err := indexRows.Scan(&seqno, &cid, &name); err != nil {
+				indexRows.Close()
+				continue
+			}
+			if name == column {
+				referencesColumn = true
+				break
+			}
+		}
+		indexRows.Close()
+
+		if referencesColumn {
+			stmts = append(stmts, fmt.Sprintf("DROP INDEX IF EXISTS %s", indexName))
+		}
+	}
+
+	return stmts, nil
+}
+
+func (m *Migrator) dropIndexesForColumnSQLWithTx(tx *sql.Tx, table, column string) ([]string, error) {
+	rows, err := tx.Query(`
+		SELECT name 
+		FROM sqlite_master 
+		WHERE type = 'index' 
+			AND tbl_name = ?
+			AND name NOT LIKE 'sqlite_%'
+	`, table)
+	if err != nil {
+		return nil, fmt.Errorf("querying indexes: %w", err)
+	}
+	defer rows.Close()
+
+	var indexNames []string
+	for rows.Next() {
+		var indexName string
+		if err := rows.Scan(&indexName); err != nil {
+			return nil, fmt.Errorf("scanning index name: %w", err)
+		}
+		indexNames = append(indexNames, indexName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var stmts []string
+	for _, indexName := range indexNames {
+		indexRows, err := tx.Query(fmt.Sprintf("PRAGMA index_info(%s)", indexName))
+		if err != nil {
+			continue
+		}
+
+		var referencesColumn bool
+		for indexRows.Next() {
+			var seqno int
+			var cid int
+			var name string
+			if err := indexRows.Scan(&seqno, &cid, &name); err != nil {
+				indexRows.Close()
+				continue
+			}
+			if name == column {
+				referencesColumn = true
+			}
+		}
+		indexRows.Close()
+
+		if referencesColumn {
+			stmts = append(stmts, fmt.Sprintf("DROP INDEX IF EXISTS %s", indexName))
+		}
+	}
+
+	return stmts, nil
+}
+
+func (m *Migrator) modifyFieldSQL(change *Change) ([]string, error) {
+	oldField := change.OldField
+	newField := change.NewField
+	table := change.Collection
+	column := oldField.Name
+
+	if oldField.Primary {
+		return nil, fmt.Errorf("cannot modify primary key column %s.%s - requires manual table recreation", table, column)
+	}
+
+	if oldField.Type != newField.Type {
+		return m.changeColumnTypeSQL(table, column, oldField, newField)
+	}
+
+	if oldField.Nullable && !newField.Nullable {
+		return m.makeNonNullableSQL(table, column, newField)
+	}
+
+	if !oldField.Unique && newField.Unique {
+		return m.addUniqueConstraintSQL(table, column)
+	}
+
+	return nil, fmt.Errorf("unsupported field modification")
+}
+
+func (m *Migrator) modifyFieldSQLWithTx(_ *sql.Tx, change *Change) ([]string, error) {
+	return m.modifyFieldSQL(change)
+}
+
+func (m *Migrator) changeColumnTypeSQL(table, column string, oldField, newField *Field) ([]string, error) {
+	tempCol := "_" + column + "_old"
+	newType := newField.Type.SQLiteType()
+
+	conversion := m.getTypeConversionExpr(column, tempCol, oldField.Type, newField.Type)
+
+	stmts := m.dropTriggersSQL(table)
+	stmts = append(stmts,
+		fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", table, column, tempCol),
+		fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, newType),
+		fmt.Sprintf("UPDATE %s SET %s = %s", table, column, conversion),
+		fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, tempCol),
+	)
+
+	return stmts, nil
+}
+
+func (m *Migrator) getTypeConversionExpr(newCol, oldCol string, oldType, newType FieldType) string {
+	switch {
+	case oldType == FieldTypeInt && newType == FieldTypeString:
+		return fmt.Sprintf("CAST(%s AS TEXT)", oldCol)
+	case oldType == FieldTypeFloat && newType == FieldTypeString:
+		return fmt.Sprintf("CAST(%s AS TEXT)", oldCol)
+	case oldType == FieldTypeString && newType == FieldTypeInt:
+		return fmt.Sprintf("CAST(%s AS INTEGER)", oldCol)
+	case oldType == FieldTypeString && newType == FieldTypeFloat:
+		return fmt.Sprintf("CAST(%s AS REAL)", oldCol)
+	case oldType == FieldTypeBool && newType == FieldTypeString:
+		return fmt.Sprintf("CASE WHEN %s THEN 'true' ELSE 'false' END", oldCol)
+	case oldType == FieldTypeBool && newType == FieldTypeInt:
+		return fmt.Sprintf("CASE WHEN %s THEN 1 ELSE 0 END", oldCol)
+	case oldType == FieldTypeJSON && newType == FieldTypeString:
+		return fmt.Sprintf("CAST(%s AS TEXT)", oldCol)
+	default:
+		return oldCol
+	}
+}
+
+func (m *Migrator) makeNonNullableSQL(table, column string, newField *Field) ([]string, error) {
+	defaultVal := newField.SQLDefault()
+	if defaultVal == "" {
+		defaultVal = m.getZeroValueForType(newField.Type)
+	}
+
+	tempCol := "_" + column + "_old"
+	colType := newField.Type.SQLiteType()
+
+	stmts := m.dropTriggersSQL(table)
+	stmts = append(stmts,
+		fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s IS NULL", table, column, defaultVal, column),
+		fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", table, column, tempCol),
+		fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s", table, column, colType, defaultVal),
+		fmt.Sprintf("UPDATE %s SET %s = %s", table, column, tempCol),
+		fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, tempCol),
+	)
+
+	return stmts, nil
+}
+
+func (m *Migrator) getZeroValueForType(t FieldType) string {
+	switch t {
+	case FieldTypeInt:
+		return "0"
+	case FieldTypeFloat:
+		return "0.0"
+	case FieldTypeBool:
+		return "0"
+	case FieldTypeString, FieldTypeText, FieldTypeRichText, FieldTypeEmail, FieldTypeURL:
+		return "''"
+	case FieldTypeJSON:
+		return "'{}'"
+	case FieldTypeTimestamp, FieldTypeDate:
+		return "datetime('now')"
+	default:
+		return "''"
+	}
+}
+
+func (m *Migrator) addUniqueConstraintSQL(table, column string) ([]string, error) {
+	indexName := fmt.Sprintf("idx_%s_%s_unique", table, column)
+	return []string{
+		fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", indexName, table, column),
+	}, nil
+}
+
+func (m *Migrator) ValidateUnsafeChanges(changes []*Change) []ValidationError {
+	var errors []ValidationError
+
+	for _, change := range changes {
+		if change.Safe {
+			continue
+		}
+
+		switch change.Type {
+		case ChangeModifyField:
+			if !change.OldField.Unique && change.NewField.Unique {
+				duplicates, err := m.checkDuplicates(change.Collection, change.OldField.Name)
+				if err != nil {
+					errors = append(errors, ValidationError{
+						Path:    fmt.Sprintf("%s.%s", change.Collection, change.OldField.Name),
+						Message: fmt.Sprintf("failed to check for duplicates: %v", err),
+					})
+				} else if duplicates > 0 {
+					errors = append(errors, ValidationError{
+						Path:    fmt.Sprintf("%s.%s", change.Collection, change.OldField.Name),
+						Message: fmt.Sprintf("cannot add unique constraint: %d duplicate values exist", duplicates),
+					})
+				}
+			}
+
+			if change.OldField.Nullable && !change.NewField.Nullable {
+				nullCount, err := m.countNulls(change.Collection, change.OldField.Name)
+				if err != nil {
+					errors = append(errors, ValidationError{
+						Path:    fmt.Sprintf("%s.%s", change.Collection, change.OldField.Name),
+						Message: fmt.Sprintf("failed to check for null values: %v", err),
+					})
+				} else if nullCount > 0 && !change.NewField.HasDefault() {
+					errors = append(errors, ValidationError{
+						Path:    fmt.Sprintf("%s.%s", change.Collection, change.OldField.Name),
+						Message: fmt.Sprintf("%d rows have NULL values; provide a default value or update existing data", nullCount),
+					})
+				}
+			}
+		}
+	}
+
+	return errors
+}
+
+func (m *Migrator) checkDuplicates(table, column string) (int, error) {
+	var count int
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT %s FROM %s 
+			WHERE %s IS NOT NULL 
+			GROUP BY %s 
+			HAVING COUNT(*) > 1
+		)
+	`, column, table, column, column)
+
+	err := m.db.QueryRow(query).Scan(&count)
+	return count, err
+}
+
+func (m *Migrator) countNulls(table, column string) (int, error) {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NULL", table, column)
+	err := m.db.QueryRow(query).Scan(&count)
+	return count, err
+}
+
 func (m *Migrator) CreateMigrationFile(name string, version int) (string, error) {
 	if m.migrationsPath == "" {
 		return "", fmt.Errorf("migrations path not configured")

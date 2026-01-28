@@ -217,6 +217,9 @@ func BuildAuthContext(user *auth.User, claims *auth.Claims) map[string]any {
 		authCtx["id"] = user.ID
 		authCtx["email"] = user.Email
 		authCtx["verified"] = user.Verified
+		if user.Role != "" {
+			authCtx["role"] = user.Role
+		}
 		if user.Metadata != nil {
 			authCtx["metadata"] = user.Metadata
 		}

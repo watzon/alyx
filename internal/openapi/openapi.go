@@ -581,6 +581,10 @@ func fieldToSchema(f *schema.Field) *Schema {
 
 func setSchemaTypeAndFormat(f *schema.Field, s *Schema) {
 	switch f.Type {
+	case schema.FieldTypeID:
+		s.Type = typeString
+		s.MinLength = intPtr(15)
+		s.MaxLength = intPtr(15)
 	case schema.FieldTypeUUID:
 		s.Type = typeString
 		s.Format = "uuid"

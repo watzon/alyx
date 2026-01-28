@@ -63,9 +63,11 @@ func NewDiffer() *Differ {
 
 func (d *Differ) Diff(old, newSchema *Schema) []*Change {
 	var changes []*Change
+	droppedCollections := make(map[string]bool)
 
 	for name := range old.Collections {
 		if _, exists := newSchema.Collections[name]; !exists {
+			droppedCollections[name] = true
 			changes = append(changes, &Change{
 				Type:           ChangeDropCollection,
 				Collection:     name,
@@ -88,7 +90,9 @@ func (d *Differ) Diff(old, newSchema *Schema) []*Change {
 			continue
 		}
 
-		changes = append(changes, d.diffCollection(name, oldCol, newCol)...)
+		if !droppedCollections[name] {
+			changes = append(changes, d.diffCollection(name, oldCol, newCol)...)
+		}
 	}
 
 	return changes
@@ -149,7 +153,7 @@ func (d *Differ) diffCollection(name string, old, newCol *Collection) []*Change 
 func (d *Differ) diffField(collection, fieldName string, old, newField *Field) []*Change {
 	var changes []*Change
 
-	if old.Type != newField.Type {
+	if old.Type != newField.Type && !d.areTypesCompatible(old.Type, newField.Type) {
 		changes = append(changes, &Change{
 			Type:           ChangeModifyField,
 			Collection:     collection,
@@ -162,53 +166,69 @@ func (d *Differ) diffField(collection, fieldName string, old, newField *Field) [
 		})
 	}
 
-	if old.Nullable && !newField.Nullable {
-		changes = append(changes, &Change{
-			Type:           ChangeModifyField,
-			Collection:     collection,
-			Field:          fieldName,
-			OldField:       old,
-			NewField:       newField,
-			Safe:           false,
-			RequiresManual: true,
-			Description:    "Making field non-nullable requires manual migration to handle existing NULL values",
-		})
-	} else if !old.Nullable && newField.Nullable {
-		changes = append(changes, &Change{
-			Type:        ChangeModifyField,
-			Collection:  collection,
-			Field:       fieldName,
-			OldField:    old,
-			NewField:    newField,
-			Safe:        true,
-			Description: "Making field nullable is safe",
-		})
+	if !old.Primary && !newField.Primary {
+		if old.Nullable && !newField.Nullable {
+			changes = append(changes, &Change{
+				Type:           ChangeModifyField,
+				Collection:     collection,
+				Field:          fieldName,
+				OldField:       old,
+				NewField:       newField,
+				Safe:           false,
+				RequiresManual: true,
+				Description:    "Making field non-nullable requires manual migration to handle existing NULL values",
+			})
+		} else if !old.Nullable && newField.Nullable {
+			changes = append(changes, &Change{
+				Type:        ChangeModifyField,
+				Collection:  collection,
+				Field:       fieldName,
+				OldField:    old,
+				NewField:    newField,
+				Safe:        true,
+				Description: "Making field nullable is safe",
+			})
+		}
 	}
 
-	if !old.Unique && newField.Unique {
-		changes = append(changes, &Change{
-			Type:           ChangeModifyField,
-			Collection:     collection,
-			Field:          fieldName,
-			OldField:       old,
-			NewField:       newField,
-			Safe:           false,
-			RequiresManual: true,
-			Description:    "Adding unique constraint requires manual verification of existing data",
-		})
+	if !old.Primary && !newField.Primary && old.Unique != newField.Unique {
+		if old.Unique && !newField.Unique {
+			changes = append(changes, &Change{
+				Type:        ChangeModifyField,
+				Collection:  collection,
+				Field:       fieldName,
+				OldField:    old,
+				NewField:    newField,
+				Safe:        true,
+				Description: "Removing unique constraint is safe",
+			})
+		} else if !old.Unique && newField.Unique {
+			changes = append(changes, &Change{
+				Type:           ChangeModifyField,
+				Collection:     collection,
+				Field:          fieldName,
+				OldField:       old,
+				NewField:       newField,
+				Safe:           false,
+				RequiresManual: true,
+				Description:    "Adding unique constraint requires manual verification of existing data",
+			})
+		}
 	}
 
 	if old.References != newField.References {
-		changes = append(changes, &Change{
-			Type:           ChangeModifyField,
-			Collection:     collection,
-			Field:          fieldName,
-			OldField:       old,
-			NewField:       newField,
-			Safe:           false,
-			RequiresManual: true,
-			Description:    "Changing foreign key reference requires manual migration",
-		})
+		if old.References != "" && newField.References != "" {
+			changes = append(changes, &Change{
+				Type:           ChangeModifyField,
+				Collection:     collection,
+				Field:          fieldName,
+				OldField:       old,
+				NewField:       newField,
+				Safe:           false,
+				RequiresManual: true,
+				Description:    "Changing foreign key reference requires manual migration",
+			})
+		}
 	}
 
 	return changes
@@ -265,6 +285,39 @@ func (d *Differ) rulesChanged(old, newRules *Rules) bool {
 		old.Read != newRules.Read ||
 		old.Update != newRules.Update ||
 		old.Delete != newRules.Delete
+}
+
+func (d *Differ) areTypesCompatible(oldType, newType FieldType) bool {
+	textTypes := map[FieldType]bool{
+		FieldTypeID:        true,
+		FieldTypeString:    true,
+		FieldTypeText:      true,
+		FieldTypeUUID:      true,
+		FieldTypeEmail:     true,
+		FieldTypeURL:       true,
+		FieldTypeRichText:  true,
+		FieldTypeTimestamp: true,
+		FieldTypeDate:      true,
+		FieldTypeFile:      true,
+		FieldTypeSelect:    true,
+		FieldTypeRelation:  true,
+		FieldTypeJSON:      true,
+	}
+
+	if textTypes[oldType] && textTypes[newType] {
+		return true
+	}
+
+	intTypes := map[FieldType]bool{
+		FieldTypeInt:  true,
+		FieldTypeBool: true,
+	}
+
+	if intTypes[oldType] && intTypes[newType] {
+		return true
+	}
+
+	return false
 }
 
 func (d *Differ) SafeChanges(changes []*Change) []*Change {

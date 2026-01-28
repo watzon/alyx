@@ -358,7 +358,7 @@ func validateFieldBasics(path, name string, f *Field) ValidationErrors {
 	if !f.Type.IsValid() {
 		errs = append(errs, &ValidationError{
 			Path:    path + ".type",
-			Message: fmt.Sprintf("invalid type %q; must be one of: uuid, string, text, richtext, int, float, bool, timestamp, json, blob, email, url, date, select, relation, file", f.Type),
+			Message: fmt.Sprintf("invalid type %q; must be one of: id, uuid, string, text, richtext, int, float, bool, timestamp, json, blob, email, url, date, select, relation, file", f.Type),
 		})
 	}
 

@@ -77,6 +77,8 @@ func validateFieldValue(field *schema.Field, value any, errs *ValidationErrors) 
 		validateInt(field, value, errs)
 	case schema.FieldTypeFloat:
 		validateFloat(field, value, errs)
+	case schema.FieldTypeID:
+		validateShortID(field, value, errs)
 	case schema.FieldTypeUUID, schema.FieldTypeRelation:
 		validateUUID(field, value, errs)
 	case schema.FieldTypeEmail:
@@ -124,7 +126,21 @@ func validateFloat(field *schema.Field, value any, errs *ValidationErrors) {
 	}
 }
 
-var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var (
+	uuidRegex    = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	shortIDRegex = regexp.MustCompile(`^[a-zA-Z0-9]{15}$`)
+)
+
+func validateShortID(field *schema.Field, value any, errs *ValidationErrors) {
+	str, ok := toString(value)
+	if !ok {
+		errs.Add(field.Name, "invalid_type", fmt.Sprintf("Field '%s' must be a string", field.Name))
+		return
+	}
+	if !shortIDRegex.MatchString(str) {
+		errs.Add(field.Name, "invalid_id", fmt.Sprintf("Field '%s' must be a 15-character alphanumeric ID", field.Name))
+	}
+}
 
 func validateUUID(field *schema.Field, value any, errs *ValidationErrors) {
 	str, ok := toString(value)
