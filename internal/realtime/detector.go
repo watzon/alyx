@@ -19,6 +19,7 @@ type ChangeDetector struct {
 	changeCh     chan<- *Change
 	lastID       int64
 	done         chan struct{}
+	wg           sync.WaitGroup
 	mu           sync.Mutex
 }
 
@@ -34,6 +35,9 @@ func NewChangeDetector(db *database.DB, pollIntervalMs int64, changeCh chan<- *C
 
 // Start begins polling for changes.
 func (d *ChangeDetector) Start(ctx context.Context) {
+	d.wg.Add(1)
+	defer d.wg.Done()
+
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
 
@@ -52,6 +56,7 @@ func (d *ChangeDetector) Start(ctx context.Context) {
 // Stop halts the change detector.
 func (d *ChangeDetector) Stop() {
 	close(d.done)
+	d.wg.Wait()
 }
 
 func (d *ChangeDetector) poll(ctx context.Context) {

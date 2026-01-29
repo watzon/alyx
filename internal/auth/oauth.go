@@ -130,14 +130,23 @@ type stateStore struct {
 	states map[string]time.Time
 	mu     sync.Mutex
 	ttl    time.Duration
+	wg     sync.WaitGroup
+	stopCh chan struct{}
 }
 
 func newStateStore() *stateStore {
 	s := &stateStore{
 		states: make(map[string]time.Time),
 		ttl:    10 * time.Minute,
+		stopCh: make(chan struct{}),
 	}
-	go s.cleanup()
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.cleanup()
+	}()
+
 	return s
 }
 
@@ -177,16 +186,26 @@ func (s *stateStore) cleanup() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.mu.Lock()
-		now := time.Now()
-		for state, expiry := range s.states {
-			if now.After(expiry) {
-				delete(s.states, state)
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			now := time.Now()
+			for state, expiry := range s.states {
+				if now.After(expiry) {
+					delete(s.states, state)
+				}
 			}
+			s.mu.Unlock()
+		case <-s.stopCh:
+			return
 		}
-		s.mu.Unlock()
 	}
+}
+
+func (s *stateStore) stop() {
+	close(s.stopCh)
+	s.wg.Wait()
 }
 
 type baseProvider struct {

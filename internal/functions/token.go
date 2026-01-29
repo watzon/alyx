@@ -12,6 +12,8 @@ type InternalTokenStore struct {
 	tokens map[string]tokenEntry
 	mu     sync.RWMutex
 	ttl    time.Duration
+	wg     sync.WaitGroup
+	stopCh chan struct{}
 }
 
 type tokenEntry struct {
@@ -23,10 +25,15 @@ func NewInternalTokenStore(ttl time.Duration) *InternalTokenStore {
 	store := &InternalTokenStore{
 		tokens: make(map[string]tokenEntry),
 		ttl:    ttl,
+		stopCh: make(chan struct{}),
 	}
 
 	// Start cleanup goroutine
-	go store.cleanup()
+	store.wg.Add(1)
+	go func() {
+		defer store.wg.Done()
+		store.cleanup()
+	}()
 
 	return store
 }
@@ -83,15 +90,20 @@ func (s *InternalTokenStore) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.mu.Lock()
-		now := time.Now()
-		for token, entry := range s.tokens {
-			if now.Sub(entry.createdAt) > s.ttl {
-				delete(s.tokens, token)
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			now := time.Now()
+			for token, entry := range s.tokens {
+				if now.Sub(entry.createdAt) > s.ttl {
+					delete(s.tokens, token)
+				}
 			}
+			s.mu.Unlock()
+		case <-s.stopCh:
+			return
 		}
-		s.mu.Unlock()
 	}
 }
 
@@ -100,4 +112,10 @@ func (s *InternalTokenStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.tokens)
+}
+
+// Stop gracefully shuts down the token store.
+func (s *InternalTokenStore) Stop() {
+	close(s.stopCh)
+	s.wg.Wait()
 }

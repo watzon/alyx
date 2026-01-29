@@ -25,6 +25,7 @@ type Broker struct {
 	detector      *ChangeDetector
 
 	mu       sync.RWMutex
+	wg       sync.WaitGroup
 	done     chan struct{}
 	changeCh chan *Change
 }
@@ -63,8 +64,18 @@ func NewBroker(db *database.DB, s *schema.Schema, rulesEngine *rules.Engine, cfg
 
 // Start begins processing changes and broadcasting to subscribers.
 func (b *Broker) Start(ctx context.Context) error {
-	go b.detector.Start(ctx)
-	go b.processChanges(ctx)
+	b.wg.Add(2)
+
+	go func() {
+		defer b.wg.Done()
+		b.detector.Start(ctx)
+	}()
+
+	go func() {
+		defer b.wg.Done()
+		b.processChanges(ctx)
+	}()
+
 	return nil
 }
 
@@ -72,6 +83,7 @@ func (b *Broker) Start(ctx context.Context) error {
 func (b *Broker) Stop() {
 	close(b.done)
 	b.detector.Stop()
+	b.wg.Wait()
 
 	b.mu.Lock()
 	clients := make([]*Client, 0, len(b.clients))

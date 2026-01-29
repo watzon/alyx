@@ -28,6 +28,7 @@ type Client struct {
 	broker        *Broker
 	subscriptions map[string]*Subscription
 	mu            sync.RWMutex
+	wg            sync.WaitGroup
 	sendCh        chan []byte
 	done          chan struct{}
 	ctx           context.Context
@@ -51,8 +52,18 @@ func NewClient(conn *websocket.Conn, broker *Broker) *Client {
 
 // Run starts the client's read and write loops.
 func (c *Client) Run() {
-	go c.writePump()
-	go c.pingPump()
+	c.wg.Add(2)
+
+	go func() {
+		defer c.wg.Done()
+		c.writePump()
+	}()
+
+	go func() {
+		defer c.wg.Done()
+		c.pingPump()
+	}()
+
 	c.readPump()
 }
 
@@ -69,6 +80,7 @@ func (c *Client) Close() {
 	c.mu.Unlock()
 
 	c.cancel()
+	c.wg.Wait()
 
 	c.mu.Lock()
 	for _, sub := range c.subscriptions {

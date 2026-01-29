@@ -14,6 +14,7 @@ type RateLimiter struct {
 	buckets map[string]*bucket
 	rule    config.RateLimitRule
 	cleanup *time.Ticker
+	wg      sync.WaitGroup
 	stopCh  chan struct{}
 }
 
@@ -32,7 +33,11 @@ func NewRateLimiter(rule config.RateLimitRule) *RateLimiter {
 		stopCh:  make(chan struct{}),
 	}
 
-	go rl.cleanupLoop()
+	rl.wg.Add(1)
+	go func() {
+		defer rl.wg.Done()
+		rl.cleanupLoop()
+	}()
 
 	return rl
 }
@@ -99,6 +104,7 @@ func (rl *RateLimiter) cleanupLoop() {
 func (rl *RateLimiter) Stop() {
 	close(rl.stopCh)
 	rl.cleanup.Stop()
+	rl.wg.Wait()
 }
 
 // Middleware returns an HTTP middleware that rate limits requests.

@@ -50,6 +50,7 @@ type Watcher struct {
 	debounce  time.Duration
 	handlers  map[string][]WatchHandler
 	mu        sync.RWMutex
+	wg        sync.WaitGroup
 	events    chan FileEvent
 	done      chan struct{}
 	pendingMu sync.Mutex
@@ -117,13 +118,23 @@ func (w *Watcher) WatchDir(dir string, handler WatchHandler) error {
 
 // Start begins watching for file changes.
 func (w *Watcher) Start(ctx context.Context) {
-	go w.processLoop(ctx)
-	go w.dispatchLoop(ctx)
+	w.wg.Add(2)
+
+	go func() {
+		defer w.wg.Done()
+		w.processLoop(ctx)
+	}()
+
+	go func() {
+		defer w.wg.Done()
+		w.dispatchLoop(ctx)
+	}()
 }
 
 // Stop stops the watcher.
 func (w *Watcher) Stop() error {
 	close(w.done)
+	w.wg.Wait()
 	return w.watcher.Close()
 }
 
