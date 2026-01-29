@@ -67,7 +67,7 @@ export function parsePrometheusMetrics(text: string): PrometheusMetrics {
  * Fetch and parse metrics from the /metrics endpoint
  */
 export async function fetchMetrics(): Promise<PrometheusMetrics> {
-	const response = await fetch('/metrics', { credentials: 'same-origin' });
+	const response = await fetch(`${window.location.origin}/metrics`, { credentials: 'same-origin' });
 	
 	if (!response.ok) {
 		throw new Error(`Failed to fetch metrics: ${response.statusText}`);
