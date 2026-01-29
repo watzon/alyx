@@ -16,6 +16,7 @@ import (
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/functions"
+	"github.com/watzon/alyx/internal/schema"
 )
 
 const testWebhookSecret = "test-secret"
@@ -55,6 +56,7 @@ func testFunctionService(t *testing.T) *functions.Service {
 		FunctionsDir: t.TempDir(),
 		Config:       funcCfg,
 		ServerPort:   8090,
+		Schema:       &schema.Schema{},
 	}
 
 	svc, err := functions.NewService(cfg)
