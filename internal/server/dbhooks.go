@@ -13,6 +13,7 @@ type DatabaseHookTrigger struct {
 	funcService *functions.Service
 	hooks       map[string][]DatabaseHook // collection -> hooks
 	mu          sync.RWMutex
+	wg          sync.WaitGroup
 }
 
 type DatabaseHook struct {
@@ -120,7 +121,9 @@ func (t *DatabaseHookTrigger) executeHooks(ctx context.Context, collection, acti
 					Msg("Sync hook returned error")
 			}
 		} else {
+			t.wg.Add(1)
 			go func(hookCopy DatabaseHook) {
+				defer t.wg.Done()
 				resp, err := t.funcService.Invoke(context.Background(), hookCopy.FunctionName, input, nil)
 				if err != nil {
 					log.Error().Err(err).Str("function", hookCopy.FunctionName).Msg("Async hook failed")
@@ -151,4 +154,8 @@ func (t *DatabaseHookTrigger) Reload() {
 	t.mu.Unlock()
 
 	t.loadHooksFromFunctions()
+}
+
+func (t *DatabaseHookTrigger) Stop() {
+	t.wg.Wait()
 }
