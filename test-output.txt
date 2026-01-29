@@ -1,0 +1,114 @@
+# github.com/watzon/alyx/internal/database [github.com/watzon/alyx/internal/database.test]
+internal/database/database_test.go:23:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/database/database_test.go:24:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/database/database_test.go:25:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+internal/database/database_test.go:26:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/database/database_test.go:27:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/database/database_test.go:28:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+	github.com/watzon/alyx/cmd/alyx		coverage: 0.0% of statements
+	github.com/watzon/alyx/cmd/alyx/generate		coverage: 0.0% of statements
+	github.com/watzon/alyx/internal/adminui		coverage: 0.0% of statements
+# github.com/watzon/alyx/internal/realtime [github.com/watzon/alyx/internal/realtime.test]
+internal/realtime/realtime_test.go:23:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/realtime/realtime_test.go:24:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/realtime/realtime_test.go:25:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/realtime/realtime_test.go:26:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/realtime/realtime_test.go:27:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+# github.com/watzon/alyx/internal/events [github.com/watzon/alyx/internal/events.test]
+internal/events/bus_test.go:22:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:23:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:24:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:25:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:26:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:27:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/events/bus_test.go:28:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+# github.com/watzon/alyx/internal/executions [github.com/watzon/alyx/internal/executions.test]
+internal/executions/integration_test.go:24:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:25:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:26:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:27:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:28:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:29:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/executions/integration_test.go:30:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+internal/executions/logger_test.go:25:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/executions/logger_test.go:26:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/executions/logger_test.go:27:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/executions/logger_test.go:27:3: too many errors
+# github.com/watzon/alyx/internal/integration [github.com/watzon/alyx/internal/integration.test]
+internal/integration/events_test.go:36:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:37:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:38:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:39:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:40:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:41:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/integration/events_test.go:42:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+# github.com/watzon/alyx/internal/hooks [github.com/watzon/alyx/internal/hooks.test]
+internal/hooks/auth_test.go:26:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:27:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:28:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:29:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:30:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:31:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/hooks/auth_test.go:32:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+internal/hooks/registry_test.go:21:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/hooks/registry_test.go:22:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/hooks/registry_test.go:23:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/hooks/registry_test.go:23:3: too many errors
+# github.com/watzon/alyx/internal/scheduler [github.com/watzon/alyx/internal/scheduler.test]
+internal/scheduler/scheduler_test.go:23:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:24:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:25:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:26:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:27:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:28:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/scheduler/scheduler_test.go:29:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+# github.com/watzon/alyx/internal/server/handlers [github.com/watzon/alyx/internal/server/handlers.test]
+internal/server/handlers/file_field_test.go:29:3: unknown field WALMode in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/file_field_test.go:30:3: unknown field ForeignKeys in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/file_field_test.go:31:3: unknown field CacheSize in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/file_field_test.go:32:3: unknown field BusyTimeout in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/file_field_test.go:33:3: unknown field MaxOpenConns in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/file_field_test.go:34:3: unknown field MaxIdleConns in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/files_test.go:28:3: unknown field WALMode in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/files_test.go:29:3: unknown field ForeignKeys in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/files_test.go:30:3: unknown field CacheSize in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/files_test.go:31:3: unknown field BusyTimeout in struct literal of type "github.com/watzon/alyx/internal/config".DatabaseConfig
+internal/server/handlers/files_test.go:31:3: too many errors
+# github.com/watzon/alyx/internal/webhooks [github.com/watzon/alyx/internal/webhooks.test]
+internal/webhooks/handler_test.go:31:3: unknown field MaxOpenConns in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:32:3: unknown field MaxIdleConns in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:33:3: unknown field ConnMaxLifetime in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:34:3: unknown field BusyTimeout in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:35:3: unknown field WALMode in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:36:3: unknown field ForeignKeys in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:37:3: unknown field CacheSize in struct literal of type config.DatabaseConfig
+internal/webhooks/handler_test.go:57:3: unknown field Runtime in struct literal of type config.FunctionsConfig
+internal/webhooks/handler_test.go:58:3: unknown field MemoryLimit in struct literal of type config.FunctionsConfig
+internal/webhooks/handler_test.go:59:3: unknown field CPULimit in struct literal of type config.FunctionsConfig
+internal/webhooks/handler_test.go:59:3: too many errors
+ok  	github.com/watzon/alyx/internal/auth	10.509s	coverage: 51.7% of statements
+	github.com/watzon/alyx/internal/cli		coverage: 0.0% of statements
+ok  	github.com/watzon/alyx/internal/codegen	1.242s	coverage: 27.0% of statements
+ok  	github.com/watzon/alyx/internal/config	1.699s	coverage: 59.7% of statements
+FAIL	github.com/watzon/alyx/internal/database [build failed]
+ok  	github.com/watzon/alyx/internal/database/migrations	0.950s	coverage: 80.0% of statements
+	github.com/watzon/alyx/internal/deploy		coverage: 0.0% of statements
+FAIL	github.com/watzon/alyx/internal/events [build failed]
+FAIL	github.com/watzon/alyx/internal/executions [build failed]
+ok  	github.com/watzon/alyx/internal/functions	5.023s	coverage: 54.5% of statements
+FAIL	github.com/watzon/alyx/internal/hooks [build failed]
+FAIL	github.com/watzon/alyx/internal/integration [build failed]
+	github.com/watzon/alyx/internal/metrics		coverage: 0.0% of statements
+ok  	github.com/watzon/alyx/internal/openapi	1.939s	coverage: 93.0% of statements
+FAIL	github.com/watzon/alyx/internal/realtime [build failed]
+	github.com/watzon/alyx/internal/requestctx		coverage: 0.0% of statements
+ok  	github.com/watzon/alyx/internal/rules	2.087s	coverage: 79.2% of statements
+FAIL	github.com/watzon/alyx/internal/scheduler [build failed]
+ok  	github.com/watzon/alyx/internal/schema	1.710s	coverage: 36.8% of statements
+	github.com/watzon/alyx/internal/sdk/typescript		coverage: 0.0% of statements
+	github.com/watzon/alyx/internal/server		coverage: 0.0% of statements
+FAIL	github.com/watzon/alyx/internal/server/handlers [build failed]
+ok  	github.com/watzon/alyx/internal/server/requestlog	2.169s	coverage: 60.2% of statements
+ok  	github.com/watzon/alyx/internal/storage	2.896s	coverage: 67.9% of statements
+FAIL	github.com/watzon/alyx/internal/webhooks [build failed]
+FAIL
