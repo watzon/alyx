@@ -14,14 +14,22 @@ import (
 )
 
 type AuthHandlers struct {
-	service *auth.Service
-	cfg     *config.AuthConfig
+	service             *auth.Service
+	cfg                 *config.AuthConfig
+	bruteForceProtector BruteForceProtector
 }
 
-func NewAuthHandlers(db *database.DB, cfg *config.AuthConfig) *AuthHandlers {
+type BruteForceProtector interface {
+	IsBlocked(key string) bool
+	RecordFailedAttempt(key string)
+	ClearAttempts(key string)
+}
+
+func NewAuthHandlers(db *database.DB, cfg *config.AuthConfig, bfp BruteForceProtector) *AuthHandlers {
 	return &AuthHandlers{
-		service: auth.NewService(db, cfg),
-		cfg:     cfg,
+		service:             auth.NewService(db, cfg),
+		cfg:                 cfg,
+		bruteForceProtector: bfp,
 	}
 }
 
@@ -107,11 +115,20 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.bruteForceProtector != nil && h.bruteForceProtector.IsBlocked(input.Email) {
+		Error(w, http.StatusTooManyRequests, "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Please try again later.")
+		return
+	}
+
 	userAgent := r.Header.Get("User-Agent")
 	ipAddress := getClientIP(r)
 
 	user, tokens, err := h.service.Login(r.Context(), input, userAgent, ipAddress)
 	if err != nil {
+		if h.bruteForceProtector != nil && errors.Is(err, auth.ErrInvalidCredentials) {
+			h.bruteForceProtector.RecordFailedAttempt(input.Email)
+		}
+
 		switch {
 		case errors.Is(err, auth.ErrInvalidCredentials):
 			Error(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
@@ -122,6 +139,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			InternalError(w, "Failed to login")
 		}
 		return
+	}
+
+	if h.bruteForceProtector != nil {
+		h.bruteForceProtector.ClearAttempts(input.Email)
 	}
 
 	JSON(w, http.StatusOK, map[string]any{

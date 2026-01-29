@@ -22,26 +22,27 @@ import (
 )
 
 type Server struct {
-	cfg             *config.Config
-	db              *database.DB
-	schema          *schema.Schema
-	schemaPath      string
-	configPath      string
-	rules           *rules.Engine
-	broker          *realtime.Broker
-	funcService     *functions.Service
-	dbHookTrigger   *DatabaseHookTrigger
-	deployService   *deploy.Service
-	requestLogs     *requestlog.Store
-	httpServer      *http.Server
-	router          *Router
-	storageService  *storage.Service
-	tusService      *storage.TUSService
-	signedService   *storage.SignedURLService
-	cleanupService  *storage.CleanupService
-	loginLimiter    *RateLimiter
-	registerLimiter *RateLimiter
-	mu              sync.RWMutex
+	cfg                 *config.Config
+	db                  *database.DB
+	schema              *schema.Schema
+	schemaPath          string
+	configPath          string
+	rules               *rules.Engine
+	broker              *realtime.Broker
+	funcService         *functions.Service
+	dbHookTrigger       *DatabaseHookTrigger
+	deployService       *deploy.Service
+	requestLogs         *requestlog.Store
+	httpServer          *http.Server
+	router              *Router
+	storageService      *storage.Service
+	tusService          *storage.TUSService
+	signedService       *storage.SignedURLService
+	cleanupService      *storage.CleanupService
+	loginLimiter        *RateLimiter
+	registerLimiter     *RateLimiter
+	bruteForceProtector *BruteForceProtector
+	mu                  sync.RWMutex
 }
 
 const defaultRequestLogCapacity = 1000
@@ -170,6 +171,7 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 
 	srv.loginLimiter = NewRateLimiter(cfg.Auth.RateLimit.Login)
 	srv.registerLimiter = NewRateLimiter(cfg.Auth.RateLimit.Register)
+	srv.bruteForceProtector = NewBruteForceProtector(5, 15*time.Minute)
 
 	srv.router = NewRouter(srv)
 	srv.httpServer = &http.Server{
@@ -242,6 +244,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.registerLimiter != nil {
 		s.registerLimiter.Stop()
+	}
+	if s.bruteForceProtector != nil {
+		s.bruteForceProtector.Stop()
 	}
 
 	return s.httpServer.Shutdown(ctx)
@@ -361,4 +366,8 @@ func (s *Server) LoginLimiter() *RateLimiter {
 
 func (s *Server) RegisterLimiter() *RateLimiter {
 	return s.registerLimiter
+}
+
+func (s *Server) BruteForceProtector() *BruteForceProtector {
+	return s.bruteForceProtector
 }

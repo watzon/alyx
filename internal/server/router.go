@@ -60,7 +60,7 @@ func (r *Router) setupRoutes() {
 	h := handlers.New(r.server.DB(), r.server.Schema(), r.server.Config(), r.server.Rules())
 	r.mainHandlers = h
 
-	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth)
+	authHandlers := handlers.NewAuthHandlers(r.server.DB(), &r.server.cfg.Auth, r.server.BruteForceProtector())
 	authService := authHandlers.Service()
 
 	if r.server.cfg.AdminUI.Enabled {
