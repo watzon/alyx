@@ -171,33 +171,33 @@ func (r *Router) setupRoutes() {
 	// 	r.mux.HandleFunc("GET /api/functions/{name}/hooks", r.wrap(hookHandlers.ListForFunction))
 	// }
 
-	// if webhookStore := r.server.WebhookStore(); webhookStore != nil {
-	// 	webhookHandlers := handlers.NewWebhookHandlers(webhookStore)
-	// 	r.mux.HandleFunc("GET /api/webhooks", r.wrap(webhookHandlers.List))
-	// 	r.mux.HandleFunc("POST /api/webhooks", r.wrap(webhookHandlers.Create))
-	// 	r.mux.HandleFunc("GET /api/webhooks/{id}", r.wrap(webhookHandlers.Get))
-	// 	r.mux.HandleFunc("PATCH /api/webhooks/{id}", r.wrap(webhookHandlers.Update))
-	// 	r.mux.HandleFunc("DELETE /api/webhooks/{id}", r.wrap(webhookHandlers.Delete))
-	// }
+	if webhookStore := r.server.WebhookStore(); webhookStore != nil {
+		webhookHandlers := handlers.NewWebhookHandlers(webhookStore)
+		r.mux.HandleFunc("GET /api/webhooks", r.wrap(webhookHandlers.List))
+		r.mux.HandleFunc("POST /api/webhooks", r.wrap(webhookHandlers.Create))
+		r.mux.HandleFunc("GET /api/webhooks/{id}", r.wrap(webhookHandlers.Get))
+		r.mux.HandleFunc("PATCH /api/webhooks/{id}", r.wrap(webhookHandlers.Update))
+		r.mux.HandleFunc("DELETE /api/webhooks/{id}", r.wrap(webhookHandlers.Delete))
+	}
 
-	// if scheduleStore := r.server.ScheduleStore(); scheduleStore != nil {
-	// 	if scheduler := r.server.Scheduler(); scheduler != nil {
-	// 		scheduleHandlers := handlers.NewScheduleHandlers(scheduleStore, scheduler)
-	// 		r.mux.HandleFunc("GET /api/schedules", r.wrap(scheduleHandlers.List))
-	// 		r.mux.HandleFunc("POST /api/schedules", r.wrap(scheduleHandlers.Create))
-	// 		r.mux.HandleFunc("GET /api/schedules/{id}", r.wrap(scheduleHandlers.Get))
-	// 		r.mux.HandleFunc("PATCH /api/schedules/{id}", r.wrap(scheduleHandlers.Update))
-	// 		r.mux.HandleFunc("DELETE /api/schedules/{id}", r.wrap(scheduleHandlers.Delete))
-	// 		r.mux.HandleFunc("POST /api/schedules/{id}/trigger", r.wrap(scheduleHandlers.Trigger))
-	// 	}
-	// }
+	if scheduleStore := r.server.ScheduleStore(); scheduleStore != nil {
+		if scheduler := r.server.Scheduler(); scheduler != nil {
+			scheduleHandlers := handlers.NewScheduleHandlers(scheduleStore, scheduler)
+			r.mux.HandleFunc("GET /api/schedules", r.wrap(scheduleHandlers.List))
+			r.mux.HandleFunc("POST /api/schedules", r.wrap(scheduleHandlers.Create))
+			r.mux.HandleFunc("GET /api/schedules/{id}", r.wrap(scheduleHandlers.Get))
+			r.mux.HandleFunc("PATCH /api/schedules/{id}", r.wrap(scheduleHandlers.Update))
+			r.mux.HandleFunc("DELETE /api/schedules/{id}", r.wrap(scheduleHandlers.Delete))
+			r.mux.HandleFunc("POST /api/schedules/{id}/trigger", r.wrap(scheduleHandlers.Trigger))
+		}
+	}
 
-	// if executionStore := r.server.ExecutionStore(); executionStore != nil {
-	// 	executionHandlers := handlers.NewExecutionHandlers(executionStore)
-	// 	r.mux.HandleFunc("GET /api/executions", r.wrap(executionHandlers.List))
-	// 	r.mux.HandleFunc("GET /api/executions/{id}", r.wrap(executionHandlers.Get))
-	// 	r.mux.HandleFunc("GET /api/functions/{name}/executions", r.wrap(executionHandlers.ListForFunction))
-	// }
+	if executionStore := r.server.ExecutionStore(); executionStore != nil {
+		executionHandlers := handlers.NewExecutionHandlers(executionStore)
+		r.mux.HandleFunc("GET /api/executions", r.wrap(executionHandlers.List))
+		r.mux.HandleFunc("GET /api/executions/{id}", r.wrap(executionHandlers.Get))
+		r.mux.HandleFunc("GET /api/functions/{name}/executions", r.wrap(executionHandlers.ListForFunction))
+	}
 
 	if r.server.DeployService() != nil {
 		var funcSvc *functions.Service

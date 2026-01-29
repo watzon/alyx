@@ -13,12 +13,16 @@ import (
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
 	"github.com/watzon/alyx/internal/deploy"
+	"github.com/watzon/alyx/internal/events"
+	"github.com/watzon/alyx/internal/executions"
 	"github.com/watzon/alyx/internal/functions"
 	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/rules"
+	"github.com/watzon/alyx/internal/scheduler"
 	"github.com/watzon/alyx/internal/schema"
 	"github.com/watzon/alyx/internal/server/requestlog"
 	"github.com/watzon/alyx/internal/storage"
+	"github.com/watzon/alyx/internal/webhooks"
 )
 
 type Server struct {
@@ -39,6 +43,11 @@ type Server struct {
 	tusService          *storage.TUSService
 	signedService       *storage.SignedURLService
 	cleanupService      *storage.CleanupService
+	eventBus            *events.EventBus
+	webhookStore        *webhooks.Store
+	scheduleStore       *scheduler.Store
+	executionStore      *executions.Store
+	scheduler           *scheduler.Scheduler
 	loginLimiter        *RateLimiter
 	registerLimiter     *RateLimiter
 	bruteForceProtector *BruteForceProtector
@@ -92,6 +101,19 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 		}
 		srv.broker = realtime.NewBroker(db, s, rulesEngine, brokerCfg)
 	}
+
+	eventBusConfig := &events.EventBusConfig{
+		Retention:       7 * 24 * time.Hour,
+		ProcessInterval: 1 * time.Second,
+		CleanupInterval: 1 * time.Hour,
+	}
+	srv.eventBus = events.NewEventBus(db, eventBusConfig)
+
+	srv.webhookStore = webhooks.NewStore(db)
+	srv.scheduleStore = scheduler.NewStore(db)
+	srv.executionStore = executions.NewStore(db)
+
+	srv.scheduler = scheduler.NewScheduler(db, srv.eventBus)
 
 	if cfg.Functions.Enabled {
 		funcService, err := functions.NewService(&functions.ServiceConfig{
@@ -197,6 +219,13 @@ func (s *Server) Start(ctx context.Context) error {
 		log.Info().Msg("Realtime broker started")
 	}
 
+	if s.eventBus != nil {
+		s.eventBus.Start(ctx, nil)
+	}
+	if s.scheduler != nil {
+		s.scheduler.Start(ctx, nil)
+	}
+
 	if s.funcService != nil {
 		if err := s.funcService.Start(ctx); err != nil {
 			return fmt.Errorf("starting function service: %w", err)
@@ -232,6 +261,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			log.Warn().Err(err).Msg("Error closing function service")
 		}
 		log.Info().Msg("Function service stopped")
+	}
+
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
+	if s.eventBus != nil {
+		s.eventBus.Stop()
 	}
 
 	if s.cleanupService != nil {
@@ -370,4 +406,24 @@ func (s *Server) RegisterLimiter() *RateLimiter {
 
 func (s *Server) BruteForceProtector() *BruteForceProtector {
 	return s.bruteForceProtector
+}
+
+func (s *Server) EventBus() *events.EventBus {
+	return s.eventBus
+}
+
+func (s *Server) WebhookStore() *webhooks.Store {
+	return s.webhookStore
+}
+
+func (s *Server) ScheduleStore() *scheduler.Store {
+	return s.scheduleStore
+}
+
+func (s *Server) ExecutionStore() *executions.Store {
+	return s.executionStore
+}
+
+func (s *Server) Scheduler() *scheduler.Scheduler {
+	return s.scheduler
 }
