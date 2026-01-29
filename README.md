@@ -505,6 +505,10 @@ Alyx is under active development following a phased approach:
 
 See [ROADMAP.md](ROADMAP.md) for detailed task breakdown.
 
+## Known Limitations
+
+See [V1 Limitations](docs/v1-limitations.md) for current architectural constraints.
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
