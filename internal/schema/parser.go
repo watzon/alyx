@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	IdentifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 )
 
 func ParseFile(path string) (*Schema, error) {
@@ -255,7 +255,7 @@ func validateFunction(name string, fn *Function, s *Schema) ValidationErrors {
 	var errs ValidationErrors
 	path := fmt.Sprintf("functions.%s", name)
 
-	if !identifierRegex.MatchString(name) {
+	if !IdentifierRegex.MatchString(name) {
 		errs = append(errs, &ValidationError{
 			Path:    path,
 			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",
@@ -391,7 +391,7 @@ func validateBucket(name string, b *Bucket) ValidationErrors {
 	var errs ValidationErrors
 	path := fmt.Sprintf("buckets.%s", name)
 
-	if !identifierRegex.MatchString(name) {
+	if !IdentifierRegex.MatchString(name) {
 		errs = append(errs, &ValidationError{
 			Path:    path,
 			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",
@@ -451,7 +451,7 @@ func validateCollection(name string, col *Collection, s *Schema) ValidationError
 	var errs ValidationErrors
 	path := fmt.Sprintf("collections.%s", name)
 
-	if !identifierRegex.MatchString(name) {
+	if !IdentifierRegex.MatchString(name) {
 		errs = append(errs, &ValidationError{
 			Path:    path,
 			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",
@@ -544,7 +544,7 @@ func validateField(path, name string, f *Field, s *Schema) ValidationErrors {
 func validateFieldBasics(path, name string, f *Field) ValidationErrors {
 	var errs ValidationErrors
 
-	if !identifierRegex.MatchString(name) {
+	if !IdentifierRegex.MatchString(name) {
 		errs = append(errs, &ValidationError{
 			Path:    path,
 			Message: "name must start with lowercase letter and contain only lowercase letters, numbers, and underscores",

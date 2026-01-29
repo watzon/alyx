@@ -230,6 +230,10 @@ func runDBDump(cmd *cobra.Command, args []string) error {
 	totalDocuments := 0
 
 	for collectionName := range s.Collections {
+		if err := schema.ValidateIdentifier(collectionName); err != nil {
+			log.Warn().Err(err).Str("collection", collectionName).Msg("Invalid collection name")
+			continue
+		}
 		rows, queryErr := db.Query(fmt.Sprintf("SELECT * FROM %s", collectionName))
 		if queryErr != nil {
 			log.Warn().Err(queryErr).Str("collection", collectionName).Msg("Error querying collection")

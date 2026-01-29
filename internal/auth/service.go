@@ -696,6 +696,17 @@ func (s *Service) UpdateUser(ctx context.Context, id string, input UpdateUserInp
 		return user, nil
 	}
 
+	// Defensive validation: ensure only allowed columns are updated
+	allowedColumns := map[string]bool{
+		"email": true, "verified": true, "role": true, "metadata": true,
+	}
+	for _, update := range updates {
+		col := strings.Split(update, " ")[0]
+		if !allowedColumns[col] {
+			return nil, fmt.Errorf("invalid column: %s", col)
+		}
+	}
+
 	updates = append(updates, "updated_at = ?")
 	args = append(args, time.Now().UTC().Format(time.RFC3339))
 	args = append(args, id)

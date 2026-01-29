@@ -587,6 +587,13 @@ func (m *Migrator) modifyFieldSQLWithTx(_ *sql.Tx, change *Change) ([]string, er
 }
 
 func (m *Migrator) changeColumnTypeSQL(table, column string, oldField, newField *Field) ([]string, error) {
+	if err := ValidateIdentifier(table); err != nil {
+		return nil, err
+	}
+	if err := ValidateIdentifier(column); err != nil {
+		return nil, err
+	}
+
 	tempCol := "_" + column + "_old"
 	newType := newField.Type.SQLiteType()
 
@@ -625,6 +632,13 @@ func (m *Migrator) getTypeConversionExpr(newCol, oldCol string, oldType, newType
 }
 
 func (m *Migrator) makeNonNullableSQL(table, column string, newField *Field) ([]string, error) {
+	if err := ValidateIdentifier(table); err != nil {
+		return nil, err
+	}
+	if err := ValidateIdentifier(column); err != nil {
+		return nil, err
+	}
+
 	defaultVal := newField.SQLDefault()
 	if defaultVal == "" {
 		defaultVal = m.getZeroValueForType(newField.Type)
@@ -717,6 +731,13 @@ func (m *Migrator) ValidateUnsafeChanges(changes []*Change) []ValidationError {
 }
 
 func (m *Migrator) checkDuplicates(table, column string) (int, error) {
+	if err := ValidateIdentifier(table); err != nil {
+		return 0, err
+	}
+	if err := ValidateIdentifier(column); err != nil {
+		return 0, err
+	}
+
 	var count int
 	query := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
@@ -732,6 +753,13 @@ func (m *Migrator) checkDuplicates(table, column string) (int, error) {
 }
 
 func (m *Migrator) countNulls(table, column string) (int, error) {
+	if err := ValidateIdentifier(table); err != nil {
+		return 0, err
+	}
+	if err := ValidateIdentifier(column); err != nil {
+		return 0, err
+	}
+
 	var count int
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NULL", table, column)
 	err := m.db.QueryRow(query).Scan(&count)
