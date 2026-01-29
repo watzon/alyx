@@ -15,6 +15,14 @@ export default defineConfig({
 			'/internal': {
 				target: apiTarget,
 				changeOrigin: true
+			},
+			'/metrics': {
+				target: apiTarget,
+				changeOrigin: true
+			},
+			'/health': {
+				target: apiTarget,
+				changeOrigin: true
 			}
 		}
 	}
