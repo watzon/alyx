@@ -36,6 +36,7 @@ type AdminHandlers struct {
 	pendingStore  *schema.PendingChangesStore
 	migrator      *schema.Migrator
 	draftSchemas  map[string]string // session_id -> draft YAML content
+	schemaManager *schema.Manager
 }
 
 // NewAdminHandlers creates new admin handlers.
@@ -59,6 +60,13 @@ func NewAdminHandlers(deployService *deploy.Service, authService *auth.Service, 
 			log.Error().Err(err).Msg("Failed to initialize pending changes store")
 		}
 		h.migrator = schema.NewMigrator(db.DB, schemaPath, "")
+	}
+
+	if schemaPath != "" {
+		h.schemaManager = schema.NewManager(schemaPath)
+		if err := h.schemaManager.Load(); err != nil {
+			log.Error().Err(err).Msg("Failed to initialize schema manager")
+		}
 	}
 
 	return h
@@ -875,8 +883,8 @@ func (h *AdminHandlers) SchemaRawUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.schemaPath == "" {
-		Error(w, http.StatusNotFound, "SCHEMA_NOT_FOUND", "Schema file path not configured")
+	if h.schemaManager == nil {
+		Error(w, http.StatusServiceUnavailable, "SCHEMA_MANAGER_NOT_INITIALIZED", "Schema manager not initialized")
 		return
 	}
 
@@ -893,14 +901,14 @@ func (h *AdminHandlers) SchemaRawUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, parseErr := schema.Parse([]byte(input.Content)); parseErr != nil {
-		Error(w, http.StatusBadRequest, "INVALID_SCHEMA", parseErr.Error())
+	if err := h.schemaManager.UpdateFromYAML([]byte(input.Content)); err != nil {
+		Error(w, http.StatusBadRequest, "INVALID_SCHEMA", err.Error())
 		return
 	}
 
-	if err := os.WriteFile(h.schemaPath, []byte(input.Content), 0o600); err != nil {
-		log.Error().Err(err).Str("path", h.schemaPath).Msg("Failed to write schema file")
-		InternalError(w, "Failed to write schema file")
+	if err := h.schemaManager.Save(); err != nil {
+		log.Error().Err(err).Msg("Failed to save schema")
+		InternalError(w, "Failed to save schema")
 		return
 	}
 
@@ -1149,7 +1157,7 @@ func (h *AdminHandlers) SchemaConfirmChanges(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.migrator.ApplyUnsafeChanges(changes); err != nil {
+	if err := h.migrator.ApplyUnsafeChanges(changes, h.schema); err != nil {
 		log.Error().Err(err).Msg("Failed to apply unsafe changes")
 		Error(w, http.StatusInternalServerError, "MIGRATION_FAILED", err.Error())
 		return
@@ -1239,6 +1247,18 @@ func (h *AdminHandlers) SchemaDraftPreview(w http.ResponseWriter, r *http.Reques
 	sessionID := token.Name
 	h.draftSchemas[sessionID] = input.Content
 
+	migrator := schema.NewMigrator(h.db.DB, h.schemaPath, "")
+	if err := migrator.Init(); err != nil {
+		log.Error().Err(err).Msg("Failed to initialize migrator")
+		InternalError(w, "Failed to initialize migrator")
+		return
+	}
+
+	loadedSchema := h.schemaManager.GetSchema()
+	if err := migrator.EnsureRulesCacheSeeded(loadedSchema); err != nil {
+		log.Error().Err(err).Msg("Failed to seed rules cache")
+	}
+
 	currentSchema, err := schema.InferFromDB(h.db.DB)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to infer current schema from database")
@@ -1307,7 +1327,7 @@ func (h *AdminHandlers) SchemaDraftApply(w http.ResponseWriter, r *http.Request)
 	migrator := schema.NewMigrator(h.db.DB, h.schemaPath, "")
 
 	if len(safeChanges) > 0 {
-		if err := migrator.ApplySafeChanges(safeChanges); err != nil {
+		if err := migrator.ApplySafeChanges(safeChanges, newSchema); err != nil {
 			log.Error().Err(err).Msg("Failed to apply safe changes")
 			Error(w, http.StatusInternalServerError, "SAFE_MIGRATION_FAILED", err.Error())
 			return
@@ -1328,7 +1348,7 @@ func (h *AdminHandlers) SchemaDraftApply(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		if err := migrator.ApplyUnsafeChanges(unsafeChanges); err != nil {
+		if err := migrator.ApplyUnsafeChanges(unsafeChanges, newSchema); err != nil {
 			log.Error().Err(err).Msg("Failed to apply unsafe changes")
 			Error(w, http.StatusInternalServerError, "UNSAFE_MIGRATION_FAILED", err.Error())
 			return
@@ -1344,7 +1364,7 @@ func (h *AdminHandlers) SchemaDraftApply(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err := os.WriteFile(h.schemaPath, []byte(draftContent), 0o600); err != nil {
+	if err := schema.WriteFile(h.schemaPath, newSchema); err != nil {
 		log.Error().Err(err).Str("path", h.schemaPath).Msg("Failed to write schema file")
 		InternalError(w, "Failed to write schema file")
 		return
@@ -1382,5 +1402,203 @@ func (h *AdminHandlers) SchemaDraftCancel(w http.ResponseWriter, r *http.Request
 	JSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"message": "Draft schema cancelled",
+	})
+}
+
+// BucketList returns all buckets from schema.
+func (h *AdminHandlers) BucketList(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if h.schemaManager == nil {
+		Error(w, http.StatusServiceUnavailable, "SCHEMA_MANAGER_NOT_INITIALIZED", "Schema manager not initialized")
+		return
+	}
+
+	sch := h.schemaManager.GetSchema()
+	if sch == nil {
+		JSON(w, http.StatusOK, map[string]any{"buckets": []any{}})
+		return
+	}
+
+	buckets := make([]*schema.Bucket, 0, len(sch.Buckets))
+	for _, b := range sch.Buckets {
+		buckets = append(buckets, b)
+	}
+
+	JSON(w, http.StatusOK, map[string]any{"buckets": buckets})
+}
+
+// BucketCreate creates a new bucket.
+func (h *AdminHandlers) BucketCreate(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Bucket creation is only available in development mode")
+		return
+	}
+
+	if h.schemaManager == nil {
+		Error(w, http.StatusServiceUnavailable, "SCHEMA_MANAGER_NOT_INITIALIZED", "Schema manager not initialized")
+		return
+	}
+
+	var input struct {
+		Name         string   `json:"name"`
+		Backend      string   `json:"backend"`
+		MaxFileSize  int64    `json:"max_file_size"`
+		AllowedTypes []string `json:"allowed_types"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&input); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	if input.Name == "" {
+		BadRequest(w, "Bucket name is required")
+		return
+	}
+
+	if input.Backend == "" {
+		input.Backend = "local"
+	}
+
+	bucket := &schema.Bucket{
+		Backend:      input.Backend,
+		MaxFileSize:  input.MaxFileSize,
+		AllowedTypes: input.AllowedTypes,
+	}
+
+	if err := h.schemaManager.AddBucket(input.Name, bucket); err != nil {
+		Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.schemaManager.Save(); err != nil {
+		log.Error().Err(err).Msg("Failed to save schema")
+		InternalError(w, "Failed to save schema")
+		return
+	}
+
+	log.Info().Str("bucket", input.Name).Msg("Bucket created via admin API")
+
+	JSON(w, http.StatusCreated, bucket)
+}
+
+// BucketUpdate updates an existing bucket.
+func (h *AdminHandlers) BucketUpdate(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Bucket modification is only available in development mode")
+		return
+	}
+
+	if h.schemaManager == nil {
+		Error(w, http.StatusServiceUnavailable, "SCHEMA_MANAGER_NOT_INITIALIZED", "Schema manager not initialized")
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		BadRequest(w, "Bucket name is required")
+		return
+	}
+
+	var input struct {
+		Backend      string   `json:"backend"`
+		MaxFileSize  int64    `json:"max_file_size"`
+		AllowedTypes []string `json:"allowed_types"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&input); decodeErr != nil {
+		BadRequest(w, "Invalid JSON body")
+		return
+	}
+
+	bucket := &schema.Bucket{
+		Backend:      input.Backend,
+		MaxFileSize:  input.MaxFileSize,
+		AllowedTypes: input.AllowedTypes,
+	}
+
+	if err := h.schemaManager.UpdateBucket(name, bucket); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			NotFound(w, fmt.Sprintf("Bucket %q not found", name))
+			return
+		}
+		Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.schemaManager.Save(); err != nil {
+		log.Error().Err(err).Msg("Failed to save schema")
+		InternalError(w, "Failed to save schema")
+		return
+	}
+
+	log.Info().Str("bucket", name).Msg("Bucket updated via admin API")
+
+	JSON(w, http.StatusOK, bucket)
+}
+
+// BucketDelete deletes a bucket.
+func (h *AdminHandlers) BucketDelete(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionAdmin)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	if !h.isDevMode() {
+		Error(w, http.StatusForbidden, "DEV_MODE_REQUIRED", "Bucket deletion is only available in development mode")
+		return
+	}
+
+	if h.schemaManager == nil {
+		Error(w, http.StatusServiceUnavailable, "SCHEMA_MANAGER_NOT_INITIALIZED", "Schema manager not initialized")
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		BadRequest(w, "Bucket name is required")
+		return
+	}
+
+	if err := h.schemaManager.DeleteBucket(name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			NotFound(w, fmt.Sprintf("Bucket %q not found", name))
+			return
+		}
+		if strings.Contains(err.Error(), "is referenced by") {
+			Error(w, http.StatusConflict, "BUCKET_IN_USE", err.Error())
+			return
+		}
+		Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.schemaManager.Save(); err != nil {
+		log.Error().Err(err).Msg("Failed to save schema")
+		InternalError(w, "Failed to save schema")
+		return
+	}
+
+	log.Info().Str("bucket", name).Msg("Bucket deleted via admin API")
+
+	JSON(w, http.StatusOK, map[string]any{
+		"deleted": true,
+		"name":    name,
 	})
 }

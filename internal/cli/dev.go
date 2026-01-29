@@ -242,7 +242,7 @@ func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *c
 	}
 
 	if len(safeChanges) > 0 {
-		if err := migrator.ApplySafeChanges(safeChanges); err != nil {
+		if err := migrator.ApplySafeChanges(safeChanges, newSchema); err != nil {
 			log.Error().Err(err).Msg("Failed to apply safe schema changes")
 			return
 		}
@@ -258,7 +258,7 @@ func handleSchemaChange(path string, db *database.DB, srv *server.Server, cfg *c
 			return
 		}
 
-		if err := migrator.ApplyUnsafeChanges(unsafeChanges); err != nil {
+		if err := migrator.ApplyUnsafeChanges(unsafeChanges, newSchema); err != nil {
 			log.Error().Err(err).Msg("Failed to apply unsafe schema changes")
 			return
 		}

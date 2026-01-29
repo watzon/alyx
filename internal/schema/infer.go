@@ -2,6 +2,7 @@ package schema
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -55,10 +56,37 @@ func InferFromDB(db *sql.DB) (*Schema, error) {
 			return nil, fmt.Errorf("enriching metadata for %s: %w", table, err)
 		}
 
+		rules, err := loadRulesFromCache(db, table)
+		if err != nil {
+			return nil, fmt.Errorf("loading rules for %s: %w", table, err)
+		}
+		collection.Rules = rules
+
 		schema.Collections[table] = collection
 	}
 
 	return schema, nil
+}
+
+func loadRulesFromCache(db *sql.DB, collection string) (*Rules, error) {
+	var rulesJSON sql.NullString
+	err := db.QueryRow(`
+		SELECT rules_json FROM _alyx_schema_cache WHERE collection = ?
+	`, collection).Scan(&rulesJSON)
+
+	if err == sql.ErrNoRows || !rulesJSON.Valid {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying cache: %w", err)
+	}
+
+	var rules Rules
+	if err := json.Unmarshal([]byte(rulesJSON.String), &rules); err != nil {
+		return nil, fmt.Errorf("unmarshaling rules: %w", err)
+	}
+
+	return &rules, nil
 }
 
 func getUserTables(db *sql.DB) ([]string, error) {
@@ -83,20 +111,15 @@ func getUserTables(db *sql.DB) ([]string, error) {
 	defer rows.Close()
 
 	var tables []string
-	var allTables []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		allTables = append(allTables, name)
 		if !systemTables[name] {
 			tables = append(tables, name)
 		}
 	}
-
-	fmt.Printf("DEBUG: All tables from DB: %v\n", allTables)
-	fmt.Printf("DEBUG: User tables after filtering: %v\n", tables)
 
 	return tables, rows.Err()
 }
@@ -183,6 +206,7 @@ func enrichFieldMetadata(db *sql.DB, table string, collection *Collection) error
 	type indexInfo struct {
 		name   string
 		unique bool
+		origin string
 	}
 	var indexes []indexInfo
 
@@ -196,15 +220,11 @@ func enrichFieldMetadata(db *sql.DB, table string, collection *Collection) error
 			indexRows.Close()
 			return err
 		}
-		indexes = append(indexes, indexInfo{name: name, unique: unique == 1})
+		indexes = append(indexes, indexInfo{name: name, unique: unique == 1, origin: origin})
 	}
 	indexRows.Close()
 
 	for _, idx := range indexes {
-		if !idx.unique {
-			continue
-		}
-
 		infoRows, err := db.Query(fmt.Sprintf("PRAGMA index_info(%s)", idx.name))
 		if err != nil {
 			continue
@@ -224,11 +244,45 @@ func enrichFieldMetadata(db *sql.DB, table string, collection *Collection) error
 		}
 		infoRows.Close()
 
-		if len(fieldNames) == 1 {
+		if len(fieldNames) == 0 {
+			continue
+		}
+
+		// Handle SQLite internal autoindexes (for UNIQUE/PK constraints)
+		// These should mark field.Unique but not be added to collection.Indexes
+		if strings.HasPrefix(idx.name, "sqlite_autoindex_") {
+			if idx.unique && len(fieldNames) == 1 {
+				if field, exists := collection.Fields[fieldNames[0]]; exists {
+					field.Unique = true
+				}
+			}
+			continue
+		}
+
+		// Check if this is an auto-generated field index (idx_{table}_{field})
+		if len(fieldNames) == 1 && !idx.unique {
+			expectedName := fmt.Sprintf("idx_%s_%s", table, fieldNames[0])
+			if idx.name == expectedName {
+				if field, exists := collection.Fields[fieldNames[0]]; exists {
+					field.Index = true
+				}
+				continue
+			}
+		}
+
+		// Mark single-field unique indexes on the field itself
+		if idx.unique && len(fieldNames) == 1 {
 			if field, exists := collection.Fields[fieldNames[0]]; exists {
 				field.Unique = true
 			}
 		}
+
+		// Add explicit/custom indexes to collection.Indexes
+		collection.Indexes = append(collection.Indexes, &Index{
+			Name:   idx.name,
+			Fields: fieldNames,
+			Unique: idx.unique,
+		})
 	}
 
 	return nil

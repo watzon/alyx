@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,6 +64,17 @@ func (m *Migrator) Init() error {
 			name TEXT NOT NULL,
 			applied_at TEXT NOT NULL DEFAULT (datetime('now')),
 			checksum TEXT NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.db.Exec(`
+		CREATE TABLE IF NOT EXISTS _alyx_schema_cache (
+			collection TEXT PRIMARY KEY,
+			rules_json TEXT,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)
 	`)
 	return err
@@ -243,7 +255,7 @@ func (m *Migrator) ApplySchema(schema *Schema) error {
 	return tx.Commit()
 }
 
-func (m *Migrator) ApplySafeChanges(changes []*Change) error {
+func (m *Migrator) ApplySafeChanges(changes []*Change, schema *Schema) error {
 	tx, err := m.db.Begin()
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -267,7 +279,19 @@ func (m *Migrator) ApplySafeChanges(changes []*Change) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if schema != nil {
+		for name, collection := range schema.Collections {
+			if err := m.SaveRulesToCache(name, collection.Rules); err != nil {
+				return fmt.Errorf("saving rules for %s: %w", name, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (m *Migrator) changeToSQL(change *Change) ([]string, error) {
@@ -302,7 +326,7 @@ func (m *Migrator) changeToSQL(change *Change) ([]string, error) {
 	}
 }
 
-func (m *Migrator) ApplyUnsafeChanges(changes []*Change) error {
+func (m *Migrator) ApplyUnsafeChanges(changes []*Change, schema *Schema) error {
 	if _, err := m.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
 		return fmt.Errorf("disabling foreign keys: %w", err)
 	}
@@ -337,6 +361,14 @@ func (m *Migrator) ApplyUnsafeChanges(changes []*Change) error {
 
 	if _, err := m.db.Exec("PRAGMA foreign_key_check"); err != nil {
 		return fmt.Errorf("foreign key check failed after migration: %w", err)
+	}
+
+	if schema != nil {
+		for name, collection := range schema.Collections {
+			if err := m.SaveRulesToCache(name, collection.Rules); err != nil {
+				return fmt.Errorf("saving rules for %s: %w", name, err)
+			}
+		}
 	}
 
 	return nil
@@ -786,4 +818,69 @@ func sanitizeFilename(s string) string {
 		}
 	}
 	return result.String()
+}
+
+func (m *Migrator) SaveRulesToCache(collection string, rules *Rules) error {
+	if rules == nil {
+		_, err := m.db.Exec(`DELETE FROM _alyx_schema_cache WHERE collection = ?`, collection)
+		return err
+	}
+
+	rulesJSON, err := json.Marshal(rules)
+	if err != nil {
+		return fmt.Errorf("marshaling rules: %w", err)
+	}
+
+	_, err = m.db.Exec(`
+		INSERT INTO _alyx_schema_cache (collection, rules_json)
+		VALUES (?, ?)
+		ON CONFLICT(collection) DO UPDATE SET
+			rules_json = excluded.rules_json,
+			updated_at = datetime('now')
+	`, collection, string(rulesJSON))
+	return err
+}
+
+func (m *Migrator) LoadRulesFromCache(collection string) (*Rules, error) {
+	var rulesJSON sql.NullString
+	err := m.db.QueryRow(`
+		SELECT rules_json FROM _alyx_schema_cache WHERE collection = ?
+	`, collection).Scan(&rulesJSON)
+
+	if err == sql.ErrNoRows || !rulesJSON.Valid {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying cache: %w", err)
+	}
+
+	var rules Rules
+	if err := json.Unmarshal([]byte(rulesJSON.String), &rules); err != nil {
+		return nil, fmt.Errorf("unmarshaling rules: %w", err)
+	}
+
+	return &rules, nil
+}
+
+func (m *Migrator) EnsureRulesCacheSeeded(schema *Schema) error {
+	if schema == nil {
+		return nil
+	}
+
+	var count int
+	err := m.db.QueryRow(`SELECT COUNT(*) FROM _alyx_schema_cache`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("checking cache: %w", err)
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	for name, collection := range schema.Collections {
+		if err := m.SaveRulesToCache(name, collection.Rules); err != nil {
+			return fmt.Errorf("seeding rules for %s: %w", name, err)
+		}
+	}
+	return nil
 }

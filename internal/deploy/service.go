@@ -359,7 +359,7 @@ func (s *Service) applySchemaChanges(current *Deployment, newSchema *schema.Sche
 
 	safeChanges := differ.SafeChanges(changes)
 	if len(safeChanges) > 0 {
-		if err := s.migrator.ApplySafeChanges(safeChanges); err != nil {
+		if err := s.migrator.ApplySafeChanges(safeChanges, newSchema); err != nil {
 			return fmt.Errorf("applying safe changes: %w", err)
 		}
 	}

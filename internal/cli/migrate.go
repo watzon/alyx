@@ -210,6 +210,11 @@ func runMigrateApply(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	newSchema, err := schema.ParseFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("parsing schema: %w", err)
+	}
+
 	schemaChanges, checkErr := checkSchemaChanges(db, schemaPath)
 	if checkErr != nil {
 		return fmt.Errorf("checking schema changes: %w", checkErr)
@@ -228,7 +233,7 @@ func runMigrateApply(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  ✓ %s\n", c)
 	}
 
-	if err := migrator.ApplySafeChanges(safeChanges); err != nil {
+	if err := migrator.ApplySafeChanges(safeChanges, newSchema); err != nil {
 		return fmt.Errorf("applying schema changes: %w", err)
 	}
 

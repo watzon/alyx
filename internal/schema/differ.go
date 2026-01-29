@@ -234,24 +234,17 @@ func (d *Differ) diffField(collection, fieldName string, old, newField *Field) [
 	return changes
 }
 
-func (d *Differ) diffIndexes(collection string, old, newCol *Collection) []*Change {
+func (d *Differ) diffIndexes(collectionName string, old, newCol *Collection) []*Change {
 	var changes []*Change
 
-	oldIndexes := make(map[string]*Index)
-	for _, idx := range old.Indexes {
-		oldIndexes[idx.Name] = idx
-	}
-
-	newIndexes := make(map[string]*Index)
-	for _, idx := range newCol.Indexes {
-		newIndexes[idx.Name] = idx
-	}
+	oldIndexes := d.collectAllIndexes(collectionName, old)
+	newIndexes := d.collectAllIndexes(collectionName, newCol)
 
 	for name, idx := range oldIndexes {
 		if _, exists := newIndexes[name]; !exists {
 			changes = append(changes, &Change{
 				Type:        ChangeDropIndex,
-				Collection:  collection,
+				Collection:  collectionName,
 				Index:       idx,
 				Safe:        true,
 				Description: fmt.Sprintf("Index %q will be dropped", name),
@@ -263,7 +256,7 @@ func (d *Differ) diffIndexes(collection string, old, newCol *Collection) []*Chan
 		if _, exists := oldIndexes[name]; !exists {
 			changes = append(changes, &Change{
 				Type:        ChangeAddIndex,
-				Collection:  collection,
+				Collection:  collectionName,
 				Index:       idx,
 				Safe:        true,
 				Description: fmt.Sprintf("Index %q will be created", name),
@@ -272,6 +265,29 @@ func (d *Differ) diffIndexes(collection string, old, newCol *Collection) []*Chan
 	}
 
 	return changes
+}
+
+func (d *Differ) collectAllIndexes(collectionName string, col *Collection) map[string]*Index {
+	indexes := make(map[string]*Index)
+
+	for _, idx := range col.Indexes {
+		indexes[idx.Name] = idx
+	}
+
+	for _, field := range col.Fields {
+		if field.Index && !field.Primary && !field.Unique {
+			idxName := fmt.Sprintf("idx_%s_%s", collectionName, field.Name)
+			if _, exists := indexes[idxName]; !exists {
+				indexes[idxName] = &Index{
+					Name:   idxName,
+					Fields: []string{field.Name},
+					Unique: false,
+				}
+			}
+		}
+	}
+
+	return indexes
 }
 
 func (d *Differ) rulesChanged(old, newRules *Rules) bool {
