@@ -39,6 +39,7 @@ func (r *Router) setupMiddleware() {
 	r.Use(MetricsMiddleware)
 	r.Use(LoggingMiddleware)
 	r.Use(requestlog.Middleware(r.server.RequestLogs()))
+	r.Use(MaxBodySizeMiddleware(r.server.cfg.Server.MaxBodySize))
 
 	if r.server.cfg.Server.CORS.Enabled {
 		r.Use(CORSMiddleware(r.server.cfg.Server.CORS))

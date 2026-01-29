@@ -3,9 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -47,6 +50,12 @@ func (h *FileHandlers) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Validate file type
+	if err := ValidateFileUpload(header); err != nil {
+		Error(w, http.StatusBadRequest, "INVALID_FILE_TYPE", err.Error())
+		return
+	}
+
 	uploaded, err := h.service.Upload(r.Context(), bucket, header.Filename, file, header.Size)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -59,6 +68,55 @@ func (h *FileHandlers) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusCreated, uploaded)
+}
+
+// AllowedMIMETypes for file uploads
+var AllowedMIMETypes = map[string]bool{
+	"image/jpeg":       true,
+	"image/png":        true,
+	"image/gif":        true,
+	"image/webp":       true,
+	"application/pdf":  true,
+	"text/plain":       true,
+	"application/json": true,
+}
+
+// ValidateFileUpload checks MIME type and magic bytes of uploaded file.
+func ValidateFileUpload(fh *multipart.FileHeader) error {
+	// Check MIME type from header
+	contentType := fh.Header.Get("Content-Type")
+	if !AllowedMIMETypes[contentType] {
+		return fmt.Errorf("unsupported file type: %s", contentType)
+	}
+
+	// Open file to check magic bytes
+	file, err := fh.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Read first 512 bytes for magic byte detection
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Detect actual content type from magic bytes
+	detectedType := http.DetectContentType(buffer[:n])
+
+	// Verify detected type matches declared type (allowing for charset variations in text types)
+	if detectedType != contentType {
+		// Special case: text/plain may be detected as "text/plain; charset=utf-8"
+		// We consider this a match if the base type is the same
+		if strings.HasPrefix(detectedType, contentType) {
+			return nil
+		}
+		return fmt.Errorf("file type mismatch: declared %s, detected %s", contentType, detectedType)
+	}
+
+	return nil
 }
 
 func (h *FileHandlers) List(w http.ResponseWriter, r *http.Request) {

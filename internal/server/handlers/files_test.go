@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"path/filepath"
 	"testing"
 
@@ -73,10 +74,17 @@ func TestFileHandlersUpload(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "test.txt")
+
+	// Create form part with proper MIME type for text file
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Type", "text/plain")
+	h.Set("Content-Disposition", `form-data; name="file"; filename="test.txt"`)
+
+	part, err := writer.CreatePart(h)
 	if err != nil {
-		t.Fatalf("CreateFormFile failed: %v", err)
+		t.Fatalf("CreatePart failed: %v", err)
 	}
+	// Write text content with proper magic bytes for text/plain
 	if _, err := part.Write([]byte("Hello, World!")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
