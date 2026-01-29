@@ -242,6 +242,11 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("PATCH /api/admin/users/{id}", r.wrap(adminHandlers.UserUpdate))
 		r.mux.HandleFunc("DELETE /api/admin/users/{id}", r.wrap(adminHandlers.UserDelete))
 		r.mux.HandleFunc("POST /api/admin/users/{id}/password", r.wrap(adminHandlers.UserSetPassword))
+
+		r.mux.HandleFunc("GET /api/admin/buckets", r.wrap(adminHandlers.BucketList))
+		r.mux.HandleFunc("POST /api/admin/buckets", r.wrap(adminHandlers.BucketCreate))
+		r.mux.HandleFunc("PUT /api/admin/buckets/{name}", r.wrap(adminHandlers.BucketUpdate))
+		r.mux.HandleFunc("DELETE /api/admin/buckets/{name}", r.wrap(adminHandlers.BucketDelete))
 	}
 }
 

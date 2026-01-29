@@ -347,6 +347,15 @@ export interface Bucket {
 	allowedTypes?: string[];
 }
 
+export interface BucketInput {
+	name: string;
+	backend: string;
+	max_file_size?: number;
+	max_total_size?: number;
+	allowed_types?: string[];
+	compression?: boolean;
+}
+
 export interface Schema {
 	version: number;
 	collections: Collection[];
@@ -631,6 +640,15 @@ export const admin = {
 		delete: (id: string) => api.delete<{ deleted: boolean; id: string }>(`/admin/users/${id}`),
 		setPassword: (id: string, password: string) =>
 			api.post<{ success: boolean }>(`/admin/users/${id}/password`, { password })
+	},
+
+	buckets: {
+		list: () => api.get<{ buckets: Bucket[] }>('/admin/buckets'),
+		create: (input: BucketInput) => api.post<Bucket>('/admin/buckets', input),
+		update: (name: string, input: Partial<BucketInput>) =>
+			api.put<Bucket>(`/admin/buckets/${name}`, input),
+		delete: (name: string) =>
+			api.delete<{ deleted: boolean; name: string }>(`/admin/buckets/${name}`)
 	},
 
 	tokens: {

@@ -11,7 +11,7 @@
 	import { metricsStore } from '$lib/stores/metrics.svelte';
 	import { fetchMetrics, type PrometheusMetrics } from '$lib/utils/prometheus-parser';
 	import * as Chart from '$ui/chart';
-	import { AreaChart, BarChart } from 'layerchart';
+	import { AreaChart, BarChart, LineChart } from 'layerchart';
 	import { curveLinear } from 'd3-shape';
 
 	let lastUpdated = $state<number | null>(null);
@@ -56,7 +56,9 @@
 				dbConnections: {
 					open: metrics.dbConnectionsOpen,
 					inUse: metrics.dbConnectionsInUse
-				}
+				},
+				memoryBytes: metrics.memoryBytes,
+				goroutines: metrics.goroutines
 			});
 			lastUpdated = Date.now();
 		} catch (error) {
@@ -107,13 +109,15 @@
 
 	// Derived chart data
 	const requestTrafficData = $derived(
-		metricsStore.dataPoints.map((point) => ({
-			time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-			total: point.httpRequests,
-			200: point.httpRequestsByStatus['200'] || 0,
-			400: (point.httpRequestsByStatus['400'] || 0) + (point.httpRequestsByStatus['401'] || 0) + (point.httpRequestsByStatus['403'] || 0) + (point.httpRequestsByStatus['404'] || 0),
-			500: (point.httpRequestsByStatus['500'] || 0) + (point.httpRequestsByStatus['502'] || 0) + (point.httpRequestsByStatus['503'] || 0)
-		}))
+		metricsStore.dataPoints
+			.filter((_, index) => index % 2 === 0)
+			.map((point) => ({
+				time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+				total: point.httpRequests,
+				200: point.httpRequestsByStatus['200'] || 0,
+				400: (point.httpRequestsByStatus['400'] || 0) + (point.httpRequestsByStatus['401'] || 0) + (point.httpRequestsByStatus['403'] || 0) + (point.httpRequestsByStatus['404'] || 0),
+				500: (point.httpRequestsByStatus['500'] || 0) + (point.httpRequestsByStatus['502'] || 0) + (point.httpRequestsByStatus['503'] || 0)
+			}))
 	);
 
 	const secondsSinceUpdate = $derived(lastUpdated ? Math.floor((Date.now() - lastUpdated) / 1000) : 0);
@@ -122,17 +126,19 @@
 		: `${Math.floor(secondsSinceUpdate / 60)}m ago`);
 
 	const systemHealthData = $derived(
-		metricsStore.dataPoints.map((point) => ({
-			time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-			memory: point.memoryBytes ? point.memoryBytes / (1024 * 1024) : 0, // Convert to MB
-			goroutines: point.goroutines || 0
-		}))
+		metricsStore.dataPoints
+			.filter((_, index) => index % 4 === 0)
+			.map((point) => ({
+				time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+				memory: point.memoryBytes || 0,
+				goroutines: point.goroutines || 0
+			}))
 	);
 
 	const storageData = $derived(
 		storageStatsQuery.data?.buckets.map((bucket) => ({
 			name: bucket.bucket,
-			usage: bucket.totalBytes / (1024 * 1024) // Convert to MB
+			usage: bucket.totalBytes // Keep in bytes
 		})) || []
 	);
 </script>
@@ -277,64 +283,81 @@
 	</div>
 
 	<div class="space-y-3">
-		<Card.Root>
-			<Card.Header class="pb-2">
-				<Card.Title class="text-sm font-medium">Request Traffic</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				{#if requestTrafficData.length === 0}
-					<div class="aspect-video flex items-center justify-center">
-						<Skeleton class="h-full w-full" />
-					</div>
-				{:else}
-					<Chart.Container config={requestTrafficConfig} class="aspect-video">
-						<AreaChart
-							data={requestTrafficData}
-							x="time"
-							series={[
-								{ key: 'total', label: 'Total', color: requestTrafficConfig.total.color },
-								{ key: '200', label: '2xx', color: requestTrafficConfig['200'].color },
-								{ key: '400', label: '4xx', color: requestTrafficConfig['400'].color },
-								{ key: '500', label: '5xx', color: requestTrafficConfig['500'].color }
-							]}
-							axis="x"
-							props={{
-								area: { curve: curveLinear, line: { class: 'stroke-1' }, 'fill-opacity': 0.3 },
-								xAxis: { format: () => '' }
-							}}
-						>
-							{#snippet tooltip()}
-								<Chart.Tooltip indicator="line" />
-							{/snippet}
-						</AreaChart>
-					</Chart.Container>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-
-		<div class="grid gap-3 md:grid-cols-2">
 			<Card.Root>
 				<Card.Header class="pb-2">
-					<Card.Title class="text-sm font-medium">System Health</Card.Title>
+					<Card.Title class="text-sm font-medium">Request Traffic</Card.Title>
 				</Card.Header>
-				<Card.Content>
-					{#if systemHealthData.length === 0}
-						<div class="aspect-video flex items-center justify-center">
+				<Card.Content class="space-y-4">
+					{#if requestTrafficData.length === 0}
+						<div class="h-[200px] flex items-center justify-center">
 							<Skeleton class="h-full w-full" />
 						</div>
 					{:else}
-						<Chart.Container config={systemHealthConfig} class="aspect-video">
+						<Chart.Container config={requestTrafficConfig} class="h-[200px] w-full">
+							<LineChart
+								data={requestTrafficData}
+								x="time"
+								y={null}
+								series={[
+									{ key: 'total', color: requestTrafficConfig.total.color },
+									{ key: '200', color: requestTrafficConfig['200'].color },
+									{ key: '400', color: requestTrafficConfig['400'].color },
+									{ key: '500', color: requestTrafficConfig['500'].color }
+								]}
+								padding={{ left: 48, right: 16, top: 16, bottom: 32 }}
+								props={{
+									xAxis: { ticks: 3 },
+									yAxis: { ticks: 4 }
+								}}
+							>
+								{#snippet tooltip()}
+									<Chart.Tooltip indicator="line" />
+								{/snippet}
+							</LineChart>
+						</Chart.Container>
+						<div class="flex flex-wrap items-center justify-center gap-4 text-xs">
+							<div class="flex items-center gap-1.5">
+								<span class="h-2 w-2 rounded-sm" style="background-color: {requestTrafficConfig.total.color}"></span>
+								<span class="text-muted-foreground">Total</span>
+							</div>
+							<div class="flex items-center gap-1.5">
+								<span class="h-2 w-2 rounded-sm" style="background-color: {requestTrafficConfig['200'].color}"></span>
+								<span class="text-muted-foreground">2xx</span>
+							</div>
+							<div class="flex items-center gap-1.5">
+								<span class="h-2 w-2 rounded-sm" style="background-color: {requestTrafficConfig['400'].color}"></span>
+								<span class="text-muted-foreground">4xx</span>
+							</div>
+							<div class="flex items-center gap-1.5">
+								<span class="h-2 w-2 rounded-sm" style="background-color: {requestTrafficConfig['500'].color}"></span>
+								<span class="text-muted-foreground">5xx</span>
+							</div>
+						</div>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+		<div class="grid gap-3 md:grid-cols-3">
+			<Card.Root>
+				<Card.Header class="pb-2">
+					<Card.Title class="text-sm font-medium">Memory Usage</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if systemHealthData.length === 0}
+						<div class="h-[120px] flex items-center justify-center">
+							<Skeleton class="h-full w-full" />
+						</div>
+					{:else}
+						<Chart.Container config={{ memory: systemHealthConfig.memory }} class="h-[120px] w-full">
 							<AreaChart
 								data={systemHealthData}
 								x="time"
-								series={[
-									{ key: 'memory', label: 'Memory (MB)', color: systemHealthConfig.memory.color },
-									{ key: 'goroutines', label: 'Goroutines', color: systemHealthConfig.goroutines.color }
-								]}
-								axis="x"
+								y="memory"
+								padding={{ left: 48, right: 8, top: 8, bottom: 16 }}
 								props={{
-									area: { curve: curveLinear, line: { class: 'stroke-1' }, 'fill-opacity': 0.3 },
-									xAxis: { format: () => '' }
+									area: { curve: curveLinear, 'fill-opacity': 0.3, fill: systemHealthConfig.memory.color },
+									xAxis: { ticks: 0 },
+									yAxis: { ticks: 3, format: (d) => formatBytes(d) }
 								}}
 							>
 								{#snippet tooltip()}
@@ -342,6 +365,43 @@
 								{/snippet}
 							</AreaChart>
 						</Chart.Container>
+						<p class="text-center text-xs text-muted-foreground mt-2">
+							Current: {formatBytes(systemHealthData[systemHealthData.length - 1]?.memory || 0)}
+						</p>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header class="pb-2">
+					<Card.Title class="text-sm font-medium">Goroutines</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if systemHealthData.length === 0}
+						<div class="h-[120px] flex items-center justify-center">
+							<Skeleton class="h-full w-full" />
+						</div>
+					{:else}
+						<Chart.Container config={{ goroutines: systemHealthConfig.goroutines }} class="h-[120px] w-full">
+							<AreaChart
+								data={systemHealthData}
+								x="time"
+								y="goroutines"
+								padding={{ left: 32, right: 8, top: 8, bottom: 16 }}
+								props={{
+									area: { curve: curveLinear, 'fill-opacity': 0.3, fill: systemHealthConfig.goroutines.color },
+									xAxis: { ticks: 0 },
+									yAxis: { ticks: 3 }
+								}}
+							>
+								{#snippet tooltip()}
+									<Chart.Tooltip indicator="line" />
+								{/snippet}
+							</AreaChart>
+						</Chart.Container>
+						<p class="text-center text-xs text-muted-foreground mt-2">
+							Current: {systemHealthData[systemHealthData.length - 1]?.goroutines || 0}
+						</p>
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -352,24 +412,25 @@
 				</Card.Header>
 				<Card.Content>
 					{#if storageStatsQuery.isPending}
-						<div class="aspect-video flex items-center justify-center">
+						<div class="h-[120px] flex items-center justify-center">
 							<Skeleton class="h-full w-full" />
 						</div>
 					{:else if storageData.length === 0}
-						<div class="aspect-video flex flex-col items-center justify-center text-center space-y-2">
+						<div class="h-[120px] flex flex-col items-center justify-center text-center space-y-2">
 							<DatabaseIcon class="h-8 w-8 text-muted-foreground/50" />
 							<p class="text-sm text-muted-foreground">No storage buckets configured</p>
 						</div>
 					{:else}
-						<Chart.Container config={storageConfig} class="aspect-video">
+						<Chart.Container config={storageConfig} class="h-[120px] w-full">
 							<BarChart
 								data={storageData}
-								x="name"
-								series={[{ key: 'usage', label: 'Usage (MB)', color: storageConfig.usage.color }]}
-								axis="x"
+								x="usage"
+								y="name"
+								orientation="horizontal"
+								padding={{ left: 80, right: 16, top: 8, bottom: 24 }}
 								props={{
-									bars: { stroke: 'none', rounded: 'all', radius: 8 },
-									xAxis: { format: () => '' }
+									xAxis: { ticks: 3, format: (d) => formatBytes(d) },
+									bars: { radius: 4 }
 								}}
 							>
 								{#snippet tooltip()}

@@ -8,6 +8,8 @@ export interface PrometheusMetrics {
 	httpRequestsByStatus: Record<string, number>; // { "200": 150, "404": 5 }
 	dbConnectionsOpen: number;
 	dbConnectionsInUse: number;
+	memoryBytes: number;
+	goroutines: number;
 }
 
 /**
@@ -21,7 +23,9 @@ export function parsePrometheusMetrics(text: string): PrometheusMetrics {
 		httpRequestsTotal: 0,
 		httpRequestsByStatus: {},
 		dbConnectionsOpen: 0,
-		dbConnectionsInUse: 0
+		dbConnectionsInUse: 0,
+		memoryBytes: 0,
+		goroutines: 0
 	};
 
 	for (const line of lines) {
@@ -56,6 +60,22 @@ export function parsePrometheusMetrics(text: string): PrometheusMetrics {
 			const match = trimmed.match(/alyx_db_connections_in_use\s+(\d+(?:\.\d+)?)/);
 			if (match) {
 				metrics.dbConnectionsInUse = parseFloat(match[1]);
+			}
+		}
+		
+		// Parse go_memstats_alloc_bytes 1.0980216e+07
+		else if (trimmed.startsWith('go_memstats_alloc_bytes ')) {
+			const match = trimmed.match(/go_memstats_alloc_bytes\s+([\d.e+]+)/);
+			if (match) {
+				metrics.memoryBytes = parseFloat(match[1]);
+			}
+		}
+		
+		// Parse go_goroutines 21
+		else if (trimmed.startsWith('go_goroutines ')) {
+			const match = trimmed.match(/go_goroutines\s+(\d+(?:\.\d+)?)/);
+			if (match) {
+				metrics.goroutines = parseFloat(match[1]);
 			}
 		}
 	}
