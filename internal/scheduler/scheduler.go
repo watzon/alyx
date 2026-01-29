@@ -14,14 +14,15 @@ import (
 
 // Scheduler manages scheduled function executions.
 type Scheduler struct {
-	db        *database.DB
-	store     *Store
-	eventBus  *events.EventBus
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	running   map[string]int // scheduleID -> count of running executions
-	runningMu sync.RWMutex
+	db         *database.DB
+	store      *Store
+	stateStore *StateStore
+	eventBus   *events.EventBus
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	running    map[string]int // scheduleID -> count of running executions
+	runningMu  sync.RWMutex
 }
 
 // Config holds configuration for Scheduler.
@@ -35,12 +36,13 @@ func NewScheduler(db *database.DB, eventBus *events.EventBus) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Scheduler{
-		db:       db,
-		store:    NewStore(db),
-		eventBus: eventBus,
-		ctx:      ctx,
-		cancel:   cancel,
-		running:  make(map[string]int),
+		db:         db,
+		store:      NewStore(db),
+		stateStore: NewStateStore(db),
+		eventBus:   eventBus,
+		ctx:        ctx,
+		cancel:     cancel,
+		running:    make(map[string]int),
 	}
 }
 
@@ -184,6 +186,13 @@ func (s *Scheduler) processSchedule(ctx context.Context, schedule *Schedule) err
 		return fmt.Errorf("updating next_run: %w", err)
 	}
 
+	if err := s.stateStore.UpdateAfterExecution(ctx, schedule.ID, nextRun); err != nil {
+		log.Error().
+			Err(err).
+			Str("schedule_id", schedule.ID).
+			Msg("Failed to persist scheduler state")
+	}
+
 	log.Debug().
 		Str("schedule_id", schedule.ID).
 		Str("schedule_name", schedule.Name).
@@ -233,7 +242,23 @@ func (s *Scheduler) decrementRunning(scheduleID string) {
 
 // Create creates a new schedule.
 func (s *Scheduler) Create(ctx context.Context, schedule *Schedule) error {
-	return s.store.Create(ctx, schedule)
+	if err := s.store.Create(ctx, schedule); err != nil {
+		return err
+	}
+
+	state := &ScheduleState{
+		ScheduleID:      schedule.ID,
+		NextExecutionAt: schedule.NextRun,
+		ExecutionCount:  0,
+	}
+	if err := s.stateStore.Save(ctx, state); err != nil {
+		log.Error().
+			Err(err).
+			Str("schedule_id", schedule.ID).
+			Msg("Failed to initialize scheduler state")
+	}
+
+	return nil
 }
 
 // Update updates an existing schedule.
@@ -243,7 +268,18 @@ func (s *Scheduler) Update(ctx context.Context, schedule *Schedule) error {
 
 // Delete removes a schedule.
 func (s *Scheduler) Delete(ctx context.Context, scheduleID string) error {
-	return s.store.Delete(ctx, scheduleID)
+	if err := s.store.Delete(ctx, scheduleID); err != nil {
+		return err
+	}
+
+	if err := s.stateStore.Delete(ctx, scheduleID); err != nil {
+		log.Error().
+			Err(err).
+			Str("schedule_id", scheduleID).
+			Msg("Failed to delete scheduler state")
+	}
+
+	return nil
 }
 
 // Get retrieves a schedule by ID.
