@@ -22,24 +22,26 @@ import (
 )
 
 type Server struct {
-	cfg            *config.Config
-	db             *database.DB
-	schema         *schema.Schema
-	schemaPath     string
-	configPath     string
-	rules          *rules.Engine
-	broker         *realtime.Broker
-	funcService    *functions.Service
-	dbHookTrigger  *DatabaseHookTrigger
-	deployService  *deploy.Service
-	requestLogs    *requestlog.Store
-	httpServer     *http.Server
-	router         *Router
-	storageService *storage.Service
-	tusService     *storage.TUSService
-	signedService  *storage.SignedURLService
-	cleanupService *storage.CleanupService
-	mu             sync.RWMutex
+	cfg             *config.Config
+	db              *database.DB
+	schema          *schema.Schema
+	schemaPath      string
+	configPath      string
+	rules           *rules.Engine
+	broker          *realtime.Broker
+	funcService     *functions.Service
+	dbHookTrigger   *DatabaseHookTrigger
+	deployService   *deploy.Service
+	requestLogs     *requestlog.Store
+	httpServer      *http.Server
+	router          *Router
+	storageService  *storage.Service
+	tusService      *storage.TUSService
+	signedService   *storage.SignedURLService
+	cleanupService  *storage.CleanupService
+	loginLimiter    *RateLimiter
+	registerLimiter *RateLimiter
+	mu              sync.RWMutex
 }
 
 const defaultRequestLogCapacity = 1000
@@ -166,6 +168,9 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 		}
 	}
 
+	srv.loginLimiter = NewRateLimiter(cfg.Auth.RateLimit.Login)
+	srv.registerLimiter = NewRateLimiter(cfg.Auth.RateLimit.Register)
+
 	srv.router = NewRouter(srv)
 	srv.httpServer = &http.Server{
 		Addr:         cfg.Server.Address(),
@@ -230,6 +235,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.cleanupService != nil {
 		s.cleanupService.Stop()
 		log.Info().Msg("Storage cleanup service stopped")
+	}
+
+	if s.loginLimiter != nil {
+		s.loginLimiter.Stop()
+	}
+	if s.registerLimiter != nil {
+		s.registerLimiter.Stop()
 	}
 
 	return s.httpServer.Shutdown(ctx)
@@ -341,4 +353,12 @@ func (s *Server) DeployService() *deploy.Service {
 
 func (s *Server) RequestLogs() *requestlog.Store {
 	return s.requestLogs
+}
+
+func (s *Server) LoginLimiter() *RateLimiter {
+	return s.loginLimiter
+}
+
+func (s *Server) RegisterLimiter() *RateLimiter {
+	return s.registerLimiter
 }
