@@ -18,14 +18,7 @@ func testDB(t *testing.T) *database.DB {
 
 	tmpDir := t.TempDir()
 	cfg := &config.DatabaseConfig{
-		Path:            filepath.Join(tmpDir, "test.db"),
-		WALMode:         true,
-		ForeignKeys:     true,
-		BusyTimeout:     5 * time.Second,
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 1 * time.Hour,
-		CacheSize:       -2000,
+		Path: filepath.Join(tmpDir, "test.db"),
 	}
 
 	db, err := database.Open(cfg)

@@ -20,14 +20,7 @@ func testDBIntegration(t *testing.T) *database.DB {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := &config.DatabaseConfig{
-		Path:            dbPath,
-		WALMode:         true,
-		ForeignKeys:     true,
-		BusyTimeout:     5 * time.Second,
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 1 * time.Hour,
-		CacheSize:       -2000,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)

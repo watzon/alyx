@@ -27,14 +27,7 @@ func testDB(t *testing.T) *database.DB {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := &config.DatabaseConfig{
-		Path:            dbPath,
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 0,
-		BusyTimeout:     5 * time.Second,
-		WALMode:         true,
-		ForeignKeys:     true,
-		CacheSize:       -2000,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)
@@ -53,19 +46,9 @@ func testFunctionService(t *testing.T) *functions.Service {
 	t.Helper()
 
 	funcCfg := &config.FunctionsConfig{
-		Enabled:     true,
-		Runtime:     "docker",
-		MemoryLimit: 128,
-		CPULimit:    0.5,
-		Timeout:     30 * time.Second,
-		Pools: map[string]config.PoolConfig{
-			"node": {
-				MinWarm:      0,
-				MaxInstances: 2,
-				IdleTimeout:  5 * time.Minute,
-				Image:        "alyx-node:latest",
-			},
-		},
+		Enabled: true,
+		Path:    t.TempDir() + "/functions",
+		Timeout: 30 * time.Second,
 	}
 
 	cfg := &functions.ServiceConfig{

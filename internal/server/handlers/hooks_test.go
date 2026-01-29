@@ -20,14 +20,7 @@ func testHookDB(t *testing.T) (*database.DB, *hooks.Registry) {
 
 	tmpDir := t.TempDir()
 	cfg := &config.DatabaseConfig{
-		Path:            tmpDir + "/test.db",
-		WALMode:         true,
-		ForeignKeys:     true,
-		BusyTimeout:     5000,
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 3600,
-		CacheSize:       -2000,
+		Path: tmpDir + "/test.db",
 	}
 
 	db, err := database.Open(cfg)

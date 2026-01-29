@@ -19,12 +19,7 @@ import (
 func testDB(t *testing.T) *database.DB {
 	t.Helper()
 	cfg := &config.DatabaseConfig{
-		Path:         ":memory:",
-		WALMode:      false,
-		ForeignKeys:  true,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: ":memory:",
 	}
 
 	db, err := database.Open(cfg)

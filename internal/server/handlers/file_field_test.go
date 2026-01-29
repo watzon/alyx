@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/database"
@@ -25,13 +24,7 @@ func setupFileFieldHandlers(t *testing.T) (*Handlers, *storage.Service, *databas
 	storagePath := filepath.Join(tmpDir, "storage")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)

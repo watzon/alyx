@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/watzon/alyx/internal/config"
 	"github.com/watzon/alyx/internal/schema"
@@ -19,13 +18,7 @@ func testDB(t *testing.T) *DB {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := Open(cfg)
