@@ -25,6 +25,15 @@ func Middleware(cfg MiddlewareConfig) func(http.Handler) http.Handler {
 				return
 			}
 
+			if cfg.Service.IsTokenRevoked(token) {
+				if cfg.RequireAuth {
+					http.Error(w, `{"error":"Token has been revoked","code":"TOKEN_REVOKED"}`, http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			claims, err := cfg.Service.ValidateToken(token)
 			if err != nil {
 				if cfg.RequireAuth {

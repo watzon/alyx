@@ -32,6 +32,7 @@ type Service struct {
 	cfg         *config.AuthConfig
 	oauth       *OAuthManager
 	hookTrigger HookTrigger
+	blacklist   *TokenBlacklist
 }
 
 // HookTrigger defines the interface for auth event hooks.
@@ -46,16 +47,24 @@ type HookTrigger interface {
 // NewService creates a new auth service.
 func NewService(db *database.DB, cfg *config.AuthConfig) *Service {
 	return &Service{
-		db:    db,
-		jwt:   NewJWTService(cfg.JWT),
-		cfg:   cfg,
-		oauth: NewOAuthManager(cfg.OAuth),
+		db:        db,
+		jwt:       NewJWTService(cfg.JWT),
+		cfg:       cfg,
+		oauth:     NewOAuthManager(cfg.OAuth),
+		blacklist: NewTokenBlacklist(),
 	}
 }
 
 // SetHookTrigger sets the hook trigger for auth events.
 func (s *Service) SetHookTrigger(trigger HookTrigger) {
 	s.hookTrigger = trigger
+}
+
+// Stop stops the auth service and cleans up resources.
+func (s *Service) Stop() {
+	if s.blacklist != nil {
+		s.blacklist.Stop()
+	}
 }
 
 // OAuth returns the OAuth manager.
@@ -242,6 +251,16 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 // ValidateToken validates an access token and returns the claims.
 func (s *Service) ValidateToken(token string) (*Claims, error) {
 	return s.jwt.ValidateAccessToken(token)
+}
+
+// RevokeToken adds a token to the blacklist.
+func (s *Service) RevokeToken(token string, expiresAt time.Time) {
+	s.blacklist.Revoke(token, expiresAt)
+}
+
+// IsTokenRevoked checks if a token has been revoked.
+func (s *Service) IsTokenRevoked(token string) bool {
+	return s.blacklist.IsRevoked(token)
 }
 
 // HasUsers returns true if any users exist in the system.

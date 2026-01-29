@@ -145,11 +145,17 @@ func (s *JWTService) ValidateAccessToken(tokenString string) (*Claims, error) {
 		}
 	}
 
+	expiresAt := time.Time{}
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time
+	}
+
 	return &Claims{
-		UserID:   claims.Subject,
-		Email:    claims.Email,
-		Verified: claims.Verified,
-		Role:     claims.Role,
+		UserID:    claims.Subject,
+		Email:     claims.Email,
+		Verified:  claims.Verified,
+		Role:      claims.Role,
+		ExpiresAt: expiresAt,
 	}, nil
 }
 

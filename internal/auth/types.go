@@ -91,10 +91,11 @@ type TokenPair struct {
 
 // Claims represents the JWT claims for access tokens.
 type Claims struct {
-	UserID   string `json:"sub"`
-	Email    string `json:"email"`
-	Verified bool   `json:"verified"`
-	Role     string `json:"role,omitempty"`
+	UserID    string    `json:"sub"`
+	Email     string    `json:"email"`
+	Verified  bool      `json:"verified"`
+	Role      string    `json:"role,omitempty"`
+	ExpiresAt time.Time `json:"exp"`
 }
 
 // RegisterInput contains the data needed to register a new user.

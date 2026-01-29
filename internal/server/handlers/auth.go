@@ -178,6 +178,17 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token != "" && token != authHeader {
+			claims, err := h.service.ValidateToken(token)
+			if err == nil {
+				h.service.RevokeToken(token, claims.ExpiresAt)
+			}
+		}
+	}
+
 	if err := h.service.Logout(r.Context(), input.RefreshToken); err != nil {
 		log.Error().Err(err).Msg("Failed to logout")
 		InternalError(w, "Failed to logout")
