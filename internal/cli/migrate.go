@@ -312,17 +312,27 @@ func getSchemaFromDB(db *database.DB) (*schema.Schema, error) {
 	}
 	defer rows.Close()
 
-	s := &schema.Schema{
-		Version:     1,
-		Collections: make(map[string]*schema.Collection),
-	}
-
+	// Collect all table names first to avoid connection deadlock.
+	// With MaxOpenConns=1, we must fully consume rows before making other queries.
+	var tableNames []string
 	for rows.Next() {
 		var tableName string
 		if err := rows.Scan(&tableName); err != nil {
 			return nil, err
 		}
+		tableNames = append(tableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
+	s := &schema.Schema{
+		Version:     1,
+		Collections: make(map[string]*schema.Collection),
+	}
+
+	// Now query each collection's details using the returned connection
+	for _, tableName := range tableNames {
 		col, err := getCollectionFromDB(db, tableName)
 		if err != nil {
 			return nil, fmt.Errorf("getting collection %s: %w", tableName, err)
@@ -330,7 +340,7 @@ func getSchemaFromDB(db *database.DB) (*schema.Schema, error) {
 		s.Collections[tableName] = col
 	}
 
-	return s, rows.Err()
+	return s, nil
 }
 
 func getCollectionFromDB(db *database.DB, tableName string) (*schema.Collection, error) {
