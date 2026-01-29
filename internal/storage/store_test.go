@@ -17,13 +17,7 @@ func testDB(t *testing.T) *database.DB {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)
@@ -308,5 +302,89 @@ func TestStoreCompression(t *testing.T) {
 	}
 	if retrieved.OriginalSize != 1024 {
 		t.Errorf("OriginalSize = %d, want 1024", retrieved.OriginalSize)
+	}
+}
+
+func TestGetBucketStats(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(*Store, context.Context)
+		expected []BucketStats
+	}{
+		{
+			name:     "empty database",
+			setup:    func(store *Store, ctx context.Context) {},
+			expected: []BucketStats{},
+		},
+		{
+			name: "single bucket with files",
+			setup: func(store *Store, ctx context.Context) {
+				files := []*File{
+					{ID: "f1", Bucket: "uploads", Name: "a.txt", Path: "a.txt", MimeType: "text/plain", Size: 100},
+					{ID: "f2", Bucket: "uploads", Name: "b.txt", Path: "b.txt", MimeType: "text/plain", Size: 200},
+					{ID: "f3", Bucket: "uploads", Name: "c.txt", Path: "c.txt", MimeType: "text/plain", Size: 300},
+				}
+				for _, f := range files {
+					if err := store.Create(ctx, f); err != nil {
+						t.Fatalf("Create failed: %v", err)
+					}
+				}
+			},
+			expected: []BucketStats{
+				{Bucket: "uploads", FileCount: 3, TotalBytes: 600},
+			},
+		},
+		{
+			name: "multiple buckets",
+			setup: func(store *Store, ctx context.Context) {
+				files := []*File{
+					{ID: "f4", Bucket: "uploads", Name: "d.txt", Path: "d.txt", MimeType: "text/plain", Size: 1000},
+					{ID: "f5", Bucket: "uploads", Name: "e.txt", Path: "e.txt", MimeType: "text/plain", Size: 2000},
+					{ID: "f6", Bucket: "images", Name: "img.png", Path: "img.png", MimeType: "image/png", Size: 5000},
+					{ID: "f7", Bucket: "documents", Name: "doc.pdf", Path: "doc.pdf", MimeType: "application/pdf", Size: 10000},
+				}
+				for _, f := range files {
+					if err := store.Create(ctx, f); err != nil {
+						t.Fatalf("Create failed: %v", err)
+					}
+				}
+			},
+			expected: []BucketStats{
+				{Bucket: "documents", FileCount: 1, TotalBytes: 10000},
+				{Bucket: "images", FileCount: 1, TotalBytes: 5000},
+				{Bucket: "uploads", FileCount: 2, TotalBytes: 3000},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := testDB(t)
+			store := NewStore(db)
+			ctx := context.Background()
+
+			tt.setup(store, ctx)
+
+			stats, err := store.GetBucketStats(ctx)
+			if err != nil {
+				t.Fatalf("GetBucketStats failed: %v", err)
+			}
+
+			if len(stats) != len(tt.expected) {
+				t.Fatalf("GetBucketStats returned %d buckets, want %d", len(stats), len(tt.expected))
+			}
+
+			for i, expected := range tt.expected {
+				if stats[i].Bucket != expected.Bucket {
+					t.Errorf("stats[%d].Bucket = %s, want %s", i, stats[i].Bucket, expected.Bucket)
+				}
+				if stats[i].FileCount != expected.FileCount {
+					t.Errorf("stats[%d].FileCount = %d, want %d", i, stats[i].FileCount, expected.FileCount)
+				}
+				if stats[i].TotalBytes != expected.TotalBytes {
+					t.Errorf("stats[%d].TotalBytes = %d, want %d", i, stats[i].TotalBytes, expected.TotalBytes)
+				}
+			}
+		})
 	}
 }

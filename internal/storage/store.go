@@ -34,6 +34,13 @@ type Store struct {
 	db *database.DB
 }
 
+// BucketStats represents aggregated statistics for a storage bucket.
+type BucketStats struct {
+	Bucket     string `json:"bucket"`
+	FileCount  int    `json:"fileCount"`
+	TotalBytes int64  `json:"totalBytes"`
+}
+
 // NewStore creates a new file store.
 func NewStore(db *database.DB) *Store {
 	return &Store{db: db}
@@ -181,6 +188,41 @@ func (s *Store) Delete(ctx context.Context, bucket, fileID string) error {
 	}
 
 	return nil
+}
+
+// GetBucketStats returns aggregated statistics for all storage buckets.
+func (s *Store) GetBucketStats(ctx context.Context) ([]BucketStats, error) {
+	query := `
+		SELECT bucket, COUNT(*) as file_count, COALESCE(SUM(size), 0) as total_bytes
+		FROM _alyx_files
+		GROUP BY bucket
+		ORDER BY bucket ASC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("querying bucket stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []BucketStats
+	for rows.Next() {
+		var stat BucketStats
+		if err := rows.Scan(&stat.Bucket, &stat.FileCount, &stat.TotalBytes); err != nil {
+			return nil, fmt.Errorf("scanning bucket stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating bucket stats: %w", err)
+	}
+
+	if stats == nil {
+		stats = []BucketStats{}
+	}
+
+	return stats, nil
 }
 
 // scanFile scans a single row into a File struct.

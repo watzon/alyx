@@ -21,13 +21,7 @@ func testService(t *testing.T) (*Service, Backend) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)

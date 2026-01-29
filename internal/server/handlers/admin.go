@@ -19,6 +19,7 @@ import (
 	"github.com/watzon/alyx/internal/deploy"
 	"github.com/watzon/alyx/internal/functions"
 	"github.com/watzon/alyx/internal/schema"
+	"github.com/watzon/alyx/internal/storage"
 )
 
 // AdminHandlers handles admin API endpoints.
@@ -140,6 +141,26 @@ func (h *AdminHandlers) Stats(w http.ResponseWriter, r *http.Request) {
 		"documents":   docCount,
 		"users":       userCount,
 		"functions":   funcCount,
+	})
+}
+
+func (h *AdminHandlers) StorageStats(w http.ResponseWriter, r *http.Request) {
+	_, err := h.requireAdminAuth(r, deploy.PermissionDeploy)
+	if err != nil {
+		Error(w, http.StatusUnauthorized, "UNAUTHORIZED", err.Error())
+		return
+	}
+
+	store := storage.NewStore(h.db)
+	stats, err := store.GetBucketStats(r.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get bucket stats")
+		InternalError(w, "Failed to get bucket stats")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]any{
+		"buckets": stats,
 	})
 }
 

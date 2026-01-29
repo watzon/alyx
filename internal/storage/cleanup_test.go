@@ -21,13 +21,7 @@ func setupCleanupTest(t *testing.T) (*CleanupService, *TUSService, *database.DB,
 	storagePath := filepath.Join(tempDir, "storage")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)

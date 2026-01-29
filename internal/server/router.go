@@ -214,6 +214,7 @@ func (r *Router) setupRoutes() {
 			r.server.ConfigPath(),
 		)
 		r.mux.HandleFunc("GET /api/admin/stats", r.wrap(adminHandlers.Stats))
+		r.mux.HandleFunc("GET /api/admin/storage/stats", r.wrap(adminHandlers.StorageStats))
 		r.mux.HandleFunc("POST /api/admin/deploy/prepare", r.wrap(adminHandlers.DeployPrepare))
 		r.mux.HandleFunc("POST /api/admin/deploy/execute", r.wrap(adminHandlers.DeployExecute))
 		r.mux.HandleFunc("POST /api/admin/deploy/rollback", r.wrap(adminHandlers.DeployRollback))

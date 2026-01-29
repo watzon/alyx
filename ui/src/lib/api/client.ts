@@ -361,6 +361,16 @@ export interface Stats {
 	functions: number;
 }
 
+export interface StorageBucketStats {
+	bucket: string;
+	fileCount: number;
+	totalBytes: number;
+}
+
+export interface StorageStats {
+	buckets: StorageBucketStats[];
+}
+
 export interface FunctionInfo {
 	name: string;
 	runtime: string;
@@ -555,6 +565,8 @@ export interface SchemaDraftApplyResponse {
 
 export const admin = {
 	stats: () => api.get<Stats>('/admin/stats'),
+
+	storageStats: () => api.get<StorageStats>('/admin/storage/stats'),
 
 	schema: () => api.get<Schema>('/admin/schema'),
 

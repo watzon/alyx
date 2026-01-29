@@ -23,13 +23,7 @@ func setupTUSTest(t *testing.T) (*TUSService, *database.DB, string) {
 	storagePath := filepath.Join(tempDir, "storage")
 
 	cfg := &config.DatabaseConfig{
-		Path:         dbPath,
-		WALMode:      true,
-		ForeignKeys:  true,
-		CacheSize:    -2000,
-		BusyTimeout:  5 * time.Second,
-		MaxOpenConns: 1,
-		MaxIdleConns: 1,
+		Path: dbPath,
 	}
 
 	db, err := database.Open(cfg)
