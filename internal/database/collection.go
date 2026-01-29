@@ -53,6 +53,19 @@ func (c *Collection) Schema() *schema.Collection {
 	return c.schema
 }
 
+type executor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func (c *Collection) executor(ctx context.Context) executor {
+	if tx, ok := TransactionFromContext(ctx); ok {
+		return tx
+	}
+	return c.db
+}
+
 type QueryOptions struct {
 	Filters []*Filter
 	Sorts   []*Sort
@@ -97,14 +110,16 @@ func (c *Collection) Find(ctx context.Context, opts *QueryOptions) (*QueryResult
 		q.Offset(opts.Offset)
 	}
 
+	exec := c.executor(ctx)
+
 	countSQL, countArgs := q.BuildCount()
 	var total int64
-	if err := c.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+	if err := exec.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("counting documents: %w", err)
 	}
 
 	querySQL, queryArgs := q.Build()
-	rows, err := c.db.QueryContext(ctx, querySQL, queryArgs...)
+	rows, err := exec.QueryContext(ctx, querySQL, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying documents: %w", err)
 	}
@@ -131,7 +146,8 @@ func (c *Collection) FindOne(ctx context.Context, id string) (Row, error) {
 	q := NewQuery(c.name).Where(pk.Name, id).Limit(1)
 	querySQL, args := q.Build()
 
-	rows, err := c.db.QueryContext(ctx, querySQL, args...)
+	exec := c.executor(ctx)
+	rows, err := exec.QueryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying document: %w", err)
 	}
@@ -185,7 +201,8 @@ func (c *Collection) Create(ctx context.Context, data Row) (Row, error) {
 	}
 
 	insertSQL, args := insert.Build()
-	_, err := c.db.ExecContext(ctx, insertSQL, args...)
+	exec := c.executor(ctx)
+	_, err := exec.ExecContext(ctx, insertSQL, args...)
 	if err != nil {
 		if !errors.Is(ClassifyError(err), err) {
 			return nil, ClassifyError(err)
@@ -247,7 +264,8 @@ func (c *Collection) Update(ctx context.Context, id string, data Row) (Row, erro
 	}
 
 	updateSQL, args := update.Build()
-	result, err := c.db.ExecContext(ctx, updateSQL, args...)
+	exec := c.executor(ctx)
+	result, err := exec.ExecContext(ctx, updateSQL, args...)
 	if err != nil {
 		if !errors.Is(ClassifyError(err), err) {
 			return nil, ClassifyError(err)
@@ -285,7 +303,8 @@ func (c *Collection) Delete(ctx context.Context, id string) error {
 	}
 
 	deleteSQL, args := NewDelete(c.name).Where(pk.Name, id).Build()
-	result, err := c.db.ExecContext(ctx, deleteSQL, args...)
+	exec := c.executor(ctx)
+	result, err := exec.ExecContext(ctx, deleteSQL, args...)
 	if err != nil {
 		return fmt.Errorf("deleting document: %w", err)
 	}

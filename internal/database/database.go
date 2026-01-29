@@ -242,3 +242,16 @@ func ScanRow(row *sql.Row, columns []string) (Row, error) {
 func Now() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
+
+type contextKey string
+
+const txContextKey contextKey = "alyx_transaction"
+
+func WithTransaction(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(ctx, txContextKey, tx)
+}
+
+func TransactionFromContext(ctx context.Context) (*sql.Tx, bool) {
+	tx, ok := ctx.Value(txContextKey).(*sql.Tx)
+	return tx, ok
+}

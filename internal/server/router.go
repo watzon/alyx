@@ -10,6 +10,7 @@ import (
 	"github.com/watzon/alyx/internal/metrics"
 	"github.com/watzon/alyx/internal/server/handlers"
 	"github.com/watzon/alyx/internal/server/requestlog"
+	"github.com/watzon/alyx/internal/transactions"
 )
 
 type Router struct {
@@ -43,6 +44,10 @@ func (r *Router) setupMiddleware() {
 
 	if r.server.cfg.Server.CORS.Enabled {
 		r.Use(CORSMiddleware(r.server.cfg.Server.CORS))
+	}
+
+	if r.server.TransactionManager() != nil {
+		r.Use(transactions.Middleware(r.server.TransactionManager()))
 	}
 }
 
@@ -160,16 +165,16 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("GET /api/files/{bucket}/{id}/sign", r.wrap(fileHandlers.Sign))
 	}
 
-	// TODO: Event system routes will be enabled when components are initialized in server
-	// if hookRegistry := r.server.HookRegistry(); hookRegistry != nil {
-	// 	hookHandlers := handlers.NewHookHandlers(hookRegistry)
-	// 	r.mux.HandleFunc("GET /api/hooks", r.wrap(hookHandlers.List))
-	// 	r.mux.HandleFunc("POST /api/hooks", r.wrap(hookHandlers.Create))
-	// 	r.mux.HandleFunc("GET /api/hooks/{id}", r.wrap(hookHandlers.Get))
-	// 	r.mux.HandleFunc("PATCH /api/hooks/{id}", r.wrap(hookHandlers.Update))
-	// 	r.mux.HandleFunc("DELETE /api/hooks/{id}", r.wrap(hookHandlers.Delete))
-	// 	r.mux.HandleFunc("GET /api/functions/{name}/hooks", r.wrap(hookHandlers.ListForFunction))
-	// }
+	if hookRegistry := r.server.HookRegistry(); hookRegistry != nil {
+		hookHandlers := handlers.NewHookHandlers(hookRegistry)
+		r.mux.HandleFunc("GET /api/hooks", r.wrap(hookHandlers.List))
+		r.mux.HandleFunc("POST /api/hooks", r.wrap(hookHandlers.Create))
+		r.mux.HandleFunc("GET /api/hooks/{id}", r.wrap(hookHandlers.Get))
+		r.mux.HandleFunc("PATCH /api/hooks/{id}", r.wrap(hookHandlers.Update))
+		r.mux.HandleFunc("DELETE /api/hooks/{id}", r.wrap(hookHandlers.Delete))
+		r.mux.HandleFunc("POST /api/hooks/{id}/enable", r.wrap(hookHandlers.Enable))
+		r.mux.HandleFunc("POST /api/hooks/{id}/disable", r.wrap(hookHandlers.Disable))
+	}
 
 	if webhookStore := r.server.WebhookStore(); webhookStore != nil {
 		webhookHandlers := handlers.NewWebhookHandlers(webhookStore)
@@ -197,6 +202,13 @@ func (r *Router) setupRoutes() {
 		r.mux.HandleFunc("GET /api/executions", r.wrap(executionHandlers.List))
 		r.mux.HandleFunc("GET /api/executions/{id}", r.wrap(executionHandlers.Get))
 		r.mux.HandleFunc("GET /api/functions/{name}/executions", r.wrap(executionHandlers.ListForFunction))
+	}
+
+	if transactionManager := r.server.TransactionManager(); transactionManager != nil {
+		transactionHandlers := handlers.NewTransactionHandlers(transactionManager)
+		r.mux.HandleFunc("POST /api/internal/transaction/begin", r.wrap(transactionHandlers.Begin))
+		r.mux.HandleFunc("POST /api/internal/transaction/commit", r.wrap(transactionHandlers.Commit))
+		r.mux.HandleFunc("POST /api/internal/transaction/rollback", r.wrap(transactionHandlers.Rollback))
 	}
 
 	if r.server.DeployService() != nil {
