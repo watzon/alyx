@@ -9,9 +9,12 @@
 	import CodeIcon from 'lucide-svelte/icons/code';
 	import FileTextIcon from 'lucide-svelte/icons/file-text';
 	import { metricsStore } from '$lib/stores/metrics.svelte';
+	import { fetchMetrics, type PrometheusMetrics } from '$lib/utils/prometheus-parser';
 	import * as Chart from '$ui/chart';
 	import { AreaChart, BarChart } from 'layerchart';
 	import { curveLinear } from 'd3-shape';
+
+	let lastUpdated = $state<number | null>(null);
 
 	const statsQuery = createQuery(() => ({
 		queryKey: ['admin', 'stats'],
@@ -19,7 +22,8 @@
 			const result = await admin.stats();
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
-		}
+		},
+		refetchInterval: 10000
 	}));
 
 	const schemaQuery = createQuery(() => ({
@@ -28,7 +32,8 @@
 			const result = await admin.schema();
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
-		}
+		},
+		refetchInterval: 10000
 	}));
 
 	const storageStatsQuery = createQuery(() => ({
@@ -37,8 +42,33 @@
 			const result = await admin.storageStats();
 			if (result.error) throw new Error(result.error.message);
 			return result.data!;
-		}
+		},
+		refetchInterval: 10000
 	}));
+
+	async function fetchAndStoreMetrics() {
+		try {
+			const metrics = await fetchMetrics();
+			metricsStore.addDataPoint({
+				timestamp: Date.now(),
+				httpRequests: metrics.httpRequestsTotal,
+				httpRequestsByStatus: metrics.httpRequestsByStatus,
+				dbConnections: {
+					open: metrics.dbConnectionsOpen,
+					inUse: metrics.dbConnectionsInUse
+				}
+			});
+			lastUpdated = Date.now();
+		} catch (error) {
+			console.error('Failed to fetch metrics:', error);
+		}
+	}
+
+	$effect(() => {
+		fetchAndStoreMetrics();
+		const interval = setInterval(fetchAndStoreMetrics, 10000);
+		return () => clearInterval(interval);
+	});
 
 	function formatUptime(seconds: number): string {
 		const days = Math.floor(seconds / 86400);
@@ -86,6 +116,11 @@
 		}))
 	);
 
+	const secondsSinceUpdate = $derived(lastUpdated ? Math.floor((Date.now() - lastUpdated) / 1000) : 0);
+	const lastUpdatedText = $derived(secondsSinceUpdate < 60 
+		? `${secondsSinceUpdate}s ago` 
+		: `${Math.floor(secondsSinceUpdate / 60)}m ago`);
+
 	const systemHealthData = $derived(
 		metricsStore.dataPoints.map((point) => ({
 			time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -103,9 +138,16 @@
 </script>
 
 <div class="max-w-screen-2xl mx-auto space-y-6">
-	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Dashboard</h1>
-		<p class="text-sm text-muted-foreground">Overview of your Alyx instance</p>
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-2xl font-semibold tracking-tight">Dashboard</h1>
+			<p class="text-sm text-muted-foreground">Overview of your Alyx instance</p>
+		</div>
+		{#if lastUpdated}
+			<span class="text-xs text-muted-foreground">
+				Last updated: {lastUpdatedText}
+			</span>
+		{/if}
 	</div>
 
 	<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
