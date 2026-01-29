@@ -16,12 +16,14 @@ import (
 	"github.com/watzon/alyx/internal/events"
 	"github.com/watzon/alyx/internal/executions"
 	"github.com/watzon/alyx/internal/functions"
+	"github.com/watzon/alyx/internal/hooks"
 	"github.com/watzon/alyx/internal/realtime"
 	"github.com/watzon/alyx/internal/rules"
 	"github.com/watzon/alyx/internal/scheduler"
 	"github.com/watzon/alyx/internal/schema"
 	"github.com/watzon/alyx/internal/server/requestlog"
 	"github.com/watzon/alyx/internal/storage"
+	"github.com/watzon/alyx/internal/transactions"
 	"github.com/watzon/alyx/internal/webhooks"
 )
 
@@ -45,12 +47,15 @@ type Server struct {
 	cleanupService      *storage.CleanupService
 	eventBus            *events.EventBus
 	webhookStore        *webhooks.Store
+	webhookRetryWorker  *webhooks.RetryWorker
+	hookRegistry        *hooks.Registry
 	scheduleStore       *scheduler.Store
 	executionStore      *executions.Store
 	scheduler           *scheduler.Scheduler
 	loginLimiter        *RateLimiter
 	registerLimiter     *RateLimiter
 	bruteForceProtector *BruteForceProtector
+	transactionManager  *transactions.Manager
 	mu                  sync.RWMutex
 }
 
@@ -110,6 +115,7 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 	srv.eventBus = events.NewEventBus(db, eventBusConfig)
 
 	srv.webhookStore = webhooks.NewStore(db)
+	srv.webhookRetryWorker = webhooks.NewRetryWorker(db, webhooks.DefaultRetryConfig())
 	srv.scheduleStore = scheduler.NewStore(db)
 	srv.executionStore = executions.NewStore(db)
 
@@ -195,6 +201,8 @@ func New(cfg *config.Config, db *database.DB, s *schema.Schema, opts ...Option) 
 	srv.registerLimiter = NewRateLimiter(cfg.Auth.RateLimit.Register)
 	srv.bruteForceProtector = NewBruteForceProtector(5, 15*time.Minute)
 
+	srv.transactionManager = transactions.NewManager(db)
+
 	srv.router = NewRouter(srv)
 	srv.httpServer = &http.Server{
 		Addr:         cfg.Server.Address(),
@@ -223,7 +231,15 @@ func (s *Server) Start(ctx context.Context) error {
 		s.eventBus.Start(ctx, nil)
 	}
 	if s.scheduler != nil {
+		if err := s.scheduler.RecoverSchedules(ctx, nil); err != nil {
+			log.Error().Err(err).Msg("Failed to recover schedules from database")
+		}
 		s.scheduler.Start(ctx, nil)
+	}
+
+	if s.webhookRetryWorker != nil {
+		s.webhookRetryWorker.Start(ctx)
+		log.Info().Msg("Webhook retry worker started")
 	}
 
 	if s.funcService != nil {
@@ -231,6 +247,12 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("starting function service: %w", err)
 		}
 		log.Info().Int("count", len(s.funcService.ListFunctions())).Msg("Function service started")
+
+		funcChecker := NewFunctionChecker(s.funcService)
+		s.hookRegistry = hooks.NewRegistry(s.db, funcChecker)
+		if err := s.hookRegistry.LoadFromDatabase(ctx); err != nil {
+			log.Warn().Err(err).Msg("Failed to load hooks from database")
+		}
 
 		s.dbHookTrigger = NewDatabaseHookTrigger(s.funcService)
 		s.router.SetHookTrigger(s.dbHookTrigger)
@@ -269,10 +291,21 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.eventBus != nil {
 		s.eventBus.Stop()
 	}
+	if s.webhookRetryWorker != nil {
+		s.webhookRetryWorker.Stop()
+		log.Info().Msg("Webhook retry worker stopped")
+	}
 
 	if s.cleanupService != nil {
 		s.cleanupService.Stop()
 		log.Info().Msg("Storage cleanup service stopped")
+	}
+
+	if s.transactionManager != nil {
+		if err := s.transactionManager.Close(); err != nil {
+			log.Warn().Err(err).Msg("Error closing transaction manager")
+		}
+		log.Info().Msg("Transaction manager stopped")
 	}
 
 	if s.loginLimiter != nil {
@@ -416,6 +449,10 @@ func (s *Server) WebhookStore() *webhooks.Store {
 	return s.webhookStore
 }
 
+func (s *Server) HookRegistry() *hooks.Registry {
+	return s.hookRegistry
+}
+
 func (s *Server) ScheduleStore() *scheduler.Store {
 	return s.scheduleStore
 }
@@ -426,4 +463,12 @@ func (s *Server) ExecutionStore() *executions.Store {
 
 func (s *Server) Scheduler() *scheduler.Scheduler {
 	return s.scheduler
+}
+
+func (s *Server) WebhookRetryWorker() *webhooks.RetryWorker {
+	return s.webhookRetryWorker
+}
+
+func (s *Server) TransactionManager() *transactions.Manager {
+	return s.transactionManager
 }
