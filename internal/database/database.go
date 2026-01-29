@@ -129,10 +129,11 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *Tx) error) error {
 
 	tx := &Tx{Tx: sqlTx}
 
+	var txErr error
 	defer func() {
 		if p := recover(); p != nil {
 			_ = tx.Rollback()
-			panic(p)
+			txErr = fmt.Errorf("transaction panic: %v", p)
 		}
 	}()
 
@@ -145,6 +146,10 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *Tx) error) error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	if txErr != nil {
+		return txErr
 	}
 
 	return nil

@@ -57,6 +57,7 @@ func (c *CompressedBackend) Get(ctx context.Context, bucket, key string) (io.Rea
 	pr, pw := io.Pipe()
 
 	go func() {
+		defer rc.Close()
 		var err error
 		switch c.compression {
 		case "gzip":
@@ -66,7 +67,6 @@ func (c *CompressedBackend) Get(ctx context.Context, bucket, key string) (io.Rea
 		default:
 			err = fmt.Errorf("unsupported compression type: %s", c.compression)
 		}
-		rc.Close()
 		pw.CloseWithError(err)
 	}()
 

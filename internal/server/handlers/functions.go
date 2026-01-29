@@ -77,8 +77,8 @@ func (h *FunctionHandlers) Invoke(w http.ResponseWriter, r *http.Request) {
 					Error(w, http.StatusBadRequest, "FILE_READ_ERROR", "Failed to read file: "+err.Error())
 					return
 				}
+				defer file.Close()
 				data, err := io.ReadAll(file)
-				file.Close()
 				if err != nil {
 					Error(w, http.StatusBadRequest, "FILE_READ_ERROR", "Failed to read file data: "+err.Error())
 					return

@@ -477,6 +477,7 @@ func (m *Migrator) dropIndexesForColumnSQL(table, column string) ([]string, erro
 		if err != nil {
 			continue
 		}
+		defer indexRows.Close()
 
 		var referencesColumn bool
 		for indexRows.Next() {
@@ -489,10 +490,8 @@ func (m *Migrator) dropIndexesForColumnSQL(table, column string) ([]string, erro
 			}
 			if name == column {
 				referencesColumn = true
-				break
 			}
 		}
-		indexRows.Close()
 
 		if referencesColumn {
 			stmts = append(stmts, fmt.Sprintf("DROP INDEX IF EXISTS %s", indexName))
@@ -534,6 +533,7 @@ func (m *Migrator) dropIndexesForColumnSQLWithTx(tx *sql.Tx, table, column strin
 		if err != nil {
 			continue
 		}
+		defer indexRows.Close()
 
 		var referencesColumn bool
 		for indexRows.Next() {
@@ -548,7 +548,6 @@ func (m *Migrator) dropIndexesForColumnSQLWithTx(tx *sql.Tx, table, column strin
 				referencesColumn = true
 			}
 		}
-		indexRows.Close()
 
 		if referencesColumn {
 			stmts = append(stmts, fmt.Sprintf("DROP INDEX IF EXISTS %s", indexName))

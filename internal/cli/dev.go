@@ -66,7 +66,8 @@ func runDev(cmd *cobra.Command, args []string) error {
 
 	schemaPath := resolveSchemaPath(devSchemaPath)
 	if schemaPath == "" {
-		log.Fatal().Msg("No schema file found. Create schema.yaml or schema.yml, or specify --schema path")
+		log.Error().Msg("No schema file found. Create schema.yaml or schema.yml, or specify --schema path")
+		return fmt.Errorf("no schema file found")
 	}
 
 	log.Info().
@@ -76,7 +77,8 @@ func runDev(cmd *cobra.Command, args []string) error {
 
 	s, err := schema.ParseFile(schemaPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to parse schema")
+		log.Error().Err(err).Msg("Failed to parse schema")
+		return fmt.Errorf("parsing schema: %w", err)
 	}
 
 	log.Info().
@@ -85,7 +87,8 @@ func runDev(cmd *cobra.Command, args []string) error {
 
 	db, err := database.Open(&cfg.Database)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to open database")
+		log.Error().Err(err).Msg("Failed to open database")
+		return fmt.Errorf("opening database: %w", err)
 	}
 	defer db.Close()
 

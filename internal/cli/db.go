@@ -235,9 +235,9 @@ func runDBDump(cmd *cobra.Command, args []string) error {
 			log.Warn().Err(queryErr).Str("collection", collectionName).Msg("Error querying collection")
 			continue
 		}
+		defer rows.Close()
 
 		documents, scanErr := database.ScanRows(rows)
-		rows.Close()
 		if scanErr != nil {
 			return fmt.Errorf("scanning %s: %w", collectionName, scanErr)
 		}
