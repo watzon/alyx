@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { admin, type Stats, type Schema } from '$lib/api/client';
+	import type { StorageStats } from '$lib/api/client';
 	import * as Card from '$ui/card';
 	import { Skeleton } from '$ui/skeleton';
 	import DatabaseIcon from 'lucide-svelte/icons/database';
 	import UsersIcon from 'lucide-svelte/icons/users';
 	import CodeIcon from 'lucide-svelte/icons/code';
 	import FileTextIcon from 'lucide-svelte/icons/file-text';
+	import { metricsStore } from '$lib/stores/metrics.svelte';
+	import * as Chart from '$ui/chart';
+	import { AreaChart, BarChart } from 'layerchart';
+	import { curveLinear } from 'd3-shape';
 
 	const statsQuery = createQuery(() => ({
 		queryKey: ['admin', 'stats'],
@@ -26,6 +31,15 @@
 		}
 	}));
 
+	const storageStatsQuery = createQuery(() => ({
+		queryKey: ['admin', 'storage', 'stats'],
+		queryFn: async (): Promise<StorageStats> => {
+			const result = await admin.storageStats();
+			if (result.error) throw new Error(result.error.message);
+			return result.data!;
+		}
+	}));
+
 	function formatUptime(seconds: number): string {
 		const days = Math.floor(seconds / 86400);
 		const hours = Math.floor((seconds % 86400) / 3600);
@@ -35,6 +49,57 @@
 		if (hours > 0) return `${hours}h ${minutes}m`;
 		return `${minutes}m`;
 	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+	}
+
+	// Chart configurations
+	const requestTrafficConfig = {
+		total: { label: 'Total Requests', color: 'hsl(var(--primary))' },
+		200: { label: '2xx Success', color: 'hsl(142 76% 36%)' },
+		400: { label: '4xx Client Errors', color: 'hsl(38 92% 50%)' },
+		500: { label: '5xx Server Errors', color: 'hsl(0 84% 60%)' }
+	};
+
+	const systemHealthConfig = {
+		memory: { label: 'Memory Usage', color: 'hsl(var(--primary))' },
+		goroutines: { label: 'Goroutines', color: 'hsl(280 65% 60%)' }
+	};
+
+	const storageConfig = {
+		usage: { label: 'Storage Usage', color: 'hsl(var(--primary))' }
+	};
+
+	// Derived chart data
+	const requestTrafficData = $derived(
+		metricsStore.dataPoints.map((point) => ({
+			time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+			total: point.httpRequests,
+			200: point.httpRequestsByStatus['200'] || 0,
+			400: (point.httpRequestsByStatus['400'] || 0) + (point.httpRequestsByStatus['401'] || 0) + (point.httpRequestsByStatus['403'] || 0) + (point.httpRequestsByStatus['404'] || 0),
+			500: (point.httpRequestsByStatus['500'] || 0) + (point.httpRequestsByStatus['502'] || 0) + (point.httpRequestsByStatus['503'] || 0)
+		}))
+	);
+
+	const systemHealthData = $derived(
+		metricsStore.dataPoints.map((point) => ({
+			time: new Date(point.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+			memory: point.memoryBytes ? point.memoryBytes / (1024 * 1024) : 0, // Convert to MB
+			goroutines: point.goroutines || 0
+		}))
+	);
+
+	const storageData = $derived(
+		storageStatsQuery.data?.buckets.map((bucket) => ({
+			name: bucket.bucket,
+			usage: bucket.totalBytes / (1024 * 1024) // Convert to MB
+		})) || []
+	);
 </script>
 
 <div class="max-w-screen-2xl mx-auto space-y-6">
@@ -167,5 +232,112 @@
 				</a>
 			</Card.Content>
 		</Card.Root>
+	</div>
+
+	<div class="space-y-3">
+		<Card.Root>
+			<Card.Header class="pb-2">
+				<Card.Title class="text-sm font-medium">Request Traffic</Card.Title>
+			</Card.Header>
+			<Card.Content>
+				{#if requestTrafficData.length === 0}
+					<div class="aspect-video flex items-center justify-center">
+						<Skeleton class="h-full w-full" />
+					</div>
+				{:else}
+					<Chart.Container config={requestTrafficConfig} class="aspect-video">
+						<AreaChart
+							data={requestTrafficData}
+							x="time"
+							series={[
+								{ key: 'total', label: 'Total', color: requestTrafficConfig.total.color },
+								{ key: '200', label: '2xx', color: requestTrafficConfig['200'].color },
+								{ key: '400', label: '4xx', color: requestTrafficConfig['400'].color },
+								{ key: '500', label: '5xx', color: requestTrafficConfig['500'].color }
+							]}
+							axis="x"
+							props={{
+								area: { curve: curveLinear, line: { class: 'stroke-1' }, 'fill-opacity': 0.3 },
+								xAxis: { format: () => '' }
+							}}
+						>
+							{#snippet tooltip()}
+								<Chart.Tooltip indicator="line" />
+							{/snippet}
+						</AreaChart>
+					</Chart.Container>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+
+		<div class="grid gap-3 md:grid-cols-2">
+			<Card.Root>
+				<Card.Header class="pb-2">
+					<Card.Title class="text-sm font-medium">System Health</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if systemHealthData.length === 0}
+						<div class="aspect-video flex items-center justify-center">
+							<Skeleton class="h-full w-full" />
+						</div>
+					{:else}
+						<Chart.Container config={systemHealthConfig} class="aspect-video">
+							<AreaChart
+								data={systemHealthData}
+								x="time"
+								series={[
+									{ key: 'memory', label: 'Memory (MB)', color: systemHealthConfig.memory.color },
+									{ key: 'goroutines', label: 'Goroutines', color: systemHealthConfig.goroutines.color }
+								]}
+								axis="x"
+								props={{
+									area: { curve: curveLinear, line: { class: 'stroke-1' }, 'fill-opacity': 0.3 },
+									xAxis: { format: () => '' }
+								}}
+							>
+								{#snippet tooltip()}
+									<Chart.Tooltip indicator="line" />
+								{/snippet}
+							</AreaChart>
+						</Chart.Container>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header class="pb-2">
+					<Card.Title class="text-sm font-medium">Storage Usage</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if storageStatsQuery.isPending}
+						<div class="aspect-video flex items-center justify-center">
+							<Skeleton class="h-full w-full" />
+						</div>
+					{:else if storageData.length === 0}
+						<div class="aspect-video flex flex-col items-center justify-center text-center space-y-2">
+							<DatabaseIcon class="h-8 w-8 text-muted-foreground/50" />
+							<p class="text-sm text-muted-foreground">No storage buckets configured</p>
+						</div>
+					{:else}
+						<Chart.Container config={storageConfig} class="aspect-video">
+							<BarChart
+								data={storageData}
+								x="name"
+								series={[{ key: 'usage', label: 'Usage (MB)', color: storageConfig.usage.color }]}
+								axis="x"
+								props={{
+									bars: { stroke: 'none', rounded: 'all', radius: 8 },
+									xAxis: { format: () => '' }
+								}}
+							>
+								{#snippet tooltip()}
+									<Chart.Tooltip indicator="line" />
+								{/snippet}
+							</BarChart>
+						</Chart.Container>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
 	</div>
 </div>
